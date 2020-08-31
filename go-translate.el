@@ -5,23 +5,9 @@
 ;; Author: lorniu <lorniu@gmail.com>
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "26.1"))
-;; Version: 0.1
 ;; Keywords: convenience
-
-;; This file is NOT part of GNU Emacs.
-
-;; This is free software; you can redistribute it and/or modify it
-;; under the terms of the GNU General Public License as published by
-;; the Free Software Foundation; either version 2, or (at your option)
-;; any later version.
-
-;; This file is distributed in the hope that it will be useful, but
-;; WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-;; General Public License for more details.
-
-;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; SPDX-License-Identifier: MIT
+;; Version: 0.1
 
 ;;; Commentary:
 
@@ -58,7 +44,6 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'posframe nil t)
 
 
 ;;; Customizations
@@ -317,12 +302,12 @@ It will use the tkk from Google translate page."
 
 (defun go-translate-result--translation (json)
   "Get the translation text from JSON."
-  (mapconcat #'(lambda (item) (aref item 0))
+  (mapconcat (lambda (item) (aref item 0))
              (aref json 0) ""))
 
 (defun go-translate-result--translation-phonetic (json)
   "Get the translation phonetic from JSON."
-  (mapconcat #'(lambda (item) (if (> (length item) 2) (aref item 2) ""))
+  (mapconcat (lambda (item) (if (> (length item) 2) (aref item 2) ""))
              (aref json 0) ""))
 
 (defun go-translate-result--suggestion (json)
@@ -374,7 +359,7 @@ Some functions, such as switching translation languages, are based on them."
 (defcustom go-translate-auto-guess-direction t
   "Automatically determine the languages of the translation based on the input.
 
-If set to nil, will directly circle the "
+If set to nil, will directly circle the available direcitons instead of guessing."
   :type 'boolean)
 
 (defcustom go-translate-buffer-window-config '((display-buffer-in-side-window)
@@ -494,7 +479,7 @@ If BACKWARDP is t, then choose prev one."
 
 (defun go-translate-default--prompt-input (&optional text direction)
   "Prompt for the user input, should return a (TEXT DIRECTION) list."
-  (when (null direction)
+  (unless direction
     (if current-prefix-arg
         (setq direction
               (cons (read-from-minibuffer "Source: ")
@@ -505,7 +490,7 @@ If BACKWARDP is t, then choose prev one."
         (setq direction (or go-translate-last-direction
                             (cons go-translate-native-language
                                   go-translate-target-language))))))
-  (when (null text)
+  (unless text
     (setq text (if (use-region-p)
                    (string-trim (buffer-substring (region-beginning) (region-end)))
                  (current-word t t))))
@@ -557,10 +542,10 @@ Return a (url text from to) list."
          (url (format "%s%s?%s"
                       go-translate-base-url
                       go-translate-query-path
-                      (mapconcat #'(lambda (p)
-                                     (format "%s=%s"
-                                             (url-hexify-string (car p))
-                                             (url-hexify-string (cdr p))))
+                      (mapconcat (lambda (p)
+                                   (format "%s=%s"
+                                           (url-hexify-string (car p))
+                                           (url-hexify-string (cdr p))))
                                  params "&"))))
     (list url text from to)))
 
@@ -699,7 +684,7 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
                       (cl-loop for trans across (aref item 2)
                                for content = (format "%s (%s)"
                                                      (aref trans 0)
-                                                     (mapconcat 'identity (aref trans 1) ", "))
+                                                     (mapconcat #'identity (aref trans 1) ", "))
                                do (insert (format "%2d. %s\n" (cl-incf index) content)))))
         (insert "\n"))
 
@@ -779,6 +764,11 @@ RENDER-FUN is used to specify the way to render after request."
 
 
 ;;; Pop-up with Posframe
+
+(require 'posframe nil t)
+
+(declare-function posframe-show "ext:posframe.el" t t)
+(declare-function posframe-poshandler-point-bottom-left-corner-upward "ext:posframe.el" t t)
 
 (defvar go-translate-posframe-buffer " *Go-Translate-Posframe*")
 

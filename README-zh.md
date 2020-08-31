@@ -50,7 +50,7 @@ M-x package-install go-translate RET
 (setq go-translate-native-language "zh_CN")
 ```
 
-如果你只想在中文和法文之间进行翻译，那么只要配置:
+如果你使用的是其他语言，比如你只想在中文和法文之间进行翻译，配置如下:
 ```elisp
 (setq go-translate-native-language "zh_CN")
 (setq go-translate-target-language "fr")  ; 你想要翻译成的语言，fr 代表法文

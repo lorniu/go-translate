@@ -21,7 +21,7 @@ So I wrote this plugin. It borrows some ideas and codes from [Google Translate](
 
 With MELPA and package.el:
 ```
-M-x package-install go-translate RET
+M-x package-install RET go-translate RET
 
 (require 'go-translate)
 ```
