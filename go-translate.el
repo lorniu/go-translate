@@ -362,11 +362,10 @@ Some functions, such as switching translation languages, are based on them."
 If set to nil, will directly circle the available direcitons instead of guessing."
   :type 'boolean)
 
-(defcustom go-translate-buffer-window-config '((display-buffer-in-side-window)
-                                               (side . right)
-                                               (window-width . 0.4))
+(defcustom go-translate-buffer-window-config '((display-buffer-reuse-window display-buffer-in-side-window)
+                                               (side . right))
   "Window configuration used by the result buffer window.
-Default is right side, 40% width."
+Default is on right side."
   :type 'list)
 
 (defvar go-translate-native-language-regexp-alist
