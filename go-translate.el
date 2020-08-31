@@ -53,12 +53,12 @@
   :group 'external
   :prefix 'go-translate-)
 
-(defcustom go-translate-base-url "http://translate.google.com"
+(defcustom go-translate-base-url "https://translate.google.com"
   "The base url of Google Translate.
 
 You can adjust this url according to your country and region. eg:
 
-URL `http://translate.google.cc'."
+URL `https://translate.google.cc'."
   :type 'string)
 
 (defcustom go-translate-query-path "/translate_a/single"
