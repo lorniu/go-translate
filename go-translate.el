@@ -392,6 +392,12 @@ for example, using the \\cx syntax. Maybe work for some languages.")
 
 ;;;
 
+(defun go-translate-get-current-text ()
+  "Get current text under cursor, selection or word at point."
+  (if (use-region-p)
+      (string-trim (buffer-substring (region-beginning) (region-end)))
+    (current-word t t)))
+
 (defun go-translate-check-text-native (text)
   "Check if TEXT if your native language text.
 1 for yes, 0 for no, -1 for unknown."
@@ -506,9 +512,7 @@ If BACKWARDP is t, then choose prev one."
                             (cons go-translate-native-language
                                   go-translate-target-language))))))
   (unless text
-    (setq text (if (use-region-p)
-                   (string-trim (buffer-substring (region-beginning) (region-end)))
-                 (current-word t t))))
+    (setq text (go-translate-get-current-text)))
   (setq go-translate--current-direction direction)
   (let* ((minibuffer-allow-text-properties t)
          (prompt (concat (if direction
@@ -808,6 +812,23 @@ with current `go-translate'."
                    :y-pixel-offset -1
                    :poshandler #'posframe-poshandler-point-bottom-left-corner-upward)
                   (add-hook 'post-command-hook #'go-translate-posframe-clear))))
+
+;;;###autoload
+(defun go-translate-popup-current ()
+  "Translate the content just under cursor, selection or word.
+Auto judge the direction, if failed then use the default native/target
+languages."
+  (interactive)
+  (let* ((text (or (go-translate-get-current-text)
+                   (user-error "No text found under cursor")))
+         (nativep (go-translate-check-text-native text))
+         (from (if (= nativep 1)
+                   go-translate-native-language
+                 go-translate-target-language))
+         (to (if (= nativep 1)
+                 go-translate-target-language
+               go-translate-native-language)))
+    (go-translate-popup text from to)))
 
 
 (provide 'go-translate)

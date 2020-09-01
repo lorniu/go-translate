@@ -73,7 +73,7 @@ M-x package-install go-translate RET
 
 ## 使用
 
-核心命令就一个 `go-translate`，另外有个简单的扩展命令 `go-translate-popup`。
+核心命令就一个 `go-translate`，另外有两个简单的扩展命令 `go-translate-popup` 和 `go-translate-popup-current`。
 
 你可以选择将它们绑定到快捷键。比如:
 ```elisp
@@ -94,8 +94,8 @@ M-x package-install go-translate RET
 
 > `go-translate` 命令后接着 `C-return`，然后 `C-x C-x` 快速选中，`M-w` 复制，`q` 关闭窗口。
 
-另外的一个命令 `go-translate-popup` 是在光标处通过弹出一个 `posframe` 的方式显示选中内容的简短翻译。
-实现比较简单，但也比较实用。
+另外的一个命令 `go-translate-popup` 是在光标处通过弹出一个 `posframe` 的方式对内容进行简短翻译。
+实现比较简单，但也比较实用。`go-translate-popup-current` 不会弹出 minibuffer，直接翻译光标下的选中文本或单词。
 
 ## 扩展
 
