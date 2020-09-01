@@ -88,11 +88,11 @@ M-x package-install go-translate RET
 
 当执行 `go-translate` 命令时，默认会读取当前选中的文本，如果没有文本被选中，则会优先读取光标所在的单词进行翻译。
 在弹出的 `read-from-minibuffer` 界面，可以对将要翻译的内容进行修改，通过 `C-l` 快速清空，通过 `C-n` 和 `C-p` 可以快速切换到其他的 [源语言 - 目标语言]。
-这些 [源语言 - 目标语言] 就是上面配置到 `go-translate-extra-directions` 里的那些。而 `C-return` 将会在翻译完成后自动将光标切换到结果窗口。
+这些 [源语言 - 目标语言] 就是上面配置到 `go-translate-extra-directions` 里的那些。`回车` 进行翻译，而 `Ctrl-回车` 还会将光标切换到结果窗口。
 
 很多时候，你没有必要手动切换 [源语言 - 目标语言]，`go-translate` 会尝试根据你的输入内容判断并选择合适的翻译语言。
 
-> 当翻译结果出现之后，可以通过 `C-x o` 接 `C-x C-x` 快速选中翻译的文本，`M-w` 复制，`q` 关闭翻译窗口。
+> `go-translate` 命令后接着 `C-return`，然后 `C-x C-x` 快速选中，`M-w` 复制，`q` 关闭窗口。
 
 另外的一个命令 `go-translate-popup` 是在光标处通过弹出一个 `posframe` 的方式显示选中内容的简短翻译。
 实现比较简单，但也比较实用。

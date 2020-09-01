@@ -71,11 +71,9 @@ You can choose to bind them. such as:
 - `M-n` and `M-p`, switch to the next/prev available translation direction, and refresh
 
 The `go-translate` will take the currently selected text or `word-at-point` as the default input.
-In the pop-up `read-from-minibuffer` interface, you can modify it. There are many useful keybinds in minibuffer:
-- `C-return` will force the cursor follow the result window after translation
-- `C-n` and `C-p` to switch translation direcitons. These direcitons are those configured in `go-translate-extra-directions` above
-- `M-n` and `M-p` will visit the translation history
-- `C-l` for clear the input完成
+In the pop-up `read-from-minibuffer` interface, you can use `C-l` to clear the input, and fire the translation
+with `Return` or `C-return`. `C-return` will force the cursor follow the result window after translation.
+Also, you can use `C-n` and `C-p` to switch translation direcitons. These direcitons are those configured in `go-translate-extra-directions` above.
 
 Another command `go-translate-popup` is to display a short translation by popping up a `posframe` at the cursor.
 The implementation is relatively simple, but also more practical.
