@@ -57,9 +57,8 @@ Other customizations you can look into `custom-group` - `go-translate`, eg:
 
 ## Usage
 
-The core command is `go-translate`, and there is a extended command `go-translate-popup`.
-
-You can choose to bind them. such as:
+The core command is `go-translate`, and there are several extended commands such as `go-translate-popup`.
+You can bind keys for them. such as:
 ```elisp
 (global-set-key "\C-ct" 'go-translate)
 (global-set-key "\C-cT" 'go-translate-popup)
@@ -75,12 +74,18 @@ In the pop-up `read-from-minibuffer` interface, you can use `C-l` to clear the i
 with `Return` or `C-return`. `C-return` will force the cursor follow the result window after translation.
 Also, you can use `C-n` and `C-p` to switch translation direcitons. These direcitons are those configured in `go-translate-extra-directions` above.
 
-Another command `go-translate-popup` is to display a short translation by popping up a `posframe` at the cursor.
-The implementation is relatively simple, but also more practical.
+Other commands based on `go-translate`:
+- `go-translate-popup` is to display a short translation by popping up a `posframe` at the cursor.
+- `go-translate-popup-current` is to pop the result for the current selection or word, without prompt.
+- `go-translate-kill-ring-save` will not pop any user interface, but save the result into `king-ring` for later use.
+
+
+Extending commands is easy and happy, go and have a try!
 
 ## Extend
 
 If you want to expand your own command, you only need to overwrite or let-binding the variables below:
+- `go-translate-init-text-function` the default translation content. If not specified, the text selected or at the cursor will be read
 - `go-translate-input-function` is used to process user input and select translation languages
 - `go-translate-url-function` is used to generate the request url
 - `go-translate-prepare-function` some preparatory work done before the request is send. For example, create a buffer and render something

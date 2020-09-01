@@ -69,8 +69,27 @@ URL `https://translate.google.cc'."
   "User agent used in the translation request."
   :type 'string)
 
+(defcustom go-translate-init-text-function #'go-translate-default-get-current-text
+  "Function to generate the init translate text.
+Default use the current selection or current word on cursor.
+
+ (let ((go-translate-init-text-function
+        (lambda () (buffer-string))))
+   (call-interactively #'go-translate))
+
+will read the whole buffer's content to translate."
+  :type 'function)
+
 (defcustom go-translate-input-function #'go-translate-default-prompt-input
-  "Function to take the translation text, sl and tl."
+  "Function to take the translation text, sl and tl.
+
+ (let ((go-translate-input-function
+         (lambda () (list (or (funcall go-translate-init-text-function)
+                              (user-error \"No suitalbe text found\"))
+                          \"en\" \"fr\"))))
+   (call-interactively #'go-translate))
+
+will only translate from en to fr and no prompt for input."
   :type 'function)
 
 (defcustom go-translate-url-function #'go-translate-default-generate-url
@@ -80,17 +99,24 @@ It will take the user input as parameters, that is, Text/FROM/TO."
 
 (defcustom go-translate-prepare-function #'go-translate-default-buffer-prepare
   "A function executed before sending a request to pre-rending etc.
-It will take URL as parameter."
+It will take REQ as parameter."
   :type 'function)
 
 (defcustom go-translate-request-function #'go-translate-default-retrieve-async
   "Function to retrieve translations from Google.
-Take URL as parameter."
+Take REQ as parameter."
   :type 'function)
 
 (defcustom go-translate-render-function #'go-translate-default-buffer-render
   "Function to render the translation result.
-Take the url and result as parameters."
+Take the REQ and RESP as parameters.
+
+ (let ((go-translate-render-function
+         (lambda (_ resp)
+           (send-it (go-translate-result--translation resp)))))
+   (call-interactively #'go-translate))
+
+will send the translation with your `send-it` function."
   :type 'function)
 
 
@@ -392,12 +418,6 @@ for example, using the \\cx syntax. Maybe work for some languages.")
 
 ;;;
 
-(defun go-translate-get-current-text ()
-  "Get current text under cursor, selection or word at point."
-  (if (use-region-p)
-      (string-trim (buffer-substring (region-beginning) (region-end)))
-    (current-word t t)))
-
 (defun go-translate-check-text-native (text)
   "Check if TEXT if your native language text.
 1 for yes, 0 for no, -1 for unknown."
@@ -481,6 +501,12 @@ If BACKWARDP is t, then choose prev one."
 
 ;;;
 
+(defun go-translate-default-get-current-text ()
+  "Get current text under cursor, selection or word at point."
+  (if (use-region-p)
+      (string-trim (buffer-substring (region-beginning) (region-end)))
+    (current-word t t)))
+
 (defvar go-translate-default-minibuffer-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
@@ -512,7 +538,7 @@ If BACKWARDP is t, then choose prev one."
                             (cons go-translate-native-language
                                   go-translate-target-language))))))
   (unless text
-    (setq text (go-translate-get-current-text)))
+    (setq text (funcall go-translate-init-text-function)))
   (setq go-translate--current-direction direction)
   (let* ((minibuffer-allow-text-properties t)
          (prompt (concat (if direction
@@ -632,9 +658,11 @@ This should be asynchronous."
                           (funcall render-fun req
                                    ;; catch the error and pass to render function
                                    (condition-case err
-                                       (go-translate-result--to-json content)
-                                     (error (format "Result Error: %s" err))))))
-                      (kill-buffer))))))
+                                       (prog1
+                                           (go-translate-result--to-json content)
+                                         (message "Done."))
+                                     (error (format "Result Error: %s" err)))))))
+                    (kill-buffer)))))
 
 (defun go-translate-default-buffer-render (req resp)
   "Render the json RESP obtained through REQ to buffer.
@@ -793,7 +821,7 @@ It will show in posframe and dispear in 20 seconds, and can be
 broken by any user action.
 
 This example shows that it's very simple to extend functions
-with current `go-translate'."
+with current `go-translate'. Here we use the keyword style."
   (interactive `,@(funcall go-translate-input-function))
   (go-translate text from to
                 :pre-fun #'ignore
@@ -815,11 +843,13 @@ with current `go-translate'."
 
 ;;;###autoload
 (defun go-translate-popup-current ()
-  "Translate the content just under cursor, selection or word.
-Auto judge the direction, if failed then use the default native/target
-languages."
+  "Translate the content under cursor: selection or word.
+Auto judge the direction, if failed then take the default native/target
+as the direction.
+
+This will not prompt anything."
   (interactive)
-  (let* ((text (or (go-translate-get-current-text)
+  (let* ((text (or (funcall go-translate-init-text-function)
                    (user-error "No text found under cursor")))
          (nativep (go-translate-check-text-native text))
          (from (if (= nativep 1)
@@ -829,6 +859,20 @@ languages."
                  go-translate-target-language
                go-translate-native-language)))
     (go-translate-popup text from to)))
+
+;;;###autoload
+(defun go-translate-kill-ring-save ()
+  "Translate and just put result into kill ring for later yank.
+
+Here we use the let-binding style."
+  (interactive)
+  (let ((go-translate-prepare-function #'ignore)
+        (go-translate-render-function
+         (lambda (_req resp)
+           (deactivate-mark)
+           (kill-new (go-translate-result--translation resp))
+           (message "Translate result already in the ring."))))
+    (call-interactively #'go-translate)))
 
 
 (provide 'go-translate)

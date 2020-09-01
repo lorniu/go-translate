@@ -40,23 +40,23 @@ M-x package-install go-translate RET
 
 ## 配置
 
-作为国内用户，首先配置地址，然后就可以不必使用代理直接使用了:
+国内用户首先更改地址，从而获得更好的使用体验:
 ```elisp
 (setq go-translate-base-url "http://translate.google.cn")
 ```
 
-然后就需要设置翻译语言。如果仅想在中英文之间进行翻译，那么只需配置:
+然后设置翻译语言。如果仅在中英文之间进行翻译，那么只需配置:
 ```elisp
 (setq go-translate-native-language "zh_CN")
 ```
 
-如果你使用的是其他语言，比如是中文和法文，那么配置如下:
+如果使用的是其他语言，比如中文和法文，那么配置如下:
 ```elisp
 (setq go-translate-native-language "zh_CN")
 (setq go-translate-target-language "fr")  ; 你想要翻译成的语言，fr 代表法文
 ```
 
-[可选] 除了上述配置的两种语言，如果平日还可能在其他语言之间进行翻译，那么将它们添加到 `go-translate-extra-directions` 中:
+[**可选**] 除了上述配置的两种语言，如果平日还可能在其他语言之间进行翻译，那么将它们添加到 `go-translate-extra-directions` 中:
 ```elisp
 (add-to-list go-translate-extra-directions (cons "zh_CN" "ru"))  ; 从中文到俄文之间的翻译
 (add-to-list go-translate-extra-directions (cons "en" "fr"))     ; 从英文到法文之间的翻译
@@ -67,13 +67,13 @@ M-x package-install go-translate RET
 
 其他的配置参数都是可选的，可在 `custom-group` - `go-translate` 中查看。比如:
 ```elisp
-(setq go-translate-buffer-follow-p t)       ; 翻译完成后，总是切换到翻译结果窗口
-(setq go-translate-buffer-window-config ..) ; 翻译窗口的位置和样式
+(setq go-translate-buffer-follow-p t)       ; 翻译完成后，总是将光标切换到翻译结果窗口
+(setq go-translate-buffer-window-config ..) ; 更改翻译窗口的位置和样式
 ```
 
 ## 使用
 
-核心命令就一个 `go-translate`，另外有两个简单的扩展命令 `go-translate-popup` 和 `go-translate-popup-current`。
+核心命令是 `go-translate`，另外有若干简单的扩展命令，比如 `go-translate-popup` 和 `go-translate-kill-ring-save`。
 
 你可以选择将它们绑定到快捷键。比如:
 ```elisp
@@ -81,32 +81,38 @@ M-x package-install go-translate RET
 (global-set-key "\C-cT" 'go-translate-popup)
 ```
 
-`go-translate` 会使用一个 buffer 来显示详细的翻译结果。在翻译结果的 buffer 中，有若干快捷键:
+`go-translate` 默认会使用 buffer 来显示详细的翻译结果。在结果 buffer 中，有若干快捷键:
 - `g` 刷新 `q` 退出
 - `x` 交换 `源语言` 和 `目标语言` 后重新查询
-- `M-n` 和 `M-p`，切换到下一组可用的 [源语言 - 目标语言]，并重新查询
+- `M-n` 和 `M-p`，切换到下一组可用的 [源语言 - 目标语言] 并重新查询
 
-当执行 `go-translate` 命令时，默认会读取当前选中的文本，如果没有文本被选中，则会优先读取光标所在的单词进行翻译。
-在弹出的 `read-from-minibuffer` 界面，可以对将要翻译的内容进行修改，通过 `C-l` 快速清空，通过 `C-n` 和 `C-p` 可以快速切换到其他的 [源语言 - 目标语言]。
-这些 [源语言 - 目标语言] 就是上面配置到 `go-translate-extra-directions` 里的那些。`回车` 进行翻译，而 `Ctrl-回车` 还会将光标切换到结果窗口。
+当执行 `go-translate` 命令时，会读取当前选中的文本，如果没有文本被选中，则会读取光标所在的单词，
+在接下来打开的 `minibuffer` 界面可以对读取的文本进行修改，然后按下 `回车` 或 `Ctrl-回车` 进行翻译。
+`Ctrl-回车` 跟 `回车` 的区别是，`Ctrl-回车` 会在翻译结束后将光标切换到翻译的结果窗口。
 
+另外，可以通过 `C-l` 清空输入，通过 `C-n` 和 `C-p` 切换 [源语言 - 目标语言]。这些 [源语言 - 目标语言] 就是上面配置到 `go-translate-extra-directions` 里的那些。
 很多时候，你没有必要手动切换 [源语言 - 目标语言]，`go-translate` 会尝试根据你的输入内容判断并选择合适的翻译语言。
 
-> `go-translate` 命令后接着 `C-return`，然后 `C-x C-x` 快速选中，`M-w` 复制，`q` 关闭窗口。
+> 一气呵成: `C-c t` 接 `C-return`，然后 `C-x C-x` 选中，`M-w` 复制，`q` 关闭窗口, `C-y` 粘贴
 
-另外的一个命令 `go-translate-popup` 是在光标处通过弹出一个 `posframe` 的方式对内容进行简短翻译。
-实现比较简单，但也比较实用。`go-translate-popup-current` 不会弹出 minibuffer，直接翻译光标下的选中文本或单词。
+其他的命令:
+- `go-translate-popup` 是在光标处通过弹出 `posframe` 的方式对内容进行简短翻译。其实现简单，但比较实用。
+- `go-translate-popup-current` 基于上面的命令，它不会打开 `minibuffer`，而是直接翻译光标下的选中文本或单词。
+- `go-translate-kill-ring-save` 不会弹出任何界面，而是直接将翻译结果保存到 `kill-ring` 中，你随后可以通过 `C-y` 将其插入到任何地方，或者切换到聊天软件 `C-v` 编辑、发送。这对一些进行翻译工作的人也许比较有用。
+
+当然，基于 `go-translate` 对功能进行扩展很简单，你可以轻松按照自己的意图创造适合自己的翻译命令。
 
 ## 扩展
 
-如果想扩展的话，只需要覆盖或通过 `let-binding` 方式重新定义如下变量即可:
+如果想扩展命令的话，只需要覆盖或通过 `let-binding` 方式重新定义如下某些变量即可:
+- `go-translate-init-text-function` 默认的翻译内容。如果不指定，会读取选中或光标处的文本
 - `go-translate-input-function` 用来处理用户输入和选定翻译语言
-- `go-translate-url-function` 用来实现请求地址的组装和拼接
+- `go-translate-url-function` 用来生成进行请求的 URL
 - `go-translate-prepare-function` 在请求发起之前，做的一些预备性工作。比如先创建一个 buffer 并显示部分内容
 - `go-translate-request-function` 异步请求到服务器，获取翻译内容
 - `go-translate-render-function` 渲染返回的结果
 
-可以查看 `go-translate-popup` 的源代码，了解扩展新的功能的方式。
+可以查看 `go-translate-popup` 等命令的源代码，了解扩展新功能的方式。
 
 另外，还封装了若干 `go-translate-result-*` 的方法，用于从请求结果中提取相关内容。
 这个在自定义 render 函数的时候挺有用的。
