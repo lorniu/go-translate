@@ -379,11 +379,7 @@ The form is (lang . regexp).
 This is based that some texts can easily be determine with regexp,
 for example, using the \\cx syntax. Maybe work for some languages.")
 
-(defvar go-translate-fresh-timeout 5)
-
 (defvar go-translate-last-direction nil)
-
-(defvar go-translate--fresh-p nil)
 
 (defvar go-translate--current-direction nil)
 
@@ -725,11 +721,6 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
       (set-buffer-modified-p nil)
       (read-only-mode +1)
       (unless singlep (visual-line-mode +1))
-      ;; Add some extra action to the 'fresh moment'.
-      ;; For example, during the 'fresh moment', command `other-window' will
-      ;; switch to the translation window first.
-      (setq go-translate--fresh-p t)
-      (run-at-time go-translate-fresh-timeout nil (lambda () (setq go-translate--fresh-p nil)))
       ;; Jump to the end of the translated text. Combined with the previous `push-mark',
       ;; you can quickly select the translated text through `C-x C-x'.
       (set-window-point (get-buffer-window) savepoint)
@@ -739,17 +730,6 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
       (if (or go-translate-buffer-follow-p (get-text-property 0 'follow (cl-second req)))
           (pop-to-buffer (current-buffer) go-translate-buffer-window-config)
         (display-buffer (current-buffer) go-translate-buffer-window-config)))))
-
-;; Fresh moment
-
-(defun go-translate--other-window-focus-me-advice (f &rest args)
-  "Advice for function F with ARGS.
-Command `other-window' will switch the translate window during `go-translate-fresh-p' is t."
-  (if go-translate--fresh-p
-      (pop-to-buffer go-translate-buffer-name)
-    (apply f args)))
-
-(advice-add #'other-window :around #'go-translate--other-window-focus-me-advice)
 
 
 ;;; Entrance
