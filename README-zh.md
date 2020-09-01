@@ -50,13 +50,13 @@ M-x package-install go-translate RET
 (setq go-translate-native-language "zh_CN")
 ```
 
-如果你使用的是其他语言，比如你只想在中文和法文之间进行翻译，配置如下:
+如果你使用的是其他语言，比如是中文和法文，那么配置如下:
 ```elisp
 (setq go-translate-native-language "zh_CN")
 (setq go-translate-target-language "fr")  ; 你想要翻译成的语言，fr 代表法文
 ```
 
-[可选] 如果除了上述配置的两种语言，平日还可能在其他语言之间进行翻译，那么将它们添加到 `go-translate-extra-directions` 中:
+[可选] 除了上述配置的两种语言，如果平日还可能在其他语言之间进行翻译，那么将它们添加到 `go-translate-extra-directions` 中:
 ```elisp
 (add-to-list go-translate-extra-directions (cons "zh_CN" "ru"))  ; 从中文到俄文之间的翻译
 (add-to-list go-translate-extra-directions (cons "en" "fr"))     ; 从英文到法文之间的翻译
@@ -67,7 +67,7 @@ M-x package-install go-translate RET
 
 其他的配置参数都是可选的，可在 `custom-group` - `go-translate` 中查看。比如:
 ```elisp
-(setq go-translate-buffer-follow-p t)       ; 翻译完成后，是否要切换到翻译结果窗口
+(setq go-translate-buffer-follow-p t)       ; 翻译完成后，总是切换到翻译结果窗口
 (setq go-translate-buffer-window-config ..) ; 翻译窗口的位置和样式
 ```
 
@@ -87,8 +87,8 @@ M-x package-install go-translate RET
 - `M-n` 和 `M-p`，切换到下一组可用的 [源语言 - 目标语言]，并重新查询
 
 当执行 `go-translate` 命令时，默认会读取当前选中的文本，如果没有文本被选中，则会优先读取光标所在的单词进行翻译。
-在弹出的 `read-from-minibuffer` 界面，可以对将要翻译的内容进行修改，而通过 `C-n` 和 `C-p` 可以快速切换到其他的 [源语言 - 目标语言]。
-这些 [源语言 - 目标语言] 就是上面配置到 `go-translate-extra-directions` 里的那些。
+在弹出的 `read-from-minibuffer` 界面，可以对将要翻译的内容进行修改，通过 `C-l` 快速清空，通过 `C-n` 和 `C-p` 可以快速切换到其他的 [源语言 - 目标语言]。
+这些 [源语言 - 目标语言] 就是上面配置到 `go-translate-extra-directions` 里的那些。而 `C-return` 将会在翻译完成后自动将光标切换到结果窗口。
 
 很多时候，你没有必要手动切换 [源语言 - 目标语言]，`go-translate` 会尝试根据你的输入内容判断并选择合适的翻译语言。
 

@@ -69,26 +69,26 @@ URL `https://translate.google.cc'."
   "User agent used in the translation request."
   :type 'string)
 
-(defcustom go-translate-input-function #'go-translate-default--prompt-input
+(defcustom go-translate-input-function #'go-translate-default-prompt-input
   "Function to take the translation text, sl and tl."
   :type 'function)
 
-(defcustom go-translate-url-function #'go-translate-default--generate-url
+(defcustom go-translate-url-function #'go-translate-default-generate-url
   "Function to generate a proper reqeust url to Google.
 It will take the user input as parameters, that is, Text/FROM/TO."
   :type 'function)
 
-(defcustom go-translate-prepare-function #'go-translate-default--buffer-prepare
+(defcustom go-translate-prepare-function #'go-translate-default-buffer-prepare
   "A function executed before sending a request to pre-rending etc.
 It will take URL as parameter."
   :type 'function)
 
-(defcustom go-translate-request-function #'go-translate-default--retrieve-async
+(defcustom go-translate-request-function #'go-translate-default-retrieve-async
   "Function to retrieve translations from Google.
 Take URL as parameter."
   :type 'function)
 
-(defcustom go-translate-render-function #'go-translate-default--buffer-render
+(defcustom go-translate-render-function #'go-translate-default-buffer-render
   "Function to render the translation result.
 Take the url and result as parameters."
   :type 'function)
@@ -466,7 +466,7 @@ If BACKWARDP is t, then choose prev one."
   (let ((d (go-translate-next-available-direction
             go-translate--current-direction backwardp)))
     (setq go-translate--current-direction d)
-    (go-translate-default--prompt-input (minibuffer-contents) d)
+    (go-translate-default-prompt-input (minibuffer-contents) d)
     (exit-minibuffer)))
 
 (defun go-translate-minibuffer-switch-prev-direction ()
@@ -476,7 +476,24 @@ If BACKWARDP is t, then choose prev one."
 
 ;;;
 
-(defun go-translate-default--prompt-input (&optional text direction)
+(defvar go-translate-default-minibuffer-keymap
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map minibuffer-local-map)
+    (define-key map "\C-g" #'top-level)
+    (define-key map "\C-n" #'go-translate-minibuffer-switch-next-direction)
+    (define-key map "\C-p" #'go-translate-minibuffer-switch-prev-direction)
+    (define-key map "\C-l" #'delete-minibuffer-contents)
+    (define-key map [C-return] (lambda ()
+                                 (interactive)
+                                 ;; add some options to used in the later phase
+                                 ;; for example, `follow` as the `focus the window`
+                                 (add-text-properties (minibuffer-prompt-end) (point-max)
+                                                      '(follow t))
+                                 (exit-minibuffer)))
+    map)
+  "Minibuffer keymap used when prompt user input.")
+
+(defun go-translate-default-prompt-input (&optional text direction)
   "Prompt for the user input, should return a (TEXT DIRECTION) list."
   (unless direction
     (if current-prefix-arg
@@ -494,17 +511,12 @@ If BACKWARDP is t, then choose prev one."
                    (string-trim (buffer-substring (region-beginning) (region-end)))
                  (current-word t t))))
   (setq go-translate--current-direction direction)
-  (let* ((prompt (concat (if direction
+  (let* ((minibuffer-allow-text-properties t)
+         (prompt (concat (if direction
                              (concat "[" (car direction) " > " (cdr direction) "] ")
                            "[Auto] ")
                          "Text: "))
-         (keymap (let ((m (make-sparse-keymap)))
-                   (set-keymap-parent m minibuffer-local-map)
-                   (define-key m "\C-n" #'go-translate-minibuffer-switch-next-direction)
-                   (define-key m "\C-p" #'go-translate-minibuffer-switch-prev-direction)
-                   (define-key m "\C-g" #'top-level)
-                   m))
-         (text (read-from-minibuffer prompt text keymap)))
+         (text (read-from-minibuffer prompt text go-translate-default-minibuffer-keymap)))
     (if (zerop (length (string-trim text)))
         (user-error "Text should not be null"))
     (setq direction
@@ -512,7 +524,7 @@ If BACKWARDP is t, then choose prev one."
               (go-translate-guess-the-direction text)))
     (list text (car direction) (cdr direction))))
 
-(defun go-translate-default--generate-url (text from to)
+(defun go-translate-default-generate-url (text from to)
   "Generate the url with TEXT, FROM and TO.
 Return a (url text from to) list."
   (let* ((params `(("client" . "gtx")
@@ -548,7 +560,7 @@ Return a (url text from to) list."
                                  params "&"))))
     (list url text from to)))
 
-(defun go-translate-default--buffer-prepare (req)
+(defun go-translate-default-buffer-prepare (req)
   "Pre-render contents in REQ to result buffer.
 
 REQ is a list with (url text from to) form.
@@ -600,7 +612,7 @@ dividing the rendering into two parts will have a better experience."
       ;; display window
       (display-buffer (current-buffer) go-translate-buffer-window-config))))
 
-(defun go-translate-default--retrieve-async (req render-fun)
+(defun go-translate-default-retrieve-async (req render-fun)
   "Request with url in REQ for the translation, then render with RENDER-FUN.
 This should be asynchronous."
   (let ((buf (current-buffer)))
@@ -614,7 +626,7 @@ This should be asynchronous."
                                  (go-translate-result--to-json content))))
                     (kill-buffer)))))
 
-(defun go-translate-default--buffer-render (req resp)
+(defun go-translate-default-buffer-render (req resp)
   "Render the json RESP obtained through REQ to buffer.
 
 The buffer is the one created in the preparation phase.
@@ -724,7 +736,7 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
       ;; Run hooks if any.
       (run-hook-with-args 'go-translate-after-render-hook req resp)
       ;; At last, switch or just display.
-      (if go-translate-buffer-follow-p
+      (if (or go-translate-buffer-follow-p (get-text-property 0 'follow (cl-second req)))
           (pop-to-buffer (current-buffer) go-translate-buffer-window-config)
         (display-buffer (current-buffer) go-translate-buffer-window-config)))))
 
