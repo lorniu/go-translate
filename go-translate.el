@@ -219,15 +219,18 @@ The `go-translate-token-current' with the format (time . tkk)."
     (if syncp
         (with-temp-buffer
           (with-current-buffer
-              (url-retrieve-synchronously go-translate-base-url)
+              (condition-case err
+                  (url-retrieve-synchronously go-translate-base-url nil nil 3)
+                (error (message "%s" (cdr err))))
             (setq go-translate-token-current
                   (cons (current-time)
                         (go-translate-token--extract-tkk)))))
       (url-retrieve go-translate-base-url
-                    (lambda (_) ; TODO: if error, set nil
-                      (setq go-translate-token-current
-                            (cons (current-time)
-                                  (go-translate-token--extract-tkk)))
+                    (lambda (status)
+                      (unless status
+                        (setq go-translate-token-current
+                              (cons (current-time)
+                                    (go-translate-token--extract-tkk))))
                       (kill-buffer))))))
 
 (defun go-translate-token--extract-tkk ()
@@ -613,14 +616,21 @@ dividing the rendering into two parts will have a better experience."
 This should be asynchronous."
   (let ((buf (current-buffer)))
     (url-retrieve (car req)
-                  (lambda (_)
-                    (goto-char (point-min))
-                    (re-search-forward "\n\n")
-                    (let ((content (buffer-substring-no-properties (point) (point-max))))
-                      (with-current-buffer buf
-                        (funcall render-fun req
-                                 (go-translate-result--to-json content))))
-                    (kill-buffer)))))
+                  (lambda (status)
+                    (if (and status (eq (car status) :error))
+                        (with-current-buffer buf
+                          ;; if errors occur, pass an error string to the render function
+                          (funcall render-fun req (format "Request Error: %s" (cdr status))))
+                      (goto-char (point-min))
+                      (re-search-forward "\n\n")
+                      (let ((content (buffer-substring-no-properties (point) (point-max))))
+                        (with-current-buffer buf
+                          (funcall render-fun req
+                                   ;; catch the error and pass to render function
+                                   (condition-case err
+                                       (go-translate-result--to-json content)
+                                     (error (format "Result Error: %s" err))))))
+                      (kill-buffer))))))
 
 (defun go-translate-default-buffer-render (req resp)
   "Render the json RESP obtained through REQ to buffer.
@@ -633,103 +643,106 @@ Use \\[exchange-point-and-mark] to select the translation result quickly after f
 You can use `go-translate-buffer-post-render-hook' to custom more."
   ;; render the translations
   (with-current-buffer go-translate-buffer-name
-    (setq header-line-format (butlast header-line-format))
-    (let* ((details (go-translate-result--details resp))
-           (definitions (go-translate-result--definitions resp))
-           (suggestion (go-translate-result--suggestion resp))
-           (phonetic (lambda (ph)
-                       (if (and (or definitions definitions) (> (length ph) 0))
-                           (propertize (format " [%s]" ph) 'face '(:inherit font-lock-string-face :slant normal))
-                         "")))
-           (headline (lambda (headline)
-                       (propertize
-                        (format "\n[%s]\n" headline)
-                        'face go-translate-buffer-headline-face)))
-           (singlep (or details definitions))
-           (savepoint))
-      (goto-char (point-max))
+    (setq header-line-format (butlast header-line-format)) ; remove loading...
+    (if (stringp resp) ; an error occurred
+        (progn (goto-char (point-max))
+               (insert "\n\n\n" (propertize resp 'face 'font-lock-warning-face)))
+      (let* ((details (go-translate-result--details resp))
+             (definitions (go-translate-result--definitions resp))
+             (suggestion (go-translate-result--suggestion resp))
+             (phonetic (lambda (ph)
+                         (if (and (or definitions definitions) (> (length ph) 0))
+                             (propertize (format " [%s]" ph) 'face '(:inherit font-lock-string-face :slant normal))
+                           "")))
+             (headline (lambda (headline)
+                         (propertize
+                          (format "\n[%s]\n" headline)
+                          'face go-translate-buffer-headline-face)))
+             (singlep (or details definitions))
+             (savepoint))
+        (goto-char (point-max))
 
-      ;; cache the query direction first
-      (setq go-translate-last-direction
-            (cons (cl-third req)
-                  (cl-fourth req)))
+        ;; cache the query direction first
+        (setq go-translate-last-direction
+              (cons (cl-third req)
+                    (cl-fourth req)))
 
-      ;; phonetic & translate
-      (if singlep
-          (progn
-            (insert (funcall phonetic (go-translate-result--text-phonetic resp)))
-            (insert " ")
-            (push-mark nil 'no-msg)
-            (insert (propertize (go-translate-result--translation resp)
-                                'face '(:weight bold)))
-            (setq savepoint (point))
-            (insert (funcall phonetic (go-translate-result--translation-phonetic resp)))
-            (insert "\n\n"))
-        (facemenu-add-face 'font-lock-doc-face (point-min) (point))
-        (insert "\n\n")
-        (push-mark)
-        (insert (go-translate-result--translation resp))
-        (setq savepoint (point))
-        (insert "\n"))
+        ;; phonetic & translate
+        (if singlep
+            (progn
+              (insert (funcall phonetic (go-translate-result--text-phonetic resp)))
+              (insert " ")
+              (push-mark nil 'no-msg)
+              (insert (propertize (go-translate-result--translation resp)
+                                  'face '(:weight bold)))
+              (setq savepoint (point))
+              (insert (funcall phonetic (go-translate-result--translation-phonetic resp)))
+              (insert "\n\n"))
+          (facemenu-add-face 'font-lock-doc-face (point-min) (point))
+          (insert "\n\n")
+          (push-mark)
+          (insert (go-translate-result--translation resp))
+          (setq savepoint (point))
+          (insert "\n"))
 
-      ;; suggestion
-      (when (> (length suggestion) 0)
-        (insert (funcall headline "Suggestion"))
-        (insert "\n")
-        (insert (propertize "Did you mean:" 'face 'font-lock-warning-face) " ")
-        (insert (propertize suggestion 'face '((t (:slant italic :underline t)))))
-        (insert "\n"))
+        ;; suggestion
+        (when (> (length suggestion) 0)
+          (insert (funcall headline "Suggestion"))
+          (insert "\n")
+          (insert (propertize "Did you mean:" 'face 'font-lock-warning-face) " ")
+          (insert (propertize suggestion 'face '((t (:slant italic :underline t)))))
+          (insert "\n"))
 
-      ;; details
-      (when details
-        (insert (funcall headline "Details"))
-        (cl-loop for item across details
-                 for label = (aref item 0)
-                 unless (string-equal label "")
-                 do (let ((index 0))
-                      (insert (format "\n%s:\n" label))
-                      (cl-loop for trans across (aref item 2)
-                               for content = (format "%s (%s)"
-                                                     (aref trans 0)
-                                                     (mapconcat #'identity (aref trans 1) ", "))
-                               do (insert (format "%2d. %s\n" (cl-incf index) content)))))
-        (insert "\n"))
+        ;; details
+        (when details
+          (insert (funcall headline "Details"))
+          (cl-loop for item across details
+                   for label = (aref item 0)
+                   unless (string-equal label "")
+                   do (let ((index 0))
+                        (insert (format "\n%s:\n" label))
+                        (cl-loop for trans across (aref item 2)
+                                 for content = (format "%s (%s)"
+                                                       (aref trans 0)
+                                                       (mapconcat #'identity (aref trans 1) ", "))
+                                 do (insert (format "%2d. %s\n" (cl-incf index) content)))))
+          (insert "\n"))
 
-      ;; definitions
-      (when definitions
-        (insert (funcall headline "Definitions"))
-        (cl-loop for item across definitions
-                 for label = (aref item 0)
-                 unless (string-equal label "")
-                 do (let ((index 0))
-                      (insert (format "\n%s:\n" label))
-                      (cl-loop for def across (aref item 1)
-                               for content = (concat
-                                              (aref def 0)
-                                              (when (> (length def) 2)
-                                                (propertize
-                                                 (format "\n    %s" (aref def 2))
-                                                 'face 'font-lock-string-face)))
-                               do (insert (format "%2d. " (cl-incf index))
-                                          content "\n"))))
-        (insert "\n"))
+        ;; definitions
+        (when definitions
+          (insert (funcall headline "Definitions"))
+          (cl-loop for item across definitions
+                   for label = (aref item 0)
+                   unless (string-equal label "")
+                   do (let ((index 0))
+                        (insert (format "\n%s:\n" label))
+                        (cl-loop for def across (aref item 1)
+                                 for content = (concat
+                                                (aref def 0)
+                                                (when (> (length def) 2)
+                                                  (propertize
+                                                   (format "\n    %s" (aref def 2))
+                                                   'face 'font-lock-string-face)))
+                                 do (insert (format "%2d. " (cl-incf index))
+                                            content "\n"))))
+          (insert "\n"))
 
-      ;; After the render ended, first set the display
-      ;; style of the buffer.
-      (setq-local cursor-type 'hbar)
-      (setq-local cursor-in-non-selected-windows nil)
-      (set-buffer-modified-p nil)
-      (read-only-mode +1)
-      (unless singlep (visual-line-mode +1))
-      ;; Jump to the end of the translated text. Combined with the previous `push-mark',
-      ;; you can quickly select the translated text through `C-x C-x'.
-      (set-window-point (get-buffer-window) savepoint)
-      ;; Run hooks if any.
-      (run-hook-with-args 'go-translate-after-render-hook req resp)
-      ;; At last, switch or just display.
-      (if (or go-translate-buffer-follow-p (get-text-property 0 'follow (cl-second req)))
-          (pop-to-buffer (current-buffer) go-translate-buffer-window-config)
-        (display-buffer (current-buffer) go-translate-buffer-window-config)))))
+        ;; After the render ended, first set the display
+        ;; style of the buffer.
+        (setq-local cursor-type 'hbar)
+        (setq-local cursor-in-non-selected-windows nil)
+        (set-buffer-modified-p nil)
+        (read-only-mode +1)
+        (unless singlep (visual-line-mode +1))
+        ;; Jump to the end of the translated text. Combined with the previous `push-mark',
+        ;; you can quickly select the translated text through `C-x C-x'.
+        (set-window-point (get-buffer-window) savepoint)
+        ;; Run hooks if any.
+        (run-hook-with-args 'go-translate-after-render-hook req resp)
+        ;; At last, switch or just display.
+        (if (or go-translate-buffer-follow-p (get-text-property 0 'follow (cl-second req)))
+            (pop-to-buffer (current-buffer) go-translate-buffer-window-config)
+          (display-buffer (current-buffer) go-translate-buffer-window-config))))))
 
 
 ;;; Entrance
