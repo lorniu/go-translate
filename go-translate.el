@@ -243,14 +243,13 @@ The `go-translate-token-current' with the format (time . tkk)."
   (let ((url-user-agent go-translate-user-agent)
         (url-request-extra-headers '(("Connection" . "close"))))
     (if syncp
-        (with-temp-buffer
-          (with-current-buffer
-              (condition-case err
-                  (url-retrieve-synchronously go-translate-base-url nil nil 3)
-                (error (message "%s" (cdr err))))
-            (setq go-translate-token-current
-                  (cons (current-time)
-                        (go-translate-token--extract-tkk)))))
+        (with-current-buffer
+            (url-retrieve-synchronously go-translate-base-url)
+          (prog1
+              (setq go-translate-token-current
+                    (cons (current-time)
+                          (go-translate-token--extract-tkk)))
+            (kill-buffer)))
       (url-retrieve go-translate-base-url
                     (lambda (status)
                       (unless status
@@ -276,13 +275,16 @@ refresh the `go-translate-token-current' in background intervally."
   ;; check and run the timer
   (when (and go-translate-token-backend-refresh-p (null go-translate-token--timer))
     (setq go-translate-token--timer
-          (run-at-time 0 go-translate-token-expired-time #'go-translate-token--fetch-tkk)))
+          (run-at-time go-translate-token-expired-time
+                       go-translate-token-expired-time
+                       #'go-translate-token--fetch-tkk)))
   ;; get from cache if nessary
   (if (and go-translate-token-current
            (< (float-time (time-subtract (current-time)
                                          (car go-translate-token-current)))
               go-translate-token-expired-time))
       (cdr go-translate-token-current)
+    ;; the first time, it will fetch synchronously
     (cdr (go-translate-token--fetch-tkk t))))
 
 (defun go-translate-get-token (text)
@@ -391,10 +393,15 @@ Some functions, such as switching translation languages, are based on them."
 If set to nil, will directly circle the available direcitons instead of guessing."
   :type 'boolean)
 
-(defcustom go-translate-buffer-window-config '((display-buffer-reuse-window display-buffer-in-side-window)
-                                               (side . right))
+(defcustom go-translate-buffer-window-config nil
   "Window configuration used by the result buffer window.
-Default is on right side."
+
+For example, set to:
+
+ '((display-buffer-reuse-window display-buffer-in-side-window)
+   (side . right))
+
+will force opening in right side window."
   :type 'list)
 
 (defvar go-translate-native-language-regexp-alist
@@ -407,6 +414,9 @@ The form is (lang . regexp).
 
 This is based that some texts can easily be determine with regexp,
 for example, using the \\cx syntax. Maybe work for some languages.")
+
+(defvar go-translate-split-width-threshold 80
+  "Threshold width for window horizontal split.")
 
 (defvar go-translate-last-direction nil)
 
@@ -639,7 +649,8 @@ dividing the rendering into two parts will have a better experience."
       (local-set-key "q" 'kill-buffer-and-window)
 
       ;; display window
-      (display-buffer (current-buffer) go-translate-buffer-window-config))))
+      (let ((split-width-threshold go-translate-split-width-threshold))
+        (display-buffer (current-buffer) go-translate-buffer-window-config)))))
 
 (defun go-translate-default-retrieve-async (req render-fun)
   "Request with url in REQ for the translation, then render with RENDER-FUN.
@@ -772,9 +783,10 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
         ;; Run hooks if any.
         (run-hook-with-args 'go-translate-after-render-hook req resp)
         ;; At last, switch or just display.
-        (if (or go-translate-buffer-follow-p (get-text-property 0 'follow (cl-second req)))
-            (pop-to-buffer (current-buffer) go-translate-buffer-window-config)
-          (display-buffer (current-buffer) go-translate-buffer-window-config))))))
+        (if (or go-translate-buffer-follow-p
+                (get-text-property 0 'follow (cl-second req)))
+            (pop-to-buffer (current-buffer))
+          (display-buffer (current-buffer)))))))
 
 
 ;;; Entrance
@@ -799,10 +811,9 @@ RENDER-FUN is used to specify the way to render after request."
     (funcall req-fun req render-fun)))
 
 
-;;; Pop-up with Posframe
+;;; Extended Commands
 
 (require 'posframe nil t)
-
 (declare-function posframe-show "ext:posframe.el" t t)
 (declare-function posframe-poshandler-point-bottom-left-corner-upward "ext:posframe.el" t t)
 
@@ -871,7 +882,18 @@ Here we use the let-binding style."
          (lambda (_req resp)
            (deactivate-mark)
            (kill-new (go-translate-result--translation resp))
-           (message "Translate result already in the ring."))))
+           (message "Translate result already in the kill ring."))))
+    (call-interactively #'go-translate)))
+
+;;;###autoload
+(defun go-translate-echo-area ()
+  "Output the translate result to the echo-area."
+  (interactive)
+  (let ((go-translate-prepare-function #'ignore)
+        (go-translate-render-function
+         (lambda (_req resp)
+           (deactivate-mark)
+           (message "%s" (go-translate-result--translation resp)))))
     (call-interactively #'go-translate)))
 
 
