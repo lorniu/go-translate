@@ -2,7 +2,7 @@
 
 Improved Google Translate interface with asynchronous request and better user experience.
 
-[查看中文版](README-zh.md)
+[查看中文版文档](README-zh.md)
 
 I have used translation frequently in recent days.
 

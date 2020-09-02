@@ -14,7 +14,11 @@
 - 配置逻辑复杂，想扩展功能，却发现源代码冗余严重（这是一个历史悠久的项目，太长时间疏于维护）
 
 Google 翻译的实力有目共睹，但是 Google Translate 插件的表现却不够好。
-因此，干脆就趁周末时间自己动手，丰衣足食，写了这个插件。
+因此，干脆就趁周末时间自己动手，丰衣足食，写了这个:
+
+<p align="center">
+  <img src="screenshoot/showcase.svg" width="90%" alt="谷歌翻译插件">
+</p>
 
 这个插件借鉴了 [Google Translate](https://github.com/atykhonov/google-translate) 项目的某些想法和代码，其主要的特点有:
 - 完全使用异步 (asynchronous) 的方式进行请求，不会产生任何阻塞问题，使用非常流畅
