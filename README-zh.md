@@ -51,22 +51,22 @@ M-x package-install go-translate RET
 
 然后设置翻译语言。如果仅在中英文之间进行翻译，那么只需配置:
 ```elisp
-(setq go-translate-native-language "zh_CN")
+(setq go-translate-local-language "zh-CN")
 ```
 
 如果使用的是其他语言，比如中文和法文，那么配置如下:
 ```elisp
-(setq go-translate-native-language "zh_CN")
+(setq go-translate-local-language "zh-CN")
 (setq go-translate-target-language "fr")  ; 你想要翻译成的语言，fr 代表法文
 ```
 
 [**可选**] 除了上述配置的两种语言，如果平日还可能在其他语言之间进行翻译，那么将它们添加到 `go-translate-extra-directions` 中:
 ```elisp
-(add-to-list go-translate-extra-directions (cons "zh_CN" "ru"))  ; 从中文到俄文之间的翻译
+(add-to-list go-translate-extra-directions (cons "zh-CN" "ru"))  ; 从中文到俄文之间的翻译
 (add-to-list go-translate-extra-directions (cons "en" "fr"))     ; 从英文到法文之间的翻译
 
 ;; 或简单设置为:
-(setq go-translate-extra-directions '(("zh_CN" . "ru") ("en" . "fr")))
+(setq go-translate-extra-directions '(("zh-CN" . "ru") ("en" . "fr")))
 ```
 
 其他的配置参数都是可选的，可在 `custom-group` - `go-translate` 中查看。比如:
@@ -102,7 +102,8 @@ M-x package-install go-translate RET
 其他的命令:
 - `go-translate-popup` 是在光标处通过弹出 `posframe` 的方式对内容进行简短翻译。其实现简单，但比较实用。
 - `go-translate-popup-current` 基于上面的命令，它不会打开 `minibuffer`，而是直接翻译光标下的选中文本或单词。
-- `go-translate-kill-ring-save` 不会弹出任何界面，而是直接将翻译结果保存到 `kill-ring` 中，你随后可以通过 `C-y` 将其插入到任何地方，或者切换到聊天软件 `C-v` 编辑、发送。这对一些进行翻译工作的人也许比较有用。
+- `go-translate-kill-ring-save` 不会弹出任何界面，而是直接将翻译结果保存到 `kill-ring` 中，你随后可以通过 `C-y` 将其插入到任何地方，或者切换到其他软件如 QQ 然后 `C-v` 编辑发送。这对一些进行翻译工作的人也许比较有用。
+- `go-translate-change-local/target` 通过这个命令，可以临时更改 local/target 语言的设置
 
 当然，基于 `go-translate` 对功能进行扩展很简单，你可以轻松按照自己的意图创造适合自己的翻译命令。
 

@@ -34,9 +34,9 @@ Or manually download `go-translate.el` then put into `/some-path`, then add this
 
 ## Configuration
 
-First, config the native language and your default target language:
+First, config the local language and your default target language:
 ```elisp
-(setq go-translate-native-language "en")
+(setq go-translate-local-language "en")
 (setq go-translate-target-language "fr")
 ```
 

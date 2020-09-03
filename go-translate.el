@@ -28,15 +28,15 @@
 ;;
 ;; Customizations:
 ;;
-;; The most important variables are `go-translate-native-language' and
-;; `go-translate-target-language', represents your native language and
+;; The most important variables are `go-translate-local-language' and
+;; `go-translate-target-language', represents your local language and
 ;; default foreign language. And the `go-translate-extra-directions' is
 ;; a alist to hold the daily used translation directions except the
-;; native/target ones. The following is just a simple example:
+;; local/target ones. The following is just a simple example:
 ;;
-;; (setq go-translate-native-language "zh_CN")
+;; (setq go-translate-local-language "zh-CN")
 ;; (setq go-translate-target-language "en")
-;; (setq go-translate-extra-directions '(("zh_CN" . "jp") ("zh_CN" . "fr")))
+;; (setq go-translate-extra-directions '(("zh-CN" . "jp") ("zh-CN" . "fr")))
 ;;
 ;; Change the variable values and key bindings to your own.
 ;;
@@ -244,7 +244,7 @@ The `go-translate-token-current' with the format (time . tkk)."
         (url-request-extra-headers '(("Connection" . "close"))))
     (if syncp
         (with-current-buffer
-            (url-retrieve-synchronously go-translate-base-url)
+            (url-retrieve-synchronously go-translate-base-url nil nil 3)
           (prog1
               (setq go-translate-token-current
                     (cons (current-time)
@@ -359,8 +359,8 @@ It will use the tkk from Google translate page."
 
 ;;; Default functions
 
-(defcustom go-translate-native-language "auto"
-  "Your native language, used as the default source language."
+(defcustom go-translate-local-language "auto"
+  "Your local language, used as the default source language."
   :type 'string)
 
 (defcustom go-translate-target-language "en"
@@ -373,7 +373,7 @@ It will use the tkk from Google translate page."
 '((\"zh_CN\" . \"ja\")
   (\"zh_CN\" . \"fr\"))
 
-Together with `go-translate-native-language' and `go-translate-target-language',
+Together with `go-translate-local-language' and `go-translate-target-language',
 they combine into a list to represent all translation directions for daily use.
 
 Some functions, such as switching translation languages, are based on them."
@@ -404,11 +404,121 @@ For example, set to:
 will force opening in right side window."
   :type 'list)
 
-(defvar go-translate-native-language-regexp-alist
+(defvar go-translate-available-languages
+  '(("Afrikaans"          . "af")
+    ("Albanian"           . "sq")
+    ("Amharic"            . "am")
+    ("Arabic"             . "ar")
+    ("Armenian"           . "hy")
+    ("Azerbaijani"        . "az")
+    ("Basque"             . "eu")
+    ("Belarusian"         . "be")
+    ("Bengali"            . "bn")
+    ("Bosnian"            . "bs")
+    ("Bulgarian"          . "bg")
+    ("Catalan"            . "ca")
+    ("Cebuano"            . "ceb")
+    ("Chichewa"           . "ny")
+    ("Chinese"            . "zh-CN")
+    ("Corsican"           . "co")
+    ("Croatian"           . "hr")
+    ("Czech"              . "cs")
+    ("Danish"             . "da")
+    ("Dutch"              . "nl")
+    ("English"            . "en")
+    ("Esperanto"          . "eo")
+    ("Estonian"           . "et")
+    ("Filipino"           . "tl")
+    ("Finnish"            . "fi")
+    ("French"             . "fr")
+    ("Frisian"            . "fy")
+    ("Galician"           . "gl")
+    ("Georgian"           . "ka")
+    ("German"             . "de")
+    ("Greek"              . "el")
+    ("Gujarati"           . "gu")
+    ("Haitian Creole"     . "ht")
+    ("Hausa"              . "ha")
+    ("Hawaiian"           . "haw")
+    ("Hebrew"             . "iw")
+    ("Hindi"              . "hi")
+    ("Hmong"              . "hmn")
+    ("Hungarian"          . "hu")
+    ("Icelandic"          . "is")
+    ("Igbo"               . "ig")
+    ("Indonesian"         . "id")
+    ("Irish"              . "ga")
+    ("Italian"            . "it")
+    ("Japanese"           . "ja")
+    ("Javanese"           . "jw")
+    ("Kannada"            . "kn")
+    ("Kazakh"             . "kk")
+    ("Khmer"              . "km")
+    ("Korean"             . "ko")
+    ("Kurdish (Kurmanji)" . "ku")
+    ("Kyrgyz"             . "ky")
+    ("Lao"                . "lo")
+    ("Latin"              . "la")
+    ("Latvian"            . "lv")
+    ("Lithuanian"         . "lt")
+    ("Luxembourgish"      . "lb")
+    ("Macedonian"         . "mk")
+    ("Malagasy"           . "mg")
+    ("Malay"              . "ms")
+    ("Malayalam"          . "ml")
+    ("Maltese"            . "mt")
+    ("Maori"              . "mi")
+    ("Marathi"            . "mr")
+    ("Mongolian"          . "mn")
+    ("Myanmar (Burmese)"  . "my")
+    ("Nepali"             . "ne")
+    ("Norwegian"          . "no")
+    ("Pashto"             . "ps")
+    ("Persian"            . "fa")
+    ("Polish"             . "pl")
+    ("Portuguese"         . "pt")
+    ("Punjabi"            . "pa")
+    ("Romanian"           . "ro")
+    ("Russian"            . "ru")
+    ("Samoan"             . "sm")
+    ("Scots Gaelic"       . "gd")
+    ("Serbian"            . "sr")
+    ("Sesotho"            . "st")
+    ("Shona"              . "sn")
+    ("Sindhi"             . "sd")
+    ("Sinhala"            . "si")
+    ("Slovak"             . "sk")
+    ("Slovenian"          . "sl")
+    ("Somali"             . "so")
+    ("Spanish"            . "es")
+    ("Sundanese"          . "su")
+    ("Swahili"            . "sw")
+    ("Swedish"            . "sv")
+    ("Tajik"              . "tg")
+    ("Tamil"              . "ta")
+    ("Telugu"             . "te")
+    ("Thai"               . "th")
+    ("Turkish"            . "tr")
+    ("Ukrainian"          . "uk")
+    ("Urdu"               . "ur")
+    ("Uzbek"              . "uz")
+    ("Vietnamese"         . "vi")
+    ("Welsh"              . "cy")
+    ("Xhosa"              . "xh")
+    ("Yiddish"            . "yi")
+    ("Yoruba"             . "yo")
+    ("Zulu"               . "zu"))
+  "Alist of the languages supported by Google Translate.
+
+Each element is a cons-cell of the form (NAME . CODE), where NAME
+is a human-readable language name and CODE is its code used as a
+query parameter in HTTP requests.")
+
+(defvar go-translate-local-language-regexp-alist
   '(("zh_CN" . "\\cc")
     ("zh"    . "\\cc")
     ("ja"    . "\\cj"))
-  "Alist used to judge if input is your native language text.
+  "Alist used to judge if input is your local language text.
 
 The form is (lang . regexp).
 
@@ -428,19 +538,36 @@ for example, using the \\cx syntax. Maybe work for some languages.")
 
 ;;;
 
-(defun go-translate-check-text-native (text)
-  "Check if TEXT if your native language text.
+(defun go-translate-choose-language (&optional prompt def)
+  "Choose a language from `go-translate-available-languages'.
+PROMPT and DEF are just as `completing-read'."
+  (let* ((code (lambda (s)
+                 (concat " (" (cdr (assoc s go-translate-available-languages)) ")")))
+         (name (completing-read
+                (or prompt "Language: ")
+                (lambda (string pred action)
+                  (if (eq action 'metadata)
+                      `(metadata (annotation-function . ,code))
+                    (complete-with-action
+                     action go-translate-available-languages string pred)))
+                nil nil nil nil
+                (when def
+                  (car (rassoc def go-translate-available-languages))))))
+    (cdr (assoc name go-translate-available-languages))))
+
+(defun go-translate-text-local-p (text)
+  "Check if TEXT if your local language text.
 1 for yes, 0 for no, -1 for unknown."
-  (let ((pair (assoc go-translate-native-language
-                     go-translate-native-language-regexp-alist)))
+  (let ((pair (assoc go-translate-local-language
+                     go-translate-local-language-regexp-alist)))
     (if pair
         (if (string-match-p (cdr pair) text) 1 0)
       -1)))
 
 (defun go-translate-available-directions ()
   "List of all available translation directions."
-  (append (list (cons go-translate-target-language go-translate-native-language)
-                (cons go-translate-native-language go-translate-target-language))
+  (append (list (cons go-translate-target-language go-translate-local-language)
+                (cons go-translate-local-language go-translate-target-language))
           go-translate-extra-directions))
 
 (defun go-translate-next-available-direction (direction &optional backwardp)
@@ -463,36 +590,36 @@ If the BACKWARDP is t, then find the previous one."
 (defun go-translate-guess-the-direction (text)
   "Automatically judge the translation languages based on the TEXT content.
 
-If the text is your native language and hit the last direction, use
+If the text is your local language and hit the last direction, use
 the last direction. Or choose from the available directions.
 
 Otherwise, choose the most suitable one from the list or directly use
 the last direction."
-  (let ((check (go-translate-check-text-native text))
+  (let ((check (go-translate-text-local-p text))
         (directions (go-translate-available-directions)))
     (cond ((and go-translate-last-direction
                 (or (= check -1)
                     (and (= check 1)
                          (string-equal
                           (car go-translate-last-direction)
-                          go-translate-native-language))
+                          go-translate-local-language))
                     (and (= check 0)
                          (not (string-equal
                                (car go-translate-last-direction)
-                               go-translate-native-language)))))
+                               go-translate-local-language)))))
            go-translate-last-direction)
           ((= check 1)
            (cl-loop for direction in directions
                     if (string-equal (car direction)
-                                     go-translate-native-language)
+                                     go-translate-glocal-language)
                     return direction))
           ((= check 0)
            (cl-loop for direction in directions
                     unless (string-equal (car direction)
-                                         go-translate-native-language)
+                                         go-translate-local-language)
                     return direction))
           (t
-           (cons go-translate-native-language go-translate-target-language)))))
+           (cons go-translate-local-language go-translate-target-language)))))
 
 (defun go-translate-minibuffer-switch-next-direction (&optional backwardp)
   "Switch to next direction in minibuffer.
@@ -539,13 +666,13 @@ If BACKWARDP is t, then choose prev one."
   (unless direction
     (if current-prefix-arg
         (setq direction
-              (cons (read-from-minibuffer "Source: ")
-                    (read-from-minibuffer "Target: ")))
+              (cons (go-translate-choose-language "From: " go-translate-target-language)
+                    (go-translate-choose-language "To: " go-translate-local-language)))
       (unless (and go-translate-auto-guess-direction
-                   (assoc go-translate-native-language
-                          go-translate-native-language-regexp-alist))
+                   (assoc go-translate-local-language
+                          go-translate-local-language-regexp-alist))
         (setq direction (or go-translate-last-direction
-                            (cons go-translate-native-language
+                            (cons go-translate-local-language
                                   go-translate-target-language))))))
   (unless text
     (setq text (funcall go-translate-init-text-function)))
@@ -810,6 +937,18 @@ RENDER-FUN is used to specify the way to render after request."
     (funcall pre-fun req)
     (funcall req-fun req render-fun)))
 
+;;;###autoload
+(defun go-translate-change-local/target ()
+  "Config the default local and target language interactively."
+  (interactive)
+  (setq go-translate-local-language
+        (go-translate-choose-language
+         "Change local to: " go-translate-local-language))
+  (setq go-translate-target-language
+        (go-translate-choose-language
+         "Change target to: " go-translate-target-language))
+  (message "[local] %s [target] %s" go-translate-local-language go-translate-target-language))
+
 
 ;;; Extended Commands
 
@@ -855,20 +994,20 @@ with current `go-translate'. Here we use the keyword style."
 ;;;###autoload
 (defun go-translate-popup-current ()
   "Translate the content under cursor: selection or word.
-Auto judge the direction, if failed then take the default native/target
+Auto judge the direction, if failed then take the default local/target
 as the direction.
 
 This will not prompt anything."
   (interactive)
   (let* ((text (or (funcall go-translate-init-text-function)
                    (user-error "No text found under cursor")))
-         (nativep (go-translate-check-text-native text))
-         (from (if (= nativep 1)
-                   go-translate-native-language
+         (localp (go-translate-text-local-p text))
+         (from (if (= localp 1)
+                   go-translate-local-language
                  go-translate-target-language))
-         (to (if (= nativep 1)
+         (to (if (= localp 1)
                  go-translate-target-language
-               go-translate-native-language)))
+               go-translate-local-language)))
     (go-translate-popup text from to)))
 
 ;;;###autoload
