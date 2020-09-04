@@ -61,30 +61,25 @@ You can adjust this url according to your country and region. eg:
 URL `https://translate.google.cc'."
   :type 'string)
 
-(defcustom go-translate-query-path "/translate_a/single"
-  "The query path part of google translate url."
-  :type 'string)
-
 (defcustom go-translate-user-agent "Emacs"
   "User agent used in the translation request."
   :type 'string)
 
-(defcustom go-translate-init-text-function #'go-translate-default-get-current-text
+(defcustom go-translate-text-function #'go-translate-default-current-text
   "Function to generate the init translate text.
-Default use the current selection or current word on cursor.
+Default use the current selection or word on cursor.
 
- (let ((go-translate-init-text-function
-        (lambda () (buffer-string))))
+ (let ((go-translate-text-function (lambda () (buffer-string))))
    (call-interactively #'go-translate))
 
 will read the whole buffer's content to translate."
   :type 'function)
 
-(defcustom go-translate-input-function #'go-translate-default-prompt-input
+(defcustom go-translate-inputs-function #'go-translate-default-prompt-inputs
   "Function to take the translation text, sl and tl.
 
- (let ((go-translate-input-function
-         (lambda () (list (or (funcall go-translate-init-text-function)
+ (let ((go-translate-inputs-function
+         (lambda () (list (or (funcall go-translate-text-function)
                               (user-error \"No suitalbe text found\"))
                           \"en\" \"fr\"))))
    (call-interactively #'go-translate))
@@ -119,6 +114,14 @@ Take the REQ and RESP as parameters.
 will send the translation with your `send-it` function."
   :type 'function)
 
+(defvar go-translate-path "/translate_a/single"
+  "The query path of google translate url.")
+
+(defvar go-translate-tts-path "/translate_tts"
+  "Google Translate tts query path.")
+
+(defvar go-translate-debug-p nil)
+
 
 ;;; Token Key
 
@@ -139,9 +142,9 @@ This timer will do the job asynchronously in the background without
 any impact on performance."
   :type 'boolean)
 
-(defvar go-translate-token-current nil)
+(defvar go-translate-token-current nil "Current token.")
 
-(defvar go-translate-token--timer nil)
+(defvar go-translate-token--timer nil "Timer used to refresh token.")
 
 ;; The tk algorithm from `google-translate' project.
 ;; https://github.com/atykhonov/google-translate/blob/master/google-translate-tk.el
@@ -516,6 +519,7 @@ query parameter in HTTP requests.")
 
 (defvar go-translate-local-language-regexp-alist
   '(("zh_CN" . "\\cc")
+    ("zh-CN" . "\\cc")
     ("zh"    . "\\cc")
     ("ja"    . "\\cj"))
   "Alist used to judge if input is your local language text.
@@ -536,7 +540,7 @@ for example, using the \\cx syntax. Maybe work for some languages.")
   '(:inherit font-lock-function-name-face :weight bold)
   "Propertize the headline in buffer rendering.")
 
-;;;
+;; Helpers
 
 (defun go-translate-choose-language (&optional prompt def)
   "Choose a language from `go-translate-available-languages'.
@@ -611,7 +615,7 @@ the last direction."
           ((= check 1)
            (cl-loop for direction in directions
                     if (string-equal (car direction)
-                                     go-translate-glocal-language)
+                                     go-translate-local-language)
                     return direction))
           ((= check 0)
            (cl-loop for direction in directions
@@ -628,7 +632,7 @@ If BACKWARDP is t, then choose prev one."
   (let ((d (go-translate-next-available-direction
             go-translate--current-direction backwardp)))
     (setq go-translate--current-direction d)
-    (go-translate-default-prompt-input (minibuffer-contents) d)
+    (go-translate-default-prompt-inputs (minibuffer-contents) d)
     (exit-minibuffer)))
 
 (defun go-translate-minibuffer-switch-prev-direction ()
@@ -636,13 +640,7 @@ If BACKWARDP is t, then choose prev one."
   (interactive)
   (go-translate-minibuffer-switch-next-direction t))
 
-;;;
-
-(defun go-translate-default-get-current-text ()
-  "Get current text under cursor, selection or word at point."
-  (if (use-region-p)
-      (string-trim (buffer-substring (region-beginning) (region-end)))
-    (current-word t t)))
+;; Functions
 
 (defvar go-translate-default-minibuffer-keymap
   (let ((map (make-sparse-keymap)))
@@ -661,7 +659,13 @@ If BACKWARDP is t, then choose prev one."
     map)
   "Minibuffer keymap used when prompt user input.")
 
-(defun go-translate-default-prompt-input (&optional text direction)
+(defun go-translate-default-current-text ()
+  "Get current text under cursor, selection or word."
+  (if (use-region-p)
+      (string-trim (buffer-substring (region-beginning) (region-end)))
+    (current-word t t)))
+
+(defun go-translate-default-prompt-inputs (&optional text direction)
   "Prompt for the user input, should return a (TEXT DIRECTION) list."
   (unless direction
     (if current-prefix-arg
@@ -675,7 +679,7 @@ If BACKWARDP is t, then choose prev one."
                             (cons go-translate-local-language
                                   go-translate-target-language))))))
   (unless text
-    (setq text (funcall go-translate-init-text-function)))
+    (setq text (funcall go-translate-text-function)))
   (setq go-translate--current-direction direction)
   (let* ((minibuffer-allow-text-properties t)
          (prompt (concat (if direction
@@ -718,7 +722,7 @@ Return a (url text from to) list."
                    ("tk"     . ,(go-translate-get-token text))))
          (url (format "%s%s?%s"
                       go-translate-base-url
-                      go-translate-query-path
+                      go-translate-path
                       (mapconcat (lambda (p)
                                    (format "%s=%s"
                                            (url-hexify-string (car p))
@@ -761,6 +765,7 @@ dividing the rendering into two parts will have a better experience."
       ;; x for switch sl and tl.
       ;; M-n and M-p to re-query with next/prev direction
       ;; g for re-query/refresh
+      ;; s to speak the current selection or word
       (local-set-key (kbd "M-n")
                      (lambda ()
                        (interactive)
@@ -773,7 +778,8 @@ dividing the rendering into two parts will have a better experience."
                          (go-translate text (car prev) (cdr prev)))))
       (local-set-key "g" (lambda () (interactive) (go-translate text from to)))
       (local-set-key "x" (lambda () (interactive) (go-translate text to from)))
-      (local-set-key "q" 'kill-buffer-and-window)
+      (local-set-key "y" #'go-translate-tts-play-current)
+      (local-set-key "q" #'kill-buffer-and-window)
 
       ;; display window
       (let ((split-width-threshold go-translate-split-width-threshold))
@@ -915,6 +921,108 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
             (pop-to-buffer (current-buffer))
           (display-buffer (current-buffer)))))))
 
+;; TTS (Text To Speech)
+
+(defcustom go-translate-tts-speaker (executable-find "mplayer")
+  "The program to use to speak the translation.
+
+On Windows, if it is not found, will fallback to use `powershell`
+to do the job. Although it is not perfect, it seems to work."
+  :type 'string)
+
+(defcustom go-translate-tts-text-spliter 'go-translate-tts-split-text
+  "Function to used to split TEXT to suitable length for TTS url.
+Should return the split result as a list."
+  :type 'string)
+
+(defun go-translate-tts-split-text (text)
+  "Split TEXT by maxlen at applicable point for translating.
+Code from `google-translate', maybe improve it someday."
+  (let (result (maxlen 200))
+    (if (or (null maxlen) (<= maxlen 0))
+	    (push text result)
+      ;; split long text?
+      (with-temp-buffer
+	    (save-excursion (insert text))
+	    ;; strategy to split at applicable point
+	    ;; 1) fill-region remaining text by maxlen
+	    ;; 2) find end of sentence, end of punctuation, word boundary
+	    ;; 3) consume from remaining text between start and (2)
+	    ;; 4) repeat
+	    (let ((fill-column (* maxlen 3))
+	          (sentence-end-double-space nil)
+	          (pos (point-min)))
+	      (while (< pos (point-max))
+	        (save-restriction
+	          (narrow-to-region pos (point-max))
+	          (fill-region pos (point-max))
+	          (let ((limit (+ pos maxlen)))
+		        (if (>= limit (point-max))
+		            (setq limit (point-max))
+		          (goto-char limit)
+		          ;; try to split at end of sentence
+		          (if (> (backward-sentence) pos)
+		              (setq limit (point))
+		            ;; try to split at end of punctuation
+		            (goto-char limit)
+		            (if (re-search-backward "[,、]" pos t)
+			            (setq limit (1+ (point))) ; include punctuation
+		              (goto-char limit)
+		              ;; try to split at word boundary
+		              (forward-word-strictly -1)
+		              (when (> (point) pos)
+			            (setq limit (point))))))
+		        (push (buffer-substring-no-properties pos limit) result)
+		        (goto-char limit)
+		        (setq pos limit)))))))
+    (reverse result)))
+
+(defun go-translate-tts-generate-urls (text language)
+  "Generate the tts urls for TEXT to LANGUAGE."
+  (cl-loop with texts = (funcall go-translate-tts-text-spliter text)
+           for total = (length texts)
+           for index from 0
+           for piece in texts
+           collect
+           (let ((params `(("ie"      . "UTF-8")
+                           ("client"  . "gtx")
+                           ("prev"    . "input")
+                           ("q"       . ,text)
+                           ("tl"      . ,language)
+                           ("total"   . ,(number-to-string total))
+                           ("idx"     . ,(number-to-string index))
+                           ("textlen" . ,(number-to-string (length piece)))
+                           ("tk"      . ,(go-translate-get-token piece)))))
+             (format "%s%s?%s"
+                     go-translate-base-url
+                     go-translate-tts-path
+                     (mapconcat (lambda (p)
+                                  (format "%s=%s"
+                                          (url-hexify-string (car p))
+                                          (url-hexify-string (cdr p))))
+                                params "&")))))
+
+(defun go-translate-tts-play-current (&optional language)
+  "Speak the current selection or word at point to LANGUAGE.
+
+If the `go-translate-tts-speaker' is found, then use it for tts.
+Otherwise, on windows try to use `powershell` to do the job, others throw error."
+  (interactive)
+  (let ((text (go-translate-default-current-text)))
+    (unless text (user-error "Nothing found at point"))
+    (if go-translate-tts-speaker
+        (let ((urls (go-translate-tts-generate-urls text (or language "auto"))))
+          (when go-translate-debug-p
+            (cl-loop for u in urls do (message "> %s" u)))
+          (apply #'call-process go-translate-tts-speaker nil nil nil urls))
+      (if (executable-find "powershell")
+          (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
+            (shell-command (format "powershell -Command \"& {%s}\""
+                                   (encode-coding-string
+                                    (replace-regexp-in-string "\n" " " cmd)
+                                    (keyboard-coding-system)))))
+        (user-error "Program mplayer/powershell or others is need for tts")))))
+
 
 ;;; Entrance
 
@@ -932,13 +1040,13 @@ URL-FUN is used to specify the way to generate request url.
 PRE-FUN is used to specify the way to pre-render.
 REQ-FUN is used to specify the retrieving method.
 RENDER-FUN is used to specify the way to render after request."
-  (interactive `,@(funcall go-translate-input-function))
+  (interactive `,@(funcall go-translate-inputs-function))
   (let ((req (funcall url-fun text from to)))
     (funcall pre-fun req)
     (funcall req-fun req render-fun)))
 
 ;;;###autoload
-(defun go-translate-change-local/target ()
+(defun go-translate-change-local-and-target-language ()
   "Config the default local and target language interactively."
   (interactive)
   (setq go-translate-local-language
@@ -950,7 +1058,7 @@ RENDER-FUN is used to specify the way to render after request."
   (message "[local] %s [target] %s" go-translate-local-language go-translate-target-language))
 
 
-;;; Extended Commands
+;;; Extended Commands (examples)
 
 (require 'posframe nil t)
 (declare-function posframe-show "ext:posframe.el" t t)
@@ -967,29 +1075,28 @@ RENDER-FUN is used to specify the way to render after request."
 (defun go-translate-popup (text from to)
   "Show the short translation of TEXT from FROM to TO quickly.
 
-It will show in posframe and dispear in 20 seconds, and can be
+It will show in `posframe' and dispear in 20 seconds, and can be
 broken by any user action.
+
+You should make sure `posframe' is in your `load-path' to use this.
 
 This example shows that it's very simple to extend functions
 with current `go-translate'. Here we use the keyword style."
-  (interactive `,@(funcall go-translate-input-function))
-  (go-translate text from to
-                :pre-fun #'ignore
-                :render-fun
-                (lambda (_req resp)
-                  (deactivate-mark)
-                  (posframe-show
-                   go-translate-posframe-buffer
-                   :string (go-translate-result--translation resp)
-                   :position (point)
-                   :timeout 20
-                   :internal-border-width 10
-                   :foreground-color "#ffffff"
-                   :background-color "#000000"
-                   :x-pixel-offset -1
-                   :y-pixel-offset -1
-                   :poshandler #'posframe-poshandler-point-bottom-left-corner-upward)
-                  (add-hook 'post-command-hook #'go-translate-posframe-clear))))
+  (interactive `,@(funcall go-translate-inputs-function))
+  (let ((fn (lambda (_req resp)
+              (deactivate-mark)
+              (posframe-show go-translate-posframe-buffer
+                             :string (go-translate-result--translation resp)
+                             :position (point)
+                             :timeout 20
+                             :internal-border-width 10
+                             :foreground-color "#ffffff"
+                             :background-color "#000000"
+                             :x-pixel-offset -1
+                             :y-pixel-offset -1
+                             :poshandler #'posframe-poshandler-point-bottom-left-corner-upward)
+              (add-hook 'post-command-hook #'go-translate-posframe-clear))))
+    (go-translate text from to :pre-fun #'ignore :render-fun fn)))
 
 ;;;###autoload
 (defun go-translate-popup-current ()
@@ -999,7 +1106,7 @@ as the direction.
 
 This will not prompt anything."
   (interactive)
-  (let* ((text (or (funcall go-translate-init-text-function)
+  (let* ((text (or (funcall go-translate-text-function)
                    (user-error "No text found under cursor")))
          (localp (go-translate-text-local-p text))
          (from (if (= localp 1)
@@ -1014,7 +1121,7 @@ This will not prompt anything."
 (defun go-translate-kill-ring-save ()
   "Translate and just put result into kill ring for later yank.
 
-Here we use the let-binding style."
+Here we implement it with let-binding style."
   (interactive)
   (let ((go-translate-prepare-function #'ignore)
         (go-translate-render-function
@@ -1026,7 +1133,7 @@ Here we use the let-binding style."
 
 ;;;###autoload
 (defun go-translate-echo-area ()
-  "Output the translate result to the echo-area."
+  "Output the translate result to the echo area."
   (interactive)
   (let ((go-translate-prepare-function #'ignore)
         (go-translate-render-function

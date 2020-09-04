@@ -21,7 +21,7 @@ Google 翻译的实力有目共睹，但是 Google Translate 插件的表现却�
 </p>
 
 这个插件借鉴了 [Google Translate](https://github.com/atykhonov/google-translate) 项目的某些想法和代码，其主要的特点有:
-- 完全使用异步 (asynchronous) 的方式进行请求，不会产生任何阻塞问题，使用非常流畅
+- 使用异步 (asynchronous) 的方式进行请求，避免产生阻塞问题，使用非常流畅
 - 优化了翻译结果的显示，界面更加美观自然
 - 可以方便进行各种交互操作，尤其可以灵活进行多语言翻译，方便快速进行翻译语言的切换
 - 代码简洁，方便拓展。可以非常简单构造新的功能
@@ -89,6 +89,8 @@ M-x package-install go-translate RET
 - `g` 刷新 `q` 退出
 - `x` 交换 `源语言` 和 `目标语言` 后重新查询
 - `M-n` 和 `M-p`，切换到下一组可用的 [源语言 - 目标语言] 并重新查询
+- `y` 对选中的内容或光标下的单词进行朗读。你需要安装 `mplayer` 程序并设置环境变量。
+   当然，在 Windows 下，即使没安装 `mplayer` 也会尝试调用 Windows 自身的功能 (powershell) 去阅读。
 
 当执行 `go-translate` 命令时，会读取当前选中的文本，如果没有文本被选中，则会读取光标所在的单词，
 在接下来打开的 `minibuffer` 界面可以对读取的文本进行修改，然后按下 `回车` 或 `Ctrl-回车` 进行翻译。
@@ -99,19 +101,21 @@ M-x package-install go-translate RET
 
 > 一气呵成: `C-c t` 接 `C-return`，然后 `C-x C-x` 选中，`M-w` 复制，`q` 关闭窗口, `C-y` 粘贴
 
-其他的命令:
+其他的翻译命令:
 - `go-translate-popup` 是在光标处通过弹出 `posframe` 的方式对内容进行简短翻译。其实现简单，但比较实用。
 - `go-translate-popup-current` 基于上面的命令，它不会打开 `minibuffer`，而是直接翻译光标下的选中文本或单词。
 - `go-translate-kill-ring-save` 不会弹出任何界面，而是直接将翻译结果保存到 `kill-ring` 中，你随后可以通过 `C-y` 将其插入到任何地方，或者切换到其他软件如 QQ 然后 `C-v` 编辑发送。这对一些进行翻译工作的人也许比较有用。
-- `go-translate-change-local/target` 通过这个命令，可以临时更改 local/target 语言的设置
 
-当然，基于 `go-translate` 对功能进行扩展很简单，你可以轻松按照自己的意图创造适合自己的翻译命令。
+另外通过 `go-translate-change-local-and-target-language` 可以通过交互的方式更改 local/target languge 的值。
+
+
+当然，如果上述翻译命令不能满足你的需求，你可以基于 `go-translate` 进行扩展。扩展是非常容易、非常轻松的。
 
 ## 扩展
 
 如果想扩展命令的话，只需要覆盖或通过 `let-binding` 方式重新定义如下某些变量即可:
-- `go-translate-init-text-function` 默认的翻译内容。如果不指定，会读取选中或光标处的文本
-- `go-translate-input-function` 用来处理用户输入和选定翻译语言
+- `go-translate-text-function` 默认的翻译内容。如果不指定，会读取选中或光标处的文本
+- `go-translate-inputs-function` 用来处理用户输入和选定翻译语言
 - `go-translate-url-function` 用来生成进行请求的 URL
 - `go-translate-prepare-function` 在请求发起之前，做的一些预备性工作。比如先创建一个 buffer 并显示部分内容
 - `go-translate-request-function` 异步请求到服务器，获取翻译内容

@@ -68,6 +68,7 @@ You can bind keys for them. such as:
 - `g` refresh `q` exit
 - `x` exchanges `source language` and `target language` and refresh the translation
 - `M-n` and `M-p`, switch to the next/prev available translation direction, and refresh
+- `y` to speak the current selection or word. You should have `mplayer` installed, or on Windows it will fallback to use `powershell` to do the tts job.
 
 The `go-translate` will take the currently selected text or `word-at-point` as the default input.
 In the pop-up `read-from-minibuffer` interface, you can use `C-l` to clear the input, and fire the translation
@@ -85,8 +86,8 @@ Extending commands is easy and happy, go and have a try!
 ## Extend
 
 If you want to expand your own command, you only need to overwrite or let-binding the variables below:
-- `go-translate-init-text-function` the default translation content. If not specified, the text selected or at the cursor will be read
-- `go-translate-input-function` is used to process user input and select translation languages
+- `go-translate-text-function` the default translation content. If not specified, the text selected or at the cursor will be read
+- `go-translate-inputs-function` is used to process user input and select translation languages
 - `go-translate-url-function` is used to generate the request url
 - `go-translate-prepare-function` some preparatory work done before the request is send. For example, create a buffer and render something
 - `go-translate-request-function` asynchronously request to the server to get the translation content
@@ -99,4 +100,4 @@ They are useful when customizing the render function.
 
 ## Miscellaneous
 
-Too many things to be added, but not today.
+Nothing more to say now.
