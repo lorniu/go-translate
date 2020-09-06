@@ -120,7 +120,22 @@ will send the translation with your `send-it` function."
 (defvar go-translate-tts-path "/translate_tts"
   "Google Translate tts query path.")
 
+
+;;; Debug Helper
+
 (defvar go-translate-debug-p nil)
+
+(defun go-translate-debug (type &rest messages)
+  "Helper macro for output the TYPE's debug MESSAGES."
+  (when go-translate-debug-p
+    (with-current-buffer (get-buffer-create "*GO-TRANSLATE-DEBUG*")
+      (goto-char (point-max))
+      (insert (format
+               "\n[%s] - [%s]:\n\n%s\n\n\n"
+               (current-time-string)
+               type
+               (cl-loop for message in messages
+                        concat (format "%s\n" message)))))))
 
 
 ;;; Token Key
@@ -263,7 +278,10 @@ The `go-translate-token-current' with the format (time . tkk)."
 
 (defun go-translate-token--extract-tkk ()
   "Get the Token-Key from the page buffer."
-  (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+  (condition-case nil
+      (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+    (error (go-translate-debug 'extract-tkk (buffer-string))
+           (user-error "Error when fetch the Token Key. Maybe something wrong with network or proxy.")))
   (cons (string-to-number (match-string 1))
         (string-to-number (match-string 2))))
 
