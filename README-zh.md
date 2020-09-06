@@ -46,7 +46,7 @@ M-x package-install go-translate RET
 
 国内用户首先更改地址，从而获得更好的使用体验:
 ```elisp
-(setq go-translate-base-url "http://translate.google.cn")
+(setq go-translate-base-url "https://translate.google.cn")
 ```
 
 然后设置翻译语言。如果仅在中英文之间进行翻译，那么只需配置:
