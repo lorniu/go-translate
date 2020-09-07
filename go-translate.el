@@ -281,7 +281,7 @@ The `go-translate-token-current' with the format (time . tkk)."
   (condition-case nil
       (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
     (error (go-translate-debug 'extract-tkk (buffer-string))
-           (user-error "Error when fetch the Token Key. Maybe something wrong with network or proxy.")))
+           (user-error "Error when fetch the Token Key. Maybe something wrong with network or proxy")))
   (cons (string-to-number (match-string 1))
         (string-to-number (match-string 2))))
 
@@ -1116,14 +1116,11 @@ with current `go-translate'. Here we use the keyword style."
               (add-hook 'post-command-hook #'go-translate-posframe-clear))))
     (go-translate text from to :pre-fun #'ignore :render-fun fn)))
 
-;;;###autoload
-(defun go-translate-popup-current ()
-  "Translate the content under cursor: selection or word.
-Auto judge the direction, if failed then take the default local/target
-as the direction.
+(defun go-translate-noprompt-inputs ()
+  "Return the translation TEXT and DIRECTION without any prompt.
 
-This will not prompt anything."
-  (interactive)
+Try to take current selection or word as TEXT and auto choose
+local/target languages as DIRECTION."
   (let* ((text (or (funcall go-translate-text-function)
                    (user-error "No text found under cursor")))
          (localp (go-translate-text-local-p text))
@@ -1133,7 +1130,20 @@ This will not prompt anything."
          (to (if (= localp 1)
                  go-translate-target-language
                go-translate-local-language)))
-    (go-translate-popup text from to)))
+    (when go-translate-buffer-follow-p
+      (add-text-properties 0 (length text) '(follow t) text))
+    (list text from to)))
+
+;;;###autoload
+(defun go-translate-popup-current ()
+  "Translate the content under cursor: selection or word.
+Auto judge the direction, if failed then take the default local/target
+as the direction.
+
+This will not prompt anything."
+  (interactive)
+  (let ((go-translate-inputs-function #'go-translate-noprompt-inputs))
+    (call-interactively #'go-translate-popup)))
 
 ;;;###autoload
 (defun go-translate-kill-ring-save ()
