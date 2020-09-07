@@ -73,6 +73,11 @@ M-x package-install go-translate RET
 ```elisp
 (setq go-translate-buffer-follow-p t)       ; 翻译完成后，总是将光标切换到翻译结果窗口
 (setq go-translate-buffer-window-config ..) ; 更改翻译窗口的位置和样式
+
+;; 设置输入风格。默认情况下，是通过 Minibuffer 方式补全用户输入
+;; 可以修改为 `go-translate-inputs-noprompt` 或 `go-translate-inputs-current-or-prompt`
+;; 前者表示直接翻译选中内容或光标下单词；后者表示若光标下没内容则打开 Minibuffer 读取内容
+(setq go-translate-inputs-function #'go-translate-inputs-current-or-prompt)
 ```
 
 ## 使用
@@ -108,8 +113,9 @@ M-x package-install go-translate RET
 
 另外通过 `go-translate-change-local-and-target-language` 可以通过交互的方式更改 local/target languge 的值。
 
-
 当然，如果上述翻译命令不能满足你的需求，你可以基于 `go-translate` 进行扩展。扩展是非常容易、非常轻松的。
+
+更多的使用讨论请前往 [https://emacs-china.org/t/google/14407](https://emacs-china.org/t/google/14407) 查看。
 
 ## 扩展
 

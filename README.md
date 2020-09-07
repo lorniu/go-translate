@@ -1,3 +1,6 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![MELPA](https://melpa.org/packages/go-translate-badge.svg)](https://melpa.org/#/go-translate)
+
 # Go-Translate
 
 Improved Google Translate interface with asynchronous request and better user experience.
