@@ -1078,6 +1078,33 @@ RENDER-FUN is used to specify the way to render after request."
 
 ;;; Extended Commands (examples)
 
+;; Helpers
+
+(defun go-translate-inputs-noprompt (&optional text)
+  "Return the translation TEXT and DIRECTION without any prompt."
+  (let* ((text (or text
+                   (funcall go-translate-text-function)
+                   (user-error "No text found under cursor")))
+         (localp (go-translate-text-local-p text))
+         (from (if (= localp 1)
+                   go-translate-local-language
+                 go-translate-target-language))
+         (to (if (= localp 1)
+                 go-translate-target-language
+               go-translate-local-language)))
+    (when go-translate-buffer-follow-p
+      (add-text-properties 0 (length text) '(follow t) text))
+    (list text from to)))
+
+(defun go-translate-inputs-current-or-prompt ()
+  "Like `go-translate-inputs-noprompt', but prompt when nothing at point."
+  (let ((text (funcall go-translate-text-function)))
+    (if text
+        (go-translate-inputs-noprompt text)
+      (go-translate-default-prompt-inputs))))
+
+;; Commands
+
 (require 'posframe nil t)
 (declare-function posframe-show "ext:posframe.el" t t)
 (declare-function posframe-poshandler-point-bottom-left-corner-upward "ext:posframe.el" t t)
@@ -1116,24 +1143,6 @@ with current `go-translate'. Here we use the keyword style."
               (add-hook 'post-command-hook #'go-translate-posframe-clear))))
     (go-translate text from to :pre-fun #'ignore :render-fun fn)))
 
-(defun go-translate-noprompt-inputs ()
-  "Return the translation TEXT and DIRECTION without any prompt.
-
-Try to take current selection or word as TEXT and auto choose
-local/target languages as DIRECTION."
-  (let* ((text (or (funcall go-translate-text-function)
-                   (user-error "No text found under cursor")))
-         (localp (go-translate-text-local-p text))
-         (from (if (= localp 1)
-                   go-translate-local-language
-                 go-translate-target-language))
-         (to (if (= localp 1)
-                 go-translate-target-language
-               go-translate-local-language)))
-    (when go-translate-buffer-follow-p
-      (add-text-properties 0 (length text) '(follow t) text))
-    (list text from to)))
-
 ;;;###autoload
 (defun go-translate-popup-current ()
   "Translate the content under cursor: selection or word.
@@ -1142,7 +1151,7 @@ as the direction.
 
 This will not prompt anything."
   (interactive)
-  (let ((go-translate-inputs-function #'go-translate-noprompt-inputs))
+  (let ((go-translate-inputs-function #'go-translate-inputs-noprompt))
     (call-interactively #'go-translate-popup)))
 
 ;;;###autoload
