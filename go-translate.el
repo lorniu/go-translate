@@ -262,7 +262,7 @@ The `go-translate-token-current' with the format (time . tkk)."
         (url-request-extra-headers '(("Connection" . "close"))))
     (if syncp
         (with-current-buffer
-            (url-retrieve-synchronously go-translate-base-url nil nil 3)
+            (url-retrieve-synchronously go-translate-base-url 'silent nil 3)
           (prog1
               (setq go-translate-token-current
                     (cons (current-time)
@@ -281,7 +281,7 @@ The `go-translate-token-current' with the format (time . tkk)."
   (condition-case nil
       (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
     (error (go-translate-debug 'extract-tkk (buffer-string))
-           (user-error "Error when fetch the Token Key. Maybe something wrong with network or proxy")))
+           (user-error "Error when fetching Token-Key. Check your network and proxy, or retry later")))
   (cons (string-to-number (match-string 1))
         (string-to-number (match-string 2))))
 
@@ -535,12 +535,17 @@ Each element is a cons-cell of the form (NAME . CODE), where NAME
 is a human-readable language name and CODE is its code used as a
 query parameter in HTTP requests.")
 
+(defvar go-translate-local-language-transformer #'go-translate-clear-punctuations
+  "Transform before judging whether the TEXT is local language.
+
+Default behavior is to remove all punctuations.")
+
 (defvar go-translate-local-language-regexp-alist
   '(("zh_CN" . "\\cc")
     ("zh-CN" . "\\cc")
     ("zh"    . "\\cc")
     ("ja"    . "\\cj"))
-  "Alist used to judge if input is your local language text.
+  "Alist used to judge if input TEXT is your local language text.
 
 The form is (lang . regexp).
 
@@ -577,13 +582,26 @@ PROMPT and DEF are just as `completing-read'."
                   (car (rassoc def go-translate-available-languages))))))
     (cdr (assoc name go-translate-available-languages))))
 
+(defun go-translate-clear-punctuations (text)
+  "Remove all punctuations in TEXT."
+  (with-temp-buffer
+    (insert text)
+    (goto-char (point-min))
+    (while (re-search-forward "\\s." nil t)
+      (replace-match ""))
+    (buffer-string)))
+
 (defun go-translate-text-local-p (text)
   "Check if TEXT if your local language text.
 1 for yes, 0 for no, -1 for unknown."
   (let ((pair (assoc go-translate-local-language
                      go-translate-local-language-regexp-alist)))
     (if pair
-        (if (string-match-p (cdr pair) text) 1 0)
+        (if (string-match-p (cdr pair)
+                            (if go-translate-local-language-transformer
+                                (funcall go-translate-local-language-transformer text)
+                              text))
+            1 0)
       -1)))
 
 (defun go-translate-available-directions ()
@@ -592,7 +610,7 @@ PROMPT and DEF are just as `completing-read'."
                 (cons go-translate-local-language go-translate-target-language))
           go-translate-extra-directions))
 
-(defun go-translate-next-available-direction (direction &optional backwardp)
+(defun go-translate-next-direction (direction &optional backwardp)
   "Find the next DIRECTION from the available list.
 If the BACKWARDP is t, then find the previous one."
   (let* ((directions (go-translate-available-directions))
@@ -609,7 +627,7 @@ If the BACKWARDP is t, then find the previous one."
                (if (>= (1+ pos) len) 0 (1+ pos)))
            0))))
 
-(defun go-translate-guess-the-direction (text)
+(defun go-translate-guess-direction (text)
   "Automatically judge the translation languages based on the TEXT content.
 
 If the text is your local language and hit the last direction, use
@@ -643,20 +661,20 @@ the last direction."
           (t
            (cons go-translate-local-language go-translate-target-language)))))
 
-(defun go-translate-minibuffer-switch-next-direction (&optional backwardp)
+(defun go-translate-minibuffer-next-direction (&optional backwardp)
   "Switch to next direction in minibuffer.
 If BACKWARDP is t, then choose prev one."
   (interactive)
-  (let ((d (go-translate-next-available-direction
+  (let ((d (go-translate-next-direction
             go-translate--current-direction backwardp)))
     (setq go-translate--current-direction d)
     (go-translate-default-prompt-inputs (minibuffer-contents) d)
     (exit-minibuffer)))
 
-(defun go-translate-minibuffer-switch-prev-direction ()
+(defun go-translate-minibuffer-prev-direction ()
   "Switch to prev direction in minibuffer."
   (interactive)
-  (go-translate-minibuffer-switch-next-direction t))
+  (go-translate-minibuffer-next-direction t))
 
 ;; Functions
 
@@ -664,8 +682,8 @@ If BACKWARDP is t, then choose prev one."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
     (define-key map "\C-g" #'top-level)
-    (define-key map "\C-n" #'go-translate-minibuffer-switch-next-direction)
-    (define-key map "\C-p" #'go-translate-minibuffer-switch-prev-direction)
+    (define-key map "\C-n" #'go-translate-minibuffer-next-direction)
+    (define-key map "\C-p" #'go-translate-minibuffer-prev-direction)
     (define-key map "\C-l" #'delete-minibuffer-contents)
     (define-key map [C-return] (lambda ()
                                  (interactive)
@@ -709,7 +727,7 @@ If BACKWARDP is t, then choose prev one."
         (user-error "Text should not be null"))
     (setq direction
           (or go-translate--current-direction
-              (go-translate-guess-the-direction text)))
+              (go-translate-guess-direction text)))
     (list text (car direction) (cdr direction))))
 
 (defun go-translate-default-generate-url (text from to)
@@ -787,12 +805,12 @@ dividing the rendering into two parts will have a better experience."
       (local-set-key (kbd "M-n")
                      (lambda ()
                        (interactive)
-                       (let ((next (go-translate-next-available-direction (cons from to))))
+                       (let ((next (go-translate-next-direction (cons from to))))
                          (go-translate text (car next) (cdr next)))))
       (local-set-key (kbd "M-p")
                      (lambda ()
                        (interactive)
-                       (let ((prev (go-translate-next-available-direction (cons from to) 1)))
+                       (let ((prev (go-translate-next-direction (cons from to) 1)))
                          (go-translate text (car prev) (cdr prev)))))
       (local-set-key "g" (lambda () (interactive) (go-translate text from to)))
       (local-set-key "x" (lambda () (interactive) (go-translate text to from)))
