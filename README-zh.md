@@ -72,6 +72,7 @@ M-x package-install go-translate RET
 其他的配置参数都是可选的，可在 `custom-group` - `go-translate` 中查看。比如:
 ```elisp
 (setq go-translate-buffer-follow-p t)       ; 翻译完成后，总是将光标切换到翻译结果窗口
+(setq go-translate-buffer-source-fold-p t)  ; 在结果页面，折叠源文本。可以通过回车或鼠标点击展开
 (setq go-translate-buffer-window-config ..) ; 更改翻译窗口的位置和样式
 
 ;; 设置输入风格。默认情况下，是通过 Minibuffer 方式补全用户输入

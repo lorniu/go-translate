@@ -55,6 +55,7 @@ If you have any other translation plans, then put them into `go-translate-extra-
 Other customizations you can look into `custom-group` - `go-translate`, eg:
 ```elisp
 (setq go-translate-buffer-follow-p t)       ; focus the result window
+(setq go-translate-buffer-source-fold-p t)  ; fold the source text in the result window
 (setq go-translate-buffer-window-config ..) ; config the result window as your wish
 ```
 

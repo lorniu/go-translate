@@ -409,6 +409,10 @@ Some functions, such as switching translation languages, are based on them."
   "If t then pop to the result window after translation."
   :type 'boolean)
 
+(defcustom go-translate-buffer-source-fold-p nil
+  "If t then try to fold the source text in the result buffer."
+  :type 'boolean)
+
 (defcustom go-translate-auto-guess-direction t
   "Automatically determine the languages of the translation based on the input.
 
@@ -677,9 +681,16 @@ If BACKWARDP is t, then choose prev one."
   (interactive)
   (go-translate-minibuffer-next-direction t))
 
+(defun go-translate-clear-overlays-in-buffer ()
+  "Remove all overlays in current buffer."
+  (interactive)
+  (cl-loop for ov in (overlay-lists)
+           if (overlayp ov)
+           do (delete-overlay ov)))
+
 ;; Functions
 
-(defvar go-translate-default-minibuffer-keymap
+(defvar go-translate-inputs-minibuffer-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
     (define-key map "\C-g" #'top-level)
@@ -698,6 +709,15 @@ If BACKWARDP is t, then choose prev one."
 
 (declare-function pdf-view-active-region-p "ext:pdf-view.el" t t)
 (declare-function pdf-view-active-region-text "ext:pdf-view.el" t t)
+
+(defvar go-translate-buffer-overlay-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-m") #'go-translate-clear-overlays-in-buffer)
+    (define-key map [return] #'go-translate-clear-overlays-in-buffer)
+    (define-key map (kbd "C-g") #'go-translate-clear-overlays-in-buffer)
+    (define-key map [mouse-1] #'go-translate-clear-overlays-in-buffer)
+    map)
+  "Keymap used in overylays in the result buffer.")
 
 (defun go-translate-default-current-text ()
   "Get current text under cursor, selection or word."
@@ -729,7 +749,7 @@ If BACKWARDP is t, then choose prev one."
                              (concat "[" (car direction) " > " (cdr direction) "] ")
                            "[Auto] ")
                          "Text: "))
-         (text (read-from-minibuffer prompt text go-translate-default-minibuffer-keymap)))
+         (text (read-from-minibuffer prompt text go-translate-inputs-minibuffer-keymap)))
     (if (zerop (length (string-trim text)))
         (user-error "Text should not be null"))
     (setq direction
@@ -783,9 +803,8 @@ render part of the content. Because the request will be asynchronous,
 dividing the rendering into two parts will have a better experience."
   (deactivate-mark)
   (with-current-buffer (get-buffer-create go-translate-buffer-name)
-    (let ((text (cl-second req))
-          (from (cl-third req))
-          (to (cl-fourth req)))
+    (let ((text (string-trim-left (cl-second req)))
+          (from (cl-third req)) (to (cl-fourth req)))
       (read-only-mode -1)
       (visual-line-mode -1)
       (erase-buffer)
@@ -801,7 +820,19 @@ dividing the rendering into two parts will have a better experience."
              "Loading..."))
 
       ;; source text
-      (insert (format "\n%s" text ))
+      (insert "\n")
+      (if (and go-translate-buffer-source-fold-p
+               (string-match-p "\n" text))
+          (let ((beg (point)) end o l)
+            (insert text)
+            (setq end (point))
+            (setq o (make-overlay (save-excursion (goto-char beg) (line-end-position)) end nil t))
+            (setq l (make-overlay beg (1+ end) nil t))
+            (overlay-put o 'invisible t)
+            (overlay-put o 'display (concat " " (propertize "..." 'face 'font-lock-warning-face)))
+            (overlay-put o 'keymap go-translate-buffer-overlay-keymap)
+            (overlay-put l 'keymap go-translate-buffer-overlay-keymap))
+        (insert text))
 
       ;; keybinds.
       ;; q for quit and kill the window.
