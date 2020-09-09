@@ -697,9 +697,12 @@ If BACKWARDP is t, then choose prev one."
 
 (defun go-translate-default-current-text ()
   "Get current text under cursor, selection or word."
-  (if (use-region-p)
-      (string-trim (buffer-substring (region-beginning) (region-end)))
-    (current-word t t)))
+  (cond ((eq major-mode 'pdf-view-mode)
+         (if (pdf-view-active-region-p)
+             (car (pdf-view-active-region-text))))
+        ((use-region-p)
+         (string-trim (buffer-substring (region-beginning) (region-end))))
+        (t (current-word t t))))
 
 (defun go-translate-default-prompt-inputs (&optional text direction)
   "Prompt for the user input, should return a (TEXT DIRECTION) list."
