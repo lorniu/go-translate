@@ -274,7 +274,8 @@ The `go-translate-token-current' with the format (time . tkk)."
                         (setq go-translate-token-current
                               (cons (current-time)
                                     (go-translate-token--extract-tkk))))
-                      (kill-buffer))))))
+                      (kill-buffer))
+                    nil 'silent))))
 
 (defun go-translate-token--extract-tkk ()
   "Get the Token-Key from the page buffer."
@@ -695,6 +696,9 @@ If BACKWARDP is t, then choose prev one."
     map)
   "Minibuffer keymap used when prompt user input.")
 
+(declare-function pdf-view-active-region-p "ext:pdf-view.el" t t)
+(declare-function pdf-view-active-region-text "ext:pdf-view.el" t t)
+
 (defun go-translate-default-current-text ()
   "Get current text under cursor, selection or word."
   (cond ((eq major-mode 'pdf-view-mode)
@@ -895,7 +899,7 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
               (insert "\n\n"))
           (facemenu-add-face 'font-lock-doc-face (point-min) (point))
           (insert "\n\n")
-          (push-mark)
+          (push-mark nil 'no-msg)
           (insert (go-translate-result--translation resp))
           (setq savepoint (point))
           (insert "\n"))
