@@ -818,20 +818,7 @@ dividing the rendering into two parts will have a better experience."
              "Loading..."))
 
       ;; source text
-      (insert "\n")
-      (if (and go-translate-buffer-source-fold-p
-               (string-match-p "\n" text))
-          ;; fold it when nessary
-          (let ((beg (point)) end o l)
-            (insert text)
-            (setq end (point))
-            (setq o (make-overlay (save-excursion (goto-char beg) (line-end-position)) end))
-            (setq l (make-overlay (1- beg) (1+ end)))
-            (overlay-put o 'invisible t)
-            (overlay-put o 'display (concat " " (propertize "..." 'face 'font-lock-warning-face)))
-            (overlay-put o 'keymap go-translate-buffer-overlay-keymap)
-            (overlay-put l 'keymap go-translate-buffer-overlay-keymap))
-        (insert text))
+      (insert "\n" text)
 
       ;; keybinds.
       ;; q for quit and kill the window.
@@ -896,7 +883,8 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
     (if (stringp resp) ; an error occurred
         (progn (goto-char (point-max))
                (insert "\n\n\n" (propertize resp 'face 'font-lock-warning-face)))
-      (let* ((details (go-translate-result--details resp))
+      (let* ((source (cl-second req))
+             (details (go-translate-result--details resp))
              (definitions (go-translate-result--definitions resp))
              (suggestion (go-translate-result--suggestion resp))
              (phonetic (lambda (ph)
@@ -908,13 +896,11 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
                           (format "\n[%s]\n" headline)
                           'face go-translate-buffer-headline-face)))
              (singlep (or details definitions))
-             (savepoint))
+             source-end translate-end)
         (goto-char (point-max))
 
         ;; cache the query direction first
-        (setq go-translate-last-direction
-              (cons (cl-third req)
-                    (cl-fourth req)))
+        (setq go-translate-last-direction (cons (cl-third req) (cl-fourth req)))
 
         ;; phonetic & translate
         (if singlep
@@ -924,14 +910,15 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
               (push-mark nil 'no-msg)
               (insert (propertize (go-translate-result--translation resp)
                                   'face '(:weight bold)))
-              (setq savepoint (point))
+              (setq translate-end (point))
               (insert (funcall phonetic (go-translate-result--translation-phonetic resp)))
               (insert "\n\n"))
+          (setq source-end (point))
           (facemenu-add-face 'font-lock-doc-face (point-min) (point))
           (insert "\n\n")
           (push-mark nil 'no-msg)
           (insert (go-translate-result--translation resp))
-          (setq savepoint (point))
+          (setq translate-end (point))
           (insert "\n"))
 
         ;; suggestion
@@ -982,15 +969,32 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
         (setq-local cursor-in-non-selected-windows nil)
         (set-buffer-modified-p nil)
         (read-only-mode +1)
-        (unless singlep (visual-line-mode +1))
+        ;; when multiple-lines
+        (unless singlep
+          (turn-on-visual-line-mode)
+          (if (and go-translate-buffer-source-fold-p
+                   (string-match-p "\n" source))
+              ;; fold it when nessary
+              (let (beg o l)
+                (setq beg (save-excursion
+                            (goto-char (point-min))
+                            (re-search-forward "^." nil t)
+                            (point)))
+                (setq o (make-overlay (save-excursion (goto-char beg) (line-end-position)) source-end))
+                (setq l (make-overlay (1- beg) (1+ source-end)))
+                (overlay-put o 'invisible t)
+                (overlay-put o 'display (concat " " (propertize "..." 'face 'font-lock-warning-face)))
+                (overlay-put o 'keymap go-translate-buffer-overlay-keymap)
+                (overlay-put l 'keymap go-translate-buffer-overlay-keymap))))
         ;; Jump to the end of the translated text. Combined with the previous `push-mark',
         ;; you can quickly select the translated text through `C-x C-x'.
-        (set-window-point (get-buffer-window) savepoint)
+        (set-window-point (get-buffer-window)
+                          (if singlep translate-end (1+ translate-end)))
         ;; Run hooks if any.
         (run-hook-with-args 'go-translate-after-render-hook req resp)
         ;; At last, switch or just display.
         (if (or go-translate-buffer-follow-p
-                (get-text-property 0 'follow (cl-second req)))
+                (get-text-property 0 'follow source))
             (pop-to-buffer (current-buffer))
           (display-buffer (current-buffer)))))))
 
