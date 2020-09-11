@@ -413,6 +413,10 @@ Some functions, such as switching translation languages, are based on them."
   "If t then try to fold the source text in the result buffer."
   :type 'boolean)
 
+(defcustom go-translate-buffer-visual-line-p t
+  "If t then try to turn on the function `visual-line-mode' in result buffer."
+  :type 'boolean)
+
 (defcustom go-translate-auto-guess-direction t
   "Automatically determine the languages of the translation based on the input.
 
@@ -971,7 +975,8 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
         (read-only-mode +1)
         ;; when multiple-lines
         (unless singlep
-          (turn-on-visual-line-mode)
+          (when go-translate-buffer-visual-line-p
+            (turn-on-visual-line-mode))
           (if (and go-translate-buffer-source-fold-p
                    (string-match-p "\n" source))
               ;; fold it when nessary
