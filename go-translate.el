@@ -413,6 +413,10 @@ Some functions, such as switching translation languages, are based on them."
   "If t then try to fold the source text in the result buffer."
   :type 'boolean)
 
+(defcustom go-translate-buffer-line-wrap-p t
+  "If t then try to turn on the function `visual-line-mode' in result buffer."
+  :type 'boolean)
+
 (defcustom go-translate-auto-guess-direction t
   "Automatically determine the languages of the translation based on the input.
 
@@ -804,8 +808,8 @@ dividing the rendering into two parts will have a better experience."
     (let ((text (string-trim (cl-second req)))
           (from (cl-third req)) (to (cl-fourth req)))
       (read-only-mode -1)
-      (visual-line-mode -1)
       (erase-buffer)
+      (visual-line-mode -1)
 
       ;; header line
       (setq header-line-format
@@ -902,6 +906,10 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
         ;; cache the query direction first
         (setq go-translate-last-direction (cons (cl-third req) (cl-fourth req)))
 
+        ;; try to wrap the lines when they're too long
+        (when (and go-translate-buffer-line-wrap-p (not singlep))
+          (turn-on-visual-line-mode))
+
         ;; phonetic & translate
         (if singlep
             (progn
@@ -969,19 +977,17 @@ You can use `go-translate-buffer-post-render-hook' to custom more."
         (setq-local cursor-in-non-selected-windows nil)
         (set-buffer-modified-p nil)
         (read-only-mode +1)
-        ;; when multiple-lines
+        ;; fold source if nessary
         (unless singlep
-          (turn-on-visual-line-mode)
           (if (and go-translate-buffer-source-fold-p
                    (string-match-p "\n" source))
-              ;; fold it when nessary
               (let (beg o l)
                 (setq beg (save-excursion
                             (goto-char (point-min))
                             (re-search-forward "^." nil t)
                             (point)))
                 (setq o (make-overlay (save-excursion (goto-char beg) (line-end-position)) source-end))
-                (setq l (make-overlay (1- beg) (1+ source-end)))
+                (setq l (make-overlay (point-min) (1+ source-end)))
                 (overlay-put o 'invisible t)
                 (overlay-put o 'display (concat " " (propertize "..." 'face 'font-lock-warning-face)))
                 (overlay-put o 'keymap go-translate-buffer-overlay-keymap)
