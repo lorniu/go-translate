@@ -61,7 +61,7 @@ You can adjust this url according to your country and region. eg:
 URL `https://translate.google.cc'."
   :type 'string)
 
-(defcustom go-translate-user-agent "Emacs"
+(defcustom go-translate-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
   "User agent used in the translation request."
   :type 'string)
 
@@ -259,7 +259,7 @@ It will set to `go-translate-token-current' if request successfully.
 
 The `go-translate-token-current' with the format (time . tkk)."
   (let ((url-user-agent go-translate-user-agent)
-        (url-request-extra-headers '(("Connection" . "close"))))
+        (url-request-extra-headers '(("Connection" . "Keep-Alive"))))
     (if syncp
         (with-current-buffer
             (url-retrieve-synchronously go-translate-base-url 'silent nil 3)
@@ -852,7 +852,9 @@ dividing the rendering into two parts will have a better experience."
 (defun go-translate-default-retrieve-async (req render-fun)
   "Request with url in REQ for the translation, then render with RENDER-FUN.
 This should be asynchronous."
-  (let ((buf (current-buffer)))
+  (let ((buf (current-buffer))
+        (url-user-agent go-translate-user-agent)
+        (url-request-extra-headers '(("Connection" . "Keep-Alive"))))
     (url-retrieve (car req)
                   (lambda (status)
                     (if (and status (eq (car status) :error))
