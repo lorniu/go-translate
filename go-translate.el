@@ -157,7 +157,9 @@ This timer will do the job asynchronously in the background without
 any impact on performance."
   :type 'boolean)
 
-(defvar go-translate-token-current nil "Current token.")
+(defvar go-translate-token-current nil
+  "Current token fetched from remote, with the format (timestamp . tkk).
+If timestamp is absent, then it will be used as the tkk directly.")
 
 (defvar go-translate-token--timer nil "Timer used to refresh token.")
 
@@ -294,20 +296,30 @@ directly, or fetch from remote and use the new one.
 
 If `go-translate-token-backend-refresh-p' is t, start a timer to
 refresh the `go-translate-token-current' in background intervally."
-  ;; check and run the timer
-  (when (and go-translate-token-backend-refresh-p (null go-translate-token--timer))
-    (setq go-translate-token--timer
-          (run-at-time go-translate-token-expired-time
-                       go-translate-token-expired-time
-                       #'go-translate-token--fetch-tkk)))
-  ;; get from cache if nessary
-  (if (and go-translate-token-current
-           (< (float-time (time-subtract (current-time)
-                                         (car go-translate-token-current)))
-              go-translate-token-expired-time))
-      (cdr go-translate-token-current)
-    ;; the first time, it will fetch synchronously
-    (cdr (go-translate-token--fetch-tkk t))))
+  ;; Use `go-translate-token-current' as current tkk if it's manually config like this:
+  ;;
+  ;;   (setq go-translate-token-current (cons 430675 2721866130))
+  ;;
+  ;; The reason for this is that Google has recently imposed certain restrictions on
+  ;; crawling tkk from the page, and it is currently unable to find out the exact rules.
+  ;; Therefore, we manually give a suitable tkk to initiate the translate request.
+  (if (and (car go-translate-token-current)
+           (not (consp (cdr go-translate-token-current))))
+      go-translate-token-current
+    ;; check and run the timer
+    (when (and go-translate-token-backend-refresh-p (null go-translate-token--timer))
+      (setq go-translate-token--timer
+            (run-at-time go-translate-token-expired-time
+                         go-translate-token-expired-time
+                         #'go-translate-token--fetch-tkk)))
+    ;; get from cache if nessary
+    (if (and go-translate-token-current
+             (< (float-time (time-subtract (current-time)
+                                           (car go-translate-token-current)))
+                go-translate-token-expired-time))
+        (cdr go-translate-token-current)
+      ;; the first time, it will fetch synchronously
+      (cdr (go-translate-token--fetch-tkk t)))))
 
 (defun go-translate-get-token (text)
   "Calculate the Token for search TEXT.
