@@ -739,7 +739,7 @@ If BACKWARDP is t, then choose prev one."
          (if (pdf-view-active-region-p)
              (car (pdf-view-active-region-text))))
         ((use-region-p)
-         (string-trim (buffer-substring (region-beginning) (region-end))))
+         (string-trim (buffer-substring-no-properties (region-beginning) (region-end))))
         (t (current-word t t))))
 
 (defun go-translate-default-prompt-inputs (&optional text direction)
