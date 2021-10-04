@@ -1,0 +1,449 @@
+;;; gts-google.el --- Google translate module -*- lexical-binding: t -*-
+;;; Commentary:
+;;; Code:
+
+(require 'gts-core)
+(require 'gts-faces)
+(require 'facemenu)
+
+(defcustom gts-tts-speaker (or (executable-find "mpv")
+                               (executable-find "mplayer"))
+  "The program to use to speak the translation.
+
+On Windows, if it is not found, will fallback to use `powershell`
+to do the job. Although it is not perfect, it seems to work."
+  :type 'string
+  :group 'gts)
+
+
+;;; Components
+
+(defclass gts-google-parser (gts-parser)
+  ((tag :initform "Detail")))
+
+(defclass gts-google-summary-parser (gts-google-parser)
+  ((tag :initform "Summary")))
+
+(defclass gts-google-engine (gts-engine)
+  ((tag                :initform "Google")
+   (base-url           :initform "http://translate.googleapis.com")
+   (sub-url            :initform "/translate_a/single")
+   (token              :initform (cons 430675 2721866130))
+   (token-time         :initform t)
+   (token-expired-time :initform (* 30 60))
+   (parser             :initform (gts-google-parser))))
+
+
+;;; Engine
+
+(defvar gts-google-request-headers '(("Connection" . "Keep-Alive")))
+
+(cl-defmethod gts-gen-url ((o gts-google-engine) text from to)
+  "Generate the url with TEXT, FROM and TO. Return a (url text from to) list."
+  (format "%s%s?%s"
+          (oref o base-url)
+          (oref o sub-url)
+          (mapconcat (lambda (p)
+                       (format "%s=%s" (url-hexify-string (car p)) (url-hexify-string (cdr p))))
+                     `(("client" . "gtx")
+                       ("ie"     . "UTF-8")
+                       ("oe"     . "UTF-8")
+                       ("dt"     . "bd")
+                       ("dt"     . "ex")
+                       ("dt"     . "ld")
+                       ("dt"     . "md")
+                       ("dt"     . "qc")
+                       ("dt"     . "rw")
+                       ("dt"     . "rm")
+                       ("dt"     . "ss")
+                       ("dt"     . "t")
+                       ("dt"     . "at")
+                       ("pc"     . "1")
+                       ("otf"    . "1")
+                       ("srcrom" . "1")
+                       ("ssel"   . "0")
+                       ("tsel"   . "0")
+                       ("hl"     . ,to)
+                       ("sl"     . ,from)
+                       ("tl"     . ,to)
+                       ("q"      . ,text)
+                       ("tk"     . ,(gts-google-tkk (oref o token) text)))
+                     "&")))
+
+(cl-defmethod gts-token-available-p ((o gts-google-engine))
+  (with-slots (token token-time token-expired-time) o
+    (and token
+         (or (eq token-time t)
+             (and token-time
+                  (<= (float-time (time-subtract (current-time) token-time))
+                      token-expired-time))))))
+
+(cl-defmethod gts-with-token ((o gts-google-engine) callback)
+  (with-slots (token token-time base-url) o
+    (if (gts-token-available-p o)
+        (funcall callback)
+      (gts-do-request base-url
+                      :headers gts-google-request-headers
+                      :done (lambda ()
+                              (condition-case _err
+                                  (progn
+                                    (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                                    (let ((token (cons (string-to-number (match-string 1))
+                                                       (string-to-number (match-string 2)))))
+                                      (setf token token)
+                                      (setf token-time (current-time))
+                                      (funcall callback)))
+                                (error (user-error "Error when fetching Token-Key. Check your network and proxy, or retry later"))))
+                      :fail (lambda (status)
+                              (user-error (format "ERR: %s" status)))))))
+
+(cl-defmethod gts-translate ((o gts-google-engine) &optional text from to rendercb)
+  (gts-with-token o (lambda ()
+                      (gts-do-request (gts-gen-url o text from to)
+                                      :headers gts-google-request-headers
+                                      :done (lambda ()
+                                              (let* ((parser (oref o parser))
+                                                     (result (gts-parse parser text (buffer-string))))
+                                                (put-text-property 0 (length result) 'engine o result)
+                                                (funcall rendercb result)))
+                                      :fail (lambda (status)
+                                              (funcall rendercb status))))))
+
+;; tts
+
+(cl-defmethod gts-tts-gen-urls ((o gts-google-engine) text lang)
+  "Generate the tts urls for TEXT to LANGUAGE."
+  (cl-loop with texts = (gts-tts-text-spliter o text)
+           for total = (length texts)
+           for index from 0
+           for piece in texts
+           collect
+           (let ((params `(("ie"      . "UTF-8")
+                           ("client"  . "gtx")
+                           ("prev"    . "input")
+                           ("q"       . ,text)
+                           ("tl"      . ,lang)
+                           ("total"   . ,(number-to-string total))
+                           ("idx"     . ,(number-to-string index))
+                           ("textlen" . ,(number-to-string (length piece)))
+                           ("tk"      . ,(gts-google-tkk (oref o token) piece)))))
+             (format "%s/translate_tts?%s"
+                     (oref o base-url)
+                     (mapconcat (lambda (p)
+                                  (format "%s=%s"
+                                          (url-hexify-string (car p))
+                                          (url-hexify-string (cdr p))))
+                                params "&")))))
+
+(cl-defmethod gts-tts-text-spliter ((_ gts-google-engine) text)
+  "Split TEXT by maxlen at applicable point for translating.
+Code from `google-translate', maybe improve it someday."
+  (let (result (maxlen 200))
+    (if (or (null maxlen) (<= maxlen 0))
+	    (push text result)
+      ;; split long text?
+      (with-temp-buffer
+	    (save-excursion (insert text))
+	    ;; strategy to split at applicable point
+	    ;; 1) fill-region remaining text by maxlen
+	    ;; 2) find end of sentence, end of punctuation, word boundary
+	    ;; 3) consume from remaining text between start and (2)
+	    ;; 4) repeat
+	    (let ((fill-column (* maxlen 3))
+	          (sentence-end-double-space nil)
+	          (pos (point-min)))
+	      (while (< pos (point-max))
+	        (save-restriction
+	          (narrow-to-region pos (point-max))
+	          (fill-region pos (point-max))
+	          (let ((limit (+ pos maxlen)))
+		        (if (>= limit (point-max))
+		            (setq limit (point-max))
+		          (goto-char limit)
+		          ;; try to split at end of sentence
+		          (if (> (backward-sentence) pos)
+		              (setq limit (point))
+		            ;; try to split at end of punctuation
+		            (goto-char limit)
+		            (if (re-search-backward "[,、]" pos t)
+			            (setq limit (1+ (point))) ; include punctuation
+		              (goto-char limit)
+		              ;; try to split at word boundary
+		              (forward-word-strictly -1)
+		              (when (> (point) pos)
+			            (setq limit (point))))))
+		        (push (buffer-substring-no-properties pos limit) result)
+		        (goto-char limit)
+		        (setq pos limit)))))))
+    (reverse result)))
+
+(cl-defmethod gts-tts ((o gts-google-engine) text lang)
+  (cond (gts-tts-speaker
+         (let ((urls (gts-tts-gen-urls o text lang)))
+           (with-temp-message "Speaking..."
+             (apply #'call-process gts-tts-speaker nil nil nil urls))))
+        ((executable-find "powershell")
+         (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
+           (shell-command (format "powershell -Command \"& {%s}\""
+                                  (encode-coding-string
+                                   (replace-regexp-in-string "\n" " " cmd)
+                                   (keyboard-coding-system))))))
+        (t (user-error "Program mplayer/powershell or others is need for tts"))))
+
+
+;;; Parser
+
+;; detail-mode, use as default
+
+(cl-defmethod gts-parse ((o gts-google-parser) text resp)
+  (let* ((json        (gts-resp-to-json o resp))
+         (brief       (gts-result--brief o json))
+         (sphonetic   (gts-result--sphonetic o json))
+         (tphonetic   (gts-result--tphonetic o json))
+         (details     (gts-result--details o json))
+         (definitions (gts-result--definitions o json))
+         (suggestion  (gts-result--suggestion o json))
+         tbeg tend result send)
+    (cl-flet ((phonetic (ph)
+                (if (and (or definitions definitions) (> (length ph) 0))
+                    (propertize (format " [%s]" ph) 'face 'gts-google-buffer-phonetic-face)
+                  ""))
+              (headline (line)
+                (propertize (format "[%s]\n" line) 'face 'gts-google-buffer-headline-face)))
+      (with-temp-buffer
+        ;; source
+        (insert text)
+        (setq send (point))
+        ;; suggestion
+        (when (> (length suggestion) 0)
+          (insert "\n\n")
+          (insert (propertize "Do you mean:" 'face 'gts-google-buffer-suggestion-desc-face) " ")
+          (insert (propertize suggestion 'face 'gts-google-buffer-suggestion-text-face) "?\n\n")
+          (insert suggestion))
+        ;; phonetic & translate
+        (if (or details definitions)
+          (progn
+            (insert (phonetic sphonetic) " ")
+            (setq tbeg (point))
+            (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
+            (setq tend (point))
+            (insert (phonetic tphonetic) "\n\n"))
+          (insert "\n\n")
+          (setq tbeg (point))
+          (insert brief)
+          (setq tend (point))
+          (insert "\n\n")
+          (facemenu-add-face 'gts-google-buffer-source-face (point-min) send))
+        ;; details
+        (when details
+          (insert (headline "Details"))
+          (cl-loop for (label . items) in details
+                   unless (= 0 (length label))
+                   do (insert (format "\n%s:\n" label))
+                   do (cl-loop with index = 0
+                               for trans in items
+                               do (insert
+                                   (format "%2d. " (cl-incf index))
+                                   (car trans)
+                                   " (" (mapconcat #'identity (cdr trans) ", ")  ")"
+                                   "\n")))
+          (insert "\n"))
+        ;; definitions
+        (when definitions
+          (insert (headline "Definitions"))
+          (cl-loop for (label . items) in definitions
+                   unless (= 0 (length label))
+                   do (insert (format "\n%s:\n" label))
+                   do (cl-loop with index = 0
+                               for (exp . eg) in items
+                               do (insert (format "%2d. " (cl-incf index)) exp)
+                               when (> (length eg) 0)
+                               do (insert
+                                   "\n    > "
+                                   (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
+                               do (insert "\n")))
+          (insert "\n"))
+        ;; at last, fill and return
+        (setq result (buffer-string))
+        (add-text-properties 0 (length result) `(text ,text tbeg ,tbeg tend ,tend) result)
+        result))))
+
+;; summary-mode
+
+(cl-defmethod gts-parse ((o gts-google-summary-parser) text resp)
+  (let ((result (gts-result--brief o (gts-resp-to-json o resp))))
+    (add-text-properties 0 1 `(text ,text tbeg 1 tend ,(+ 1 (length result))) result)
+    result))
+
+;; Extract results from response
+
+(cl-defmethod gts-resp-to-json ((_ gts-google-parser) resp)
+  "Convert the buffer RESP into JSON."
+  (condition-case nil
+      (with-temp-buffer
+        (insert resp)
+        (goto-char (point-min))
+        (re-search-forward "\n\n")
+        (let ((result (buffer-substring-no-properties (point) (point-max))))
+          (json-read-from-string (decode-coding-string result 'utf-8))))
+    (error (user-error "Result conversion error"))))
+
+(cl-defmethod gts-result--brief ((_ gts-google-parser) json)
+  "Get the translation text from JSON."
+  (mapconcat (lambda (item) (aref item 0)) (aref json 0) ""))
+
+(cl-defmethod gts-result--sphonetic ((_ gts-google-parser) json)
+  "Get the text phonetic from JSON."
+  (mapconcat (lambda (item) (if (> (length item) 3) (aref item 3) "")) (aref json 0) ""))
+
+(cl-defmethod gts-result--tphonetic ((_ gts-google-parser) json)
+  "Get the translation phonetic from JSON."
+  (mapconcat (lambda (item) (if (> (length item) 2) (aref item 2) "")) (aref json 0) ""))
+
+(cl-defmethod gts-result--details ((_ gts-google-parser) json)
+  "Get the details from JSON.
+Result style: ((noun (a (x y z))) (verb (b (m n o))))."
+  (cl-loop for i across (aref json 1)
+           collect
+           (cons
+            (aref i 0)
+            (cl-loop for j across (aref i 2)
+                     collect
+                     (cons
+                      (aref j 0)
+                      (cl-loop for k across (aref j 1) collect k))))))
+
+(cl-defmethod gts-result--definitions ((_ gts-google-parser) json)
+  "Get the definitions from JSON.
+Result style: ((noun (a b)) (verb (c d)))."
+  (cl-loop with defs = (ignore-errors (aref json 12))
+           for i across defs
+           collect
+           (cons
+            (aref i 0)
+            (cl-loop for j across (aref i 1)
+                     collect
+                     (cons
+                      (aref j 0)
+                      (ignore-errors (aref j 2)))))))
+
+(cl-defmethod gts-result--suggestion ((_ gts-google-parser) json)
+  "Get the suggestion from JSON."
+  (let ((info (aref json 7))) (unless (seq-empty-p info) (aref info 1))))
+
+
+;;; Token Key algorithm (deprecated)
+
+;; This algorithm is from `google-translate' project.
+;; https://github.com/atykhonov/google-translate/blob/master/google-translate-tk.el
+
+(defvar gts-google-token--bit-v-len 32)
+
+(defun gts-google-token--bit-v-2comp (v)
+  "Return the two's complement of V."
+  (let* ((vc (vconcat v))
+         (len (length vc)))
+    ;; Complement of v
+    (cl-loop for i from 0 below len do
+             (aset vc i (logxor (aref vc i) 1)))
+    ;; vc = complement of v + 1
+    (cl-loop for i downfrom (1- len) to 0
+             do (aset vc i (logxor (aref vc i) 1))
+             when (> (aref vc i) 0) return nil)
+    vc))
+
+(defun gts-google-token--number-to-bit-v (n)
+  "Return a bit vector from N."
+  (if (< n 0) (gts-google-token--bit-v-2comp
+               (gts-google-token--number-to-bit-v (abs n)))
+    (let ((v (make-vector gts-google-token--bit-v-len 0)))
+      (cl-loop for i downfrom (1- gts-google-token--bit-v-len) to 0
+               with q
+               when (< n 1) return nil do
+               (setq q (ffloor (* n 0.5)))
+               (aset v i (floor (- n (* 2.0 q))))
+               (setq n q))
+      v)))
+
+(defun gts-google-token--bit-v-to-number (v)
+  "Return a floating-point number from V."
+  (if (and (> (aref v 0) 0)
+           ;; Exclude [1 0 ... 0]
+           (cl-loop for i from 1 below gts-google-token--bit-v-len
+                    thereis (> (aref v i) 0)))
+      (- (gts-google-token--bit-v-to-number (gts-google-token--bit-v-2comp v)))
+    (funcall (if (> (aref v 0) 0)  #'- #'+)
+             (cl-reduce (lambda (acc e) (+ (* acc 2.0) e))
+                        v :initial-value 0.0))))
+
+(defun gts-google-token--logfn (fn n1 n2)
+  "Helper function for logical FN with N1 and N2."
+  (let ((v1 (gts-google-token--number-to-bit-v n1))
+        (v2 (gts-google-token--number-to-bit-v n2))
+        (v (make-vector gts-google-token--bit-v-len 0)))
+    (cl-loop for i from 0 below gts-google-token--bit-v-len do
+             (aset v i (funcall fn (aref v1 i) (aref v2 i))))
+    (gts-google-token--bit-v-to-number v)))
+
+(defun gts-google-token--logand (n1 n2)
+  "Return a floating-point number from N1 and N2."
+  (gts-google-token--logfn #'logand n1 n2))
+
+(defun gts-google-token--logxor (n1 n2)
+  "Return a floating-point number from N1 and N2."
+  (gts-google-token--logfn #'logxor n1 n2))
+
+(defun gts-google-token--lsh (n d)
+  "Return a floating-point number.
+Shift the bits in N to the left or rihgt D places.
+D is an integer."
+  (let ((v (gts-google-token--number-to-bit-v n))
+        (v-result (make-vector gts-google-token--bit-v-len 0)))
+    (if (< d 0)
+        ;; Shift Right Logical
+        (cl-loop for i from (abs d) below gts-google-token--bit-v-len
+                 for j from 0 do
+                 (aset v-result i (aref v j)))
+      ;; Shift Left Logical
+      (cl-loop for i from d below gts-google-token--bit-v-len
+               for j from 0 do
+               (aset v-result j (aref v i))))
+    (gts-google-token--bit-v-to-number v-result)))
+
+(defun gts-google-token--gen-rl (a b)
+  "Gen rl from A and B."
+  (cl-loop for c from 0 below (- (length b) 2) by 3
+           for d = (aref b (+ c 2)) do
+           (setq d (if (>= d ?a) (- d 87) (- d ?0)))
+           (setq d (if (= (aref b (1+ c)) ?+)
+                       (gts-google-token--lsh a (- d))
+                     (gts-google-token--lsh a d)))
+           (setq a (if (= (aref b c) ?+)
+                       (gts-google-token--logand (+ a d) 4294967295.0)
+                     (gts-google-token--logxor a d))))
+  a)
+
+(defun gts-google-tkk (token text)
+  "Calculate the Token for search TEXT.
+
+It will use the tkk from Google translate page."
+  (let* ((b (car token))
+         (d1 (cdr token))
+         (ub "+-3^+b+-f")
+         (vb "+-a^+6")
+         (a (cl-loop for c across (encode-coding-string text 'utf-8)
+                     for rr = (gts-google-token--gen-rl (+ (or rr b) c) vb)
+                     finally (return rr))))
+    (setq a (gts-google-token--gen-rl a ub))
+    (setq a (gts-google-token--logxor a d1))
+    (if (< a 0) (setq a (+ (gts-google-token--logand a 2147483647.0) 2147483648.0)))
+    (setq a (ffloor (mod a 1e6)))
+    (format "%s.%s"
+            (car (split-string (number-to-string a) "\\."))
+            (car (split-string (number-to-string
+                                (gts-google-token--logxor a b)) "\\.")))))
+
+
+(provide 'gts-google)
+
+;;; gts-google.el ends here
