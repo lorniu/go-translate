@@ -45,6 +45,10 @@
 
 (require 'cl-lib)
 
+;; new version of the translation extension
+;; temporary add the require statement here
+(require 'gts)
+
 
 ;;; Customizations
 
@@ -53,7 +57,7 @@
   :group 'external
   :prefix 'go-translate-)
 
-(defcustom go-translate-base-url "https://translate.google.com"
+(defcustom go-translate-base-url "https://translate.googleapis.com"
   "The base url of Google Translate.
 
 You can adjust this url according to your country and region. eg:
