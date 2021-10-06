@@ -1,5 +1,11 @@
 ;;; gts-faces.el --- face definitions -*- lexical-binding: t -*-
+
+;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
+;; SPDX-License-Identifier: MIT
+
 ;;; Commentary:
+;;
+
 ;;; Code:
 
 (require 'gts-core)
@@ -61,10 +67,6 @@
 (defface gts-google-buffer-detail-demo-face '((t :inherit font-lock-doc-face))
   "Propertize the detail demo in buffer rendering."
   :group 'gts-faces)
-
-
-
-
 
 
 (provide 'gts-faces)

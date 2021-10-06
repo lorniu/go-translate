@@ -5,7 +5,8 @@
 
 Improved Google Translate interface with asynchronous request and better user experience.
 
-[查看中文版文档](README-zh.md)
+- [中文版文档 - 重构了，不止支持 Google，不止是一个翻译框架](README-zh.md)
+- [中文版文档 (old version, deprecated)](README-zh_old.md)
 
 I have used translation frequently in recent days.
 
