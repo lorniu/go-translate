@@ -6,8 +6,11 @@
 (require 'facemenu)
 (require 'gts-core)
 (require 'gts-implements)
+
+;; engines
 (require 'gts-google)
 (require 'gts-google-rpc)
+(require 'gts-deepl)
 
 ;;;###autoload
 (defun gts-do-translate ()
@@ -26,8 +29,6 @@
 
 ;;; Custom your translator
 
-(setq gts-debug-p nil)
-
 (setq gts-translate-list '(("en" "zh") ("fr" "zh")))
 
 (setq gts-default-translator
@@ -45,10 +46,11 @@
        (list
         (gts-google-engine)
         (gts-google-rpc-engine)
+        ;;(gts-deepl-engine :auth-key "2e20bade-88e9-02f2-169f-ab3c445d7984:fx" :pro nil)
 
         ;;(gts-google-engine :parser (gts-google-summary-parser))
         ;;(gts-google-engine :parser (gts-google-parser))
-        (gts-google-rpc-engine :parser (gts-google-rpc-summary-parser))
+        ;;(gts-google-rpc-engine :parser (gts-google-rpc-summary-parser))
         )
 
        :render
