@@ -58,7 +58,8 @@ When success execute CALLBACK, or execute ERRORBACK."
   (if (and gts-default-http-client
            (eieio-object-p gts-default-http-client)
            (object-of-class-p gts-default-http-client 'gts-http-client))
-      (let ((tag (format "request/%s" (eieio-object-class-name gts-default-http-client))))
+      (let ((tag (format "request/%s" (eieio-object-class-name gts-default-http-client)))
+            (data (gts-format-params data)))
         (gts-do-log tag
                     (concat
                      (format "Start! (%s)" url)
@@ -165,13 +166,17 @@ from the picker instance in O."
                        (edesc (format "Engine/%-10s" (eieio-object-class-name engine)))
                        (rdesc (format "Render/%-10s" (eieio-object-class-name render))))
                    (gts-me-pre render o)
-                   (gts-translate engine text from to
-                                  (lambda (result)
-                                    (with-current-buffer buf
-                                      (gts-do-log edesc (format "Done! (id: %s)" id))
-                                      (gts-add-result o id result)
-                                      (gts-me-out render o id)
-                                      (gts-do-log rdesc (format "Done! (id: %s)" id))))))))))))
+                   (condition-case err
+                       (gts-translate engine text from to
+                                      (lambda (result)
+                                        (with-current-buffer buf
+                                          (gts-do-log edesc (format "Done! (id: %s)" id))
+                                          (gts-add-result o id result)
+                                          (gts-me-out render o id)
+                                          (gts-do-log rdesc (format "Done! (id: %s)" id)))))
+                     (error
+                      (gts-add-result o id (cadr err))
+                      (gts-me-out render o id))))))))))
 
 ;; these methods only used for multiple engine tasks.
 
