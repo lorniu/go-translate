@@ -41,7 +41,7 @@ Execute CALLBACK when success, or ERRORBACK when failed."
         (url-user-agent gts-user-agent)
         (url-request-extra-headers headers)
         (url-request-method (if data "POST" "GET"))
-        (url-request-data (gts-format-params data)))
+        (url-request-data data))
     (url-retrieve url (lambda (status)
                         (unwind-protect
                             (if (and fail (eq (car status) :error))
