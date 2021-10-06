@@ -1,5 +1,11 @@
 ;;; gts-google.el --- Google translate module -*- lexical-binding: t -*-
+
+;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
+;; SPDX-License-Identifier: MIT
+
 ;;; Commentary:
+;;
+
 ;;; Code:
 
 (require 'gts-core)

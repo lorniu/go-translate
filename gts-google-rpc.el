@@ -1,5 +1,11 @@
 ;;; gts-google-rpc.el --- google translation with rpc api -*- lexical-binding: t -*-
+
+;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
+;; SPDX-License-Identifier: MIT
+
 ;;; Commentary:
+;;
+
 ;;; Code:
 
 (require 'gts-google)
