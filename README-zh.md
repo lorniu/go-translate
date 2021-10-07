@@ -1,8 +1,9 @@
 # Go 翻译框架
 
-放假，带娃间隙，把这个插件重写了。很久以来就有这想法，终于落实了。
+放假，带娃。忙里偷闲，将这个插件重写了。
 
 支持单引擎、多引擎。目前添加的引擎有:
+- Bing 翻译 (最快)
 - Google Translate，旧的 API (不挂代理也可访问)
 - Google Translate，新的 RPC API
 - DeepL
@@ -51,6 +52,7 @@
        :engines ; 翻译引擎，可以配置多个。另外可以传入不同的 Parser 从而使用不同样式的输出
 
        (list
+        (gts-bing-cn-engine)
         ;;(gts-google-engine)
         ;;(gts-google-rpc-engine)
         ;;(gts-deepl-engine :auth-key "3e10bade-88e9-02f2-269f-ab3c445d7984:fx" :pro nil)
@@ -150,9 +152,9 @@ Whatever you like.
                  )))
 ```
 
-当前，新建翻译引擎也比较简单:
-- 创建一个 `gts-engine` 类，实现其 `gts-translate/gts-tts` 方法，分别用于抓取翻译结果和语音播报。后面一个可选
-- 创建一个 `gts-parser` 类，实现其 `gts-parse` 方法，用户将 engine 传来的字符串，格式化为最终渲染的字符串
+当然，新建翻译引擎也比较简单:
+- 创建一个 `gts-engine` 类，实现其 `gts-translate/gts-tts` 方法，分别用于翻译和语音播报。后面一个可选
+- 创建一个 `gts-parser` 类，实现其 `gts-parse` 方法，用于将 engine 传来的字符串，格式化为最终渲染的字符串
 
 ## Miscellaneous
 

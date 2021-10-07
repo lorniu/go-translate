@@ -37,6 +37,7 @@
 (require 'gts-google)
 (require 'gts-google-rpc)
 (require 'gts-deepl)
+(require 'gts-bing-cn)
 
 ;;;###autoload
 (defun gts-do-translate ()
@@ -69,6 +70,7 @@
 
    :engines
    (list
+    (gts-bing-cn-engine)
     ;;(gts-google-engine)
     (gts-google-rpc-engine)
     ;;(gts-deepl-engine :auth-key "2e20bade-88e9-02f3-169f-ab3c445d7984:fx" :pro nil)
