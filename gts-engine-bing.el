@@ -14,10 +14,11 @@
 (defclass gts-bing-parser (gts-parser) ())
 
 (defclass gts-bing-engine (gts-engine)
-  ((tag      :initform "Bing")
-   (base-url :initform "https://cn.bing.com")
-   (sub-url  :initform "/ttranslatev3")
+  ((tag       :initform "Bing")
+   (base-url  :initform "https://www.bing.com")
+   (sub-url   :initform "/ttranslatev3")
 
+   (tld-url   :initform nil)
    (ig        :initform nil)
    (key       :initform nil)
    (token     :initform nil)
@@ -49,18 +50,22 @@
                       :done
                       (lambda ()
                         (condition-case err
-                            (let (key token ig)
+                            (let (key token ig tld)
                               (goto-char (point-min))
+                              (re-search-forward "curUrl=.*/\\([a-z]+\\.bing.com\\)")
+                              (setq tld (match-string 1))
                               (re-search-forward "\"ig\":\"\\([^\"]+\\).*params_RichTranslateHelper = \\[\\([0-9]+\\),\"\\([^\"]+\\)")
                               (setq ig (match-string 1) key (match-string 2) token (match-string 3))
                               (oset o ig ig)
                               (oset o key key)
                               (oset o token token)
                               (oset o last-time (time-to-seconds))
+                              (oset o tld-url (concat "https://" tld))
                               (setq gts-bing-token-maybe-invalid nil)
-                              (gts-do-log "bing" (format "key: %s\ntoken: %s\nig: %s" key token ig))
+                              (gts-do-log 'bing (format "url: %s\nkey: %s\ntoken: %s\nig: %s" tld key token ig))
                               (funcall callback))
-                          (error (error "Error occurred when request with bing token (%s, %s)" o err))))
+                          (error (error "Error occurred when request with bing token (%s, %s)"
+                                        (eieio-object-class-name o) err))))
                       :fail
                       (lambda (status)
                         (error (format "ERR: %s" status)))))))
@@ -69,8 +74,8 @@
   (gts-with-token
    engine
    (lambda ()
-     (with-slots (base-url sub-url token key ig parser) engine
-       (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" base-url sub-url ig)
+     (with-slots (tld-url sub-url token key ig parser) engine
+       (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
                        :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
                        :data `(("fromLang" . ,(gts-get-lang engine from))
                                ("to"       . ,(gts-get-lang engine to))
