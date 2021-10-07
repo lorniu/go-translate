@@ -25,6 +25,10 @@
    (last-time :initform nil)
    (expired-time :initform (* 30 60)) ; todo, test it.
 
+   (ttsk-url  :initform "/tfetspktok")
+   (tts-url   :initform "https://%s.tts.speech.microsoft.com/cognitiveservices/v1")
+   (tts-tpl   :initform "<speak version='1.0' xml:lang='%s'><voice xml:lang='%s' xml:gender='Female' name='%s'><prosody rate='-20.00%%'>%s</prosody></voice></speak>")
+
    (parser   :initform (gts-bing-parser))))
 
 
@@ -87,6 +91,46 @@
                                  (funcall rendercb result)))
                        :fail (lambda (status)
                                (funcall rendercb status)))))))
+
+;;; TTS
+
+(defvar gts-bing-tts-langs-mapping '(("zh" . ("zh-CN" . "zh-CN-XiaoxiaoNeural"))
+                                     ("en" . ("en-US" . "en-US-AriaNeural"))
+                                     ("fr" . ("fr-CA" . "fr-CA-SylvieNeural"))
+                                     ("de" . ("de-DE" . "de-DE-KatjaNeural"))))
+
+(cl-defmethod gts-tts-payload ((o gts-bing-engine) lang text)
+  (with-slots (tts-tpl) o
+    (let (l n (mt (assoc lang gts-bing-tts-langs-mapping)))
+      (if mt (setq l (cadr mt) n (cddr mt))
+        (user-error "Add the mapping of your language into `gts-bing-tts-langs-mapping' :)"))
+      (format tts-tpl l l n (encode-coding-string text 'utf-8)))))
+
+(cl-defmethod gts-tts ((engine gts-bing-engine) text lang)
+  (gts-with-token
+   engine
+   (lambda ()
+     (with-slots (tld-url sub-url token key ig parser ttsk-url tts-url tts-tpl) engine
+       (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.2" tld-url ttsk-url ig)
+                       :headers '(("content-type" . "application/x-www-form-urlencoded"))
+                       :data `(("token" . ,token) ("key" . ,key))
+                       :done (lambda ()
+                               (goto-char url-http-end-of-headers)
+                               (let* ((json (json-read))
+                                      (token (cdr (assoc 'token json)))
+                                      (region (cdr (assoc 'region json))))
+                                 (gts-do-log 'bing-tts (format "token: %s\nregion: %s" token region))
+                                 (gts-do-request (format tts-url region)
+                                                 :data (gts-tts-payload engine lang text)
+                                                 :headers `(("content-type" . "application/ssml+xml")
+                                                            ("authorization" . ,(format "Bearer %s" token))
+                                                            ("x-microsoft-outputformat" . "audio-16khz-32kbitrate-mono-mp3"))
+                                                 :done (lambda ()
+                                                         (gts-tts-speak-buffer-data))
+                                                 :fail (lambda (status)
+                                                         (user-error "[BING-TTS] error when play sound")))))
+                       :fail (lambda (status)
+                               (user-error "%s" status)))))))
 
 
 ;;; Parser
