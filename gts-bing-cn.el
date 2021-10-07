@@ -18,9 +18,11 @@
    (base-url :initform "https://cn.bing.com")
    (sub-url  :initform "/ttranslatev3")
 
-   (ig       :initform nil :initarg :ig)
-   (key      :initform nil :initarg :key)
-   (token    :initform nil :initarg :token)
+   (ig        :initform nil)
+   (key       :initform nil)
+   (token     :initform nil)
+   (last-time :initform nil)
+   (expired-time :initform (* 30 60)) ; todo, test it.
 
    (parser   :initform (gts-bing-cn-parser))))
 
@@ -29,13 +31,21 @@
 
 (defvar gts-bing-cn-extra-langs-mapping '(("zh" . "zh-Hans")))
 
+(defvar gts-bing-cn-token-maybe-invalid nil)
+
 (cl-defmethod gts-get-lang ((_ gts-bing-cn-engine) lang)
   (or (cdr-safe (assoc lang gts-bing-cn-extra-langs-mapping)) lang))
 
+(cl-defmethod gts-token-available-p ((o gts-bing-cn-engine))
+  (with-slots (token key ig last-time expired-time) o
+    (and token key ig last-time
+         (not gts-bing-cn-token-maybe-invalid)
+         (< (time-subtract-seconds (time-to-seconds) last-time)
+            expired-time))))
+
 (cl-defmethod gts-with-token ((o gts-bing-cn-engine) callback)
   (with-slots (token key ig base-url) o
-    (if (and token key ig)
-        (funcall callback)
+    (if (gts-token-available-p o) (funcall callback)
       (gts-do-request (concat base-url "/translator")
                       :done
                       (lambda ()
@@ -47,6 +57,8 @@
                               (oset o ig ig)
                               (oset o key key)
                               (oset o token token)
+                              (oset o last-time (time-to-seconds))
+                              (setq gts-bing-cn-token-maybe-invalid nil)
                               (gts-do-log "bing" (format "key: %s\ntoken: %s\nig: %s" key token ig))
                               (funcall callback))
                           (error (error "Error occurred when request with bing token (%s, %s)" o err))))
@@ -55,15 +67,15 @@
                         (error (format "ERR: %s" status)))))))
 
 (cl-defmethod gts-translate ((engine gts-bing-cn-engine) &optional text from to rendercb)
-  (with-slots (base-url sub-url token key ig parser) engine
-    (gts-with-token
-     engine
-     (lambda ()
+  (gts-with-token
+   engine
+   (lambda ()
+     (with-slots (base-url sub-url token key ig parser) engine
        (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" base-url sub-url ig)
                        :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                       :data `(("fromLang" . ,from)
+                       :data `(("fromLang" . ,(gts-get-lang engine from))
                                ("to"       . ,(gts-get-lang engine to))
-                               ("text"     . ,(gts-get-lang engine text))
+                               ("text"     . ,text)
                                ("key"      . ,key)
                                ("token"    . ,token))
                        :done (lambda ()
@@ -86,11 +98,15 @@
     (goto-char (point-min))
     (gts-do-log 'bing-result (buffer-string))
     (let* ((json (json-read))
-           (result (cdr (assoc 'text
-                               (aref
-                                (cdr (assoc 'translations (aref json 0)))
-                                0)))))
-      result)))
+           (result (ignore-errors
+                     (cdr (assoc 'text
+                                 (aref
+                                  (cdr (assoc 'translations (aref json 0)))
+                                  0))))))
+      (or result
+          (progn
+            (setq gts-bing-cn-token-maybe-invalid t) ; refresh token when error occurred
+            (buffer-string))))))
 
 
 (provide 'gts-bing-cn)

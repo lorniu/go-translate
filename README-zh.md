@@ -18,7 +18,7 @@
 
 添加到配置文件:
 ```elisp
-(require 'gts)
+(require 'go-translate)
 
 (setq gts-translate-list '(("en" "zh")))
 (setq gts-default-translator
