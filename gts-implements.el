@@ -17,7 +17,7 @@
 (defvar gts-buffer-logger-buffer " *gts-logger*")
 
 (defclass gts-buffer-logger (gts-logger)
-  ((buffer :initarg buffer :initform nil)))
+  ((buffer :initarg buf :initform nil))) ; dont set :initarg to buffer, it will make an error on emacsv27.
 
 (cl-defmethod gts-log ((logger gts-buffer-logger) tag msg)
   (with-current-buffer (get-buffer-create (or (oref logger buffer) gts-buffer-logger-buffer))

@@ -149,7 +149,8 @@ from the picker instance in O."
   (oset o to to)
   (with-slots (text from to engines render) o
     (unless engines (user-error "No translate engines found"))
-    (setq engines (ensure-list engines))
+    (setq engines
+          (if (listp engines) engines (list engines)))
     (let ((buf (current-buffer)))
       (gts-do-log "Translator"
                   (concat "\n"
@@ -167,7 +168,7 @@ from the picker instance in O."
             (t
              (gts-init o (length engines))
              (cl-loop
-              for engine in (ensure-list engines)
+              for engine in engines
               do (let ((id (gts-add-task o engine))
                        (edesc (format "Engine/%-10s" (eieio-object-class-name engine)))
                        (rdesc (format "Render/%-10s" (eieio-object-class-name render))))
