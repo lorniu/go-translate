@@ -227,6 +227,7 @@ including FROM/TO and other DESC."
                    for head = (funcall gts-render-buffer-me-header-function engine-tag parser-tag)
                    for content = (if result (format "\n%s\n" result) "\nLoading...\n")
                    do (insert head content)))
+        (set-buffer-modified-p nil)
         (when (gts-finished-p translator)
           ;; cursor
           (unless (gts-get-childframe-of-buffer buf)

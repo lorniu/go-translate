@@ -38,7 +38,7 @@
              (eieio-object-p gts-default-logger)
              (object-of-class-p gts-default-logger 'gts-logger))
         (dolist (msg (split-string msgs "\n"))
-          (gts-log gts-default-logger tag msg))
+          (gts-log gts-default-logger (format "%s" tag) msg))
       (error "Make sure `gts-default-logger' is available. eg:\n
  (setq gts-default-logger (gts-buffer-logger))\n\n\n"))))
 
@@ -124,7 +124,7 @@ You can implements your rules.")
   :abstract t)
 
 (defclass gts-parser ()
-  ((tag  :initarg :tag)))
+  ((tag  :initarg :tag :initform nil)))
 
 ;; render
 
