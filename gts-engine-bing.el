@@ -1,4 +1,4 @@
-;;; gts-bing-cn.el --- Microsoft Translate -*- lexical-binding: t -*-
+;;; gts-engine-bing.el --- Microsoft Translate -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
@@ -11,9 +11,9 @@
 
 (require 'gts-implements)
 
-(defclass gts-bing-cn-parser (gts-parser) ())
+(defclass gts-bing-parser (gts-parser) ())
 
-(defclass gts-bing-cn-engine (gts-engine)
+(defclass gts-bing-engine (gts-engine)
   ((tag      :initform "Bing")
    (base-url :initform "https://cn.bing.com")
    (sub-url  :initform "/ttranslatev3")
@@ -24,26 +24,25 @@
    (last-time :initform nil)
    (expired-time :initform (* 30 60)) ; todo, test it.
 
-   (parser   :initform (gts-bing-cn-parser))))
+   (parser   :initform (gts-bing-parser))))
 
 
 ;;; Engine
 
-(defvar gts-bing-cn-extra-langs-mapping '(("zh" . "zh-Hans")))
+(defvar gts-bing-extra-langs-mapping '(("zh" . "zh-Hans")))
 
-(defvar gts-bing-cn-token-maybe-invalid nil)
+(defvar gts-bing-token-maybe-invalid nil)
 
-(cl-defmethod gts-get-lang ((_ gts-bing-cn-engine) lang)
-  (or (cdr-safe (assoc lang gts-bing-cn-extra-langs-mapping)) lang))
+(cl-defmethod gts-get-lang ((_ gts-bing-engine) lang)
+  (or (cdr-safe (assoc lang gts-bing-extra-langs-mapping)) lang))
 
-(cl-defmethod gts-token-available-p ((o gts-bing-cn-engine))
+(cl-defmethod gts-token-available-p ((o gts-bing-engine))
   (with-slots (token key ig last-time expired-time) o
     (and token key ig last-time
-         (not gts-bing-cn-token-maybe-invalid)
-         (< (time-subtract-seconds (time-to-seconds) last-time)
-            expired-time))))
+         (not gts-bing-token-maybe-invalid)
+         (< (- (time-to-seconds) last-time) expired-time))))
 
-(cl-defmethod gts-with-token ((o gts-bing-cn-engine) callback)
+(cl-defmethod gts-with-token ((o gts-bing-engine) callback)
   (with-slots (token key ig base-url) o
     (if (gts-token-available-p o) (funcall callback)
       (gts-do-request (concat base-url "/translator")
@@ -58,7 +57,7 @@
                               (oset o key key)
                               (oset o token token)
                               (oset o last-time (time-to-seconds))
-                              (setq gts-bing-cn-token-maybe-invalid nil)
+                              (setq gts-bing-token-maybe-invalid nil)
                               (gts-do-log "bing" (format "key: %s\ntoken: %s\nig: %s" key token ig))
                               (funcall callback))
                           (error (error "Error occurred when request with bing token (%s, %s)" o err))))
@@ -66,7 +65,7 @@
                       (lambda (status)
                         (error (format "ERR: %s" status)))))))
 
-(cl-defmethod gts-translate ((engine gts-bing-cn-engine) &optional text from to rendercb)
+(cl-defmethod gts-translate ((engine gts-bing-engine) &optional text from to rendercb)
   (gts-with-token
    engine
    (lambda ()
@@ -87,7 +86,7 @@
 
 ;;; Parser
 
-(cl-defmethod gts-parse ((_ gts-bing-cn-parser) _text resp)
+(cl-defmethod gts-parse ((_ gts-bing-parser) _text resp)
   (with-temp-buffer
     (set-buffer-multibyte t)
     (insert resp)
@@ -105,10 +104,10 @@
                                   0))))))
       (or result
           (progn
-            (setq gts-bing-cn-token-maybe-invalid t) ; refresh token when error occurred
+            (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
             (buffer-string))))))
 
 
-(provide 'gts-bing-cn)
+(provide 'gts-engine-bing)
 
-;;; gts-bing-cn.el ends here
+;;; gts-engine-bing.el ends here

@@ -1,4 +1,4 @@
-;;; gts-deepl.el --- Translate Engine for DeepL -*- lexical-binding: t -*-
+;;; gts-engine-deepl.el --- Translate Engine for DeepL -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
@@ -10,8 +10,7 @@
 
 (require 'gts-core)
 
-(defclass gts-deepl-parser (gts-parser)
-  ((tag :initform "Normal")))
+(defclass gts-deepl-parser (gts-parser) ())
 
 (defclass gts-deepl-engine (gts-engine)
   ((tag      :initform "DeepL")
@@ -42,11 +41,11 @@
                                   ("ru" . "RU") ;; Russian
                                   ))
 
-(cl-defmethod gts-get-lang ((o gts-deepl-engine) lang)
+(cl-defmethod gts-get-lang ((_ gts-deepl-engine) lang)
   (let ((mapping (assoc lang gts-deepl-langs-mapping)))
     (if mapping (cdr mapping)
       (user-error
-       "Language %s not supported by DeepL.\nSupported list: %s."
+       "Language %s not supported by DeepL.\nSupported list: %s"
        lang (mapconcat #'car gts-deepl-langs-mapping ", ")))))
 
 (cl-defmethod gts-gen-url ((o gts-deepl-engine))
@@ -72,7 +71,7 @@
 
 ;;; Parser
 
-(cl-defmethod gts-parse ((o gts-deepl-parser) text resp)
+(cl-defmethod gts-parse ((_ gts-deepl-parser) text resp)
   (with-temp-buffer
     (insert resp)
     (goto-char (point-min))
@@ -80,7 +79,7 @@
     (let* ((rstr (buffer-substring-no-properties (point) (point-max)))
            (json (json-read-from-string rstr))
            (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
-           tbeg bend)
+           tbeg tend)
       (erase-buffer)
       (insert (propertize text 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))
@@ -92,6 +91,6 @@
       result)))
 
 
-(provide 'gts-deepl)
+(provide 'gts-engine-deepl)
 
-;;; gts-deepl.el ends here
+;;; gts-engine-deepl.el ends here
