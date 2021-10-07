@@ -1,4 +1,4 @@
-;;; gts-google-rpc.el --- google translation with rpc api -*- lexical-binding: t -*-
+;;; gts-engine-google-rpc.el --- google translation with rpc api -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
@@ -8,7 +8,7 @@
 
 ;;; Code:
 
-(require 'gts-google)
+(require 'gts-engine-google)
 
 
 ;;; Components
@@ -20,7 +20,7 @@
   ((tag :initform "Summary")))
 
 (defclass gts-google-rpc-engine (gts-engine)
-  ((tag       :initform "Google-RPC")
+  ((tag       :initform "Gooogle")
    (base-url  :initform "https://translate.google.cn")
    (sub-url   :initform "/_/TranslateWebserverUi/data/batchexecute")
    (parser    :initform (gts-google-rpc-parser))
@@ -61,7 +61,8 @@
                                                        ("_reqid"       . ,(+ 1000 (random 9000)))
                                                        ("rt"           . "c")))))))
                             (funcall callback url-tpl))
-                        (error (error "Error occurred when request with token (%s, %s)" o err))))
+                        (error (error "Error occurred when request with token (%s, %s)"
+                                      (eieio-object-class-name o) (cadr err)))))
                     :fail
                     (lambda (status)
                       (error (format "ERR: %s" status))))))
@@ -80,7 +81,6 @@
                                                             from to)))
                                             :done (lambda ()
                                                     (let ((result (gts-parse parser text (buffer-string))))
-                                                      (put-text-property 0 (length result) 'engine o result)
                                                       (funcall rendercb result)))
                                             :fail (lambda (status)
                                                     (funcall rendercb status))))))
@@ -109,13 +109,7 @@
                                                     (erase-buffer)
                                                     (insert code)
                                                     (base64-decode-region (point-min) (point-max))
-                                                    (setq proc (make-process :name "gts-tts-process"
-                                                                             :command (list gts-tts-speaker "-")
-                                                                             :buffer nil
-                                                                             :noquery t
-                                                                             :connection-type 'pipe))
-                                                    (process-send-region proc (point-min) (point-max))
-                                                    (if (process-live-p proc) (process-send-eof proc)))))
+                                                    (gts-tts-speak-buffer-data))))
                                         :fail (lambda (status)
                                                 (user-error "Error when TTS (%s)" status)))))))
 
@@ -196,6 +190,6 @@ Result style: ((noun (a b)) (verb (c d)))."
     (replace-regexp-in-string "<b>\\|</b>\\|<i>\\|</i>" "" (gts-aref-for json 0 1 0 0 1))))
 
 
-(provide 'gts-google-rpc)
+(provide 'gts-engine-google-rpc)
 
-;;; gts-google-rpc.el ends here
+;;; gts-engine-google-rpc.el ends here

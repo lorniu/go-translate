@@ -8,6 +8,9 @@
 
 ;;; Code:
 
+(require 'url)
+(require 'facemenu)
+
 (require 'gts-core)
 (require 'gts-faces)
 
@@ -34,9 +37,10 @@
 ;;; [Http Client] implement with builtin `url.el'.
 ;; This will be used as the default http client.
 
-(defvar gts-debug-p nil)
-
-(defvar gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36")
+(defcustom gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
+  "The user agent used when send a request."
+  :type 'string
+  :group 'gts)
 
 (defclass gts-url-http-client (gts-http-client) ())
 
@@ -134,8 +138,7 @@ including FROM/TO and other DESC."
         (insert "\n")))))
 
 (defun gts-render-buffer-me-engine-header (engine-tag parser-tag)
-  (concat "\n"
-          (propertize
+  (concat (propertize
            (format "%s %s\n" engine-tag (if parser-tag (format "(%s) " parser-tag) ""))
            'face 'gts-render-buffer-me-header-backgroud-face)))
 
@@ -180,11 +183,18 @@ including FROM/TO and other DESC."
     (local-set-key "x" (lambda () (interactive) (gts-translate provider text to from)))
     (local-set-key "y" (lambda ()
                          (interactive)
-                         (when-let ((e (get-text-property (point) 'engine)))
-                           (gts-tts e text from))))
-    (local-set-key "q" #'kill-buffer-and-window)))
+                         (let ((curreng
+                                (if (object-of-class-p provider 'gts-engine) provider
+                                  (get-text-property (point) 'engine))))
+                           (if curreng
+                               (gts-do-tts text from (lambda () (gts-tts curreng text from)))
+                             (message "[TTS] No engine found at point")))))
+    (local-set-key "q" #'kill-buffer-and-window)
+    ;; execute the hook if exists
+    (run-hooks 'gts-after-buffer-prepared-hook)))
 
 (defun gts-render-buffer (buffer result)
+  "For single engine translation."
   (when-let ((buf (get-buffer buffer)))
     (with-current-buffer buf
       (cond
@@ -205,17 +215,21 @@ including FROM/TO and other DESC."
         ;; error display
         (goto-char (point-max))
         (insert (propertize (format "\n\n\n%s" result) 'face 'gts-render-buffer-error-face))))
-      ;; change states
+      ;; update states
       (set-buffer-modified-p nil)
-      (gts-buffer-change-header-line-state 'done))
+      (gts-buffer-change-header-line-state 'done)
+      (put-text-property (point-min) (point-max) 'engine (get-text-property 0 'engine result))
+      ;; execute the hook if exists
+      (run-hooks 'gts-after-buffer-render-hook))
     buf))
 
 (defun gts-render-buffer-multi-engines (buffer translator _id)
+  "For multiple engines translation."
   (when-let ((buf (get-buffer buffer)))
     (with-slots (text from to plan-cnt task-queue engines) translator
       (with-current-buffer buf
         (erase-buffer)
-        (insert (propertize (format "\n%s\n" text) 'face 'gts-render-buffer-source-face))
+        (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
         ;; content
         (save-excursion
           (cl-loop for task in task-queue
@@ -225,15 +239,22 @@ including FROM/TO and other DESC."
                    for parser = (oref engine parser)
                    for parser-tag = (slot-value parser 'tag)
                    for head = (funcall gts-render-buffer-me-header-function engine-tag parser-tag)
-                   for content = (if result (format "\n%s\n" result) "\nLoading...\n")
-                   do (insert head content)))
+                   for content = (if result
+                                     (let ((pr (concat head (format "\n%s\n\n" result))))
+                                       (put-text-property 0 (length pr) 'engine engine pr)
+                                       pr)
+                                   (concat head "\nLoading...\n\n"))
+                   do (insert content)))
+        ;; states
         (set-buffer-modified-p nil)
         (when (gts-finished-p translator)
           ;; cursor
           (unless (gts-get-childframe-of-buffer buf)
             (set-window-point (get-buffer-window) (save-excursion (forward-line 3) (point))))
           ;; state
-          (gts-buffer-change-header-line-state 'done))))
+          (gts-buffer-change-header-line-state 'done))
+        ;; execute the hook if exists
+        (run-hooks 'gts-after-buffer-multiple-render-hook)))
     buf))
 
 ;; component
@@ -275,7 +296,11 @@ including FROM/TO and other DESC."
 
 ;; implement
 
-(defvar gts-posframe-pop-render-buffer " *GT-Pop-Posframe*")
+(defcustom gts-posframe-pop-render-buffer " *GT-Pop-Posframe*"
+  "Buffer name of Pop Posframe."
+  :type 'string
+  :group 'gts)
+
 (defvar gts-posframe-pop-render-timeout 20)
 (defvar gts-posframe-pop-render-poshandler nil)
 
@@ -332,7 +357,11 @@ Manually close the frame with `q'.")
 
 ;;; [Render] Child-Frame Render (Pin Mode)
 
-(defvar gts-posframe-pin-render-buffer " *GT-Pin-Posframe*")
+(defcustom gts-posframe-pin-render-buffer " *GT-Pin-Posframe*"
+  "Buffer name of Pin Posframe."
+  :type 'string
+  :group 'gts)
+
 (defvar gts-posframe-pin-render-frame nil)
 (defvar gts-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)
 

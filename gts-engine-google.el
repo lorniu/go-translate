@@ -1,4 +1,4 @@
-;;; gts-google.el --- Google translate module -*- lexical-binding: t -*-
+;;; gts-engine-google.el --- Google translate module -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
@@ -8,18 +8,7 @@
 
 ;;; Code:
 
-(require 'gts-core)
-(require 'gts-faces)
-(require 'facemenu)
-
-(defcustom gts-tts-speaker (or (executable-find "mpv")
-                               (executable-find "mplayer"))
-  "The program to use to speak the translation.
-
-On Windows, if it is not found, will fallback to use `powershell`
-to do the job. Although it is not perfect, it seems to work."
-  :type 'string
-  :group 'gts)
+(require 'gts-implements)
 
 
 ;;; Components
@@ -34,7 +23,7 @@ to do the job. Although it is not perfect, it seems to work."
   ((tag                :initform "Google")
    (base-url           :initform "http://translate.googleapis.com")
    (sub-url            :initform "/translate_a/single")
-   (token              :initform (cons 430675 2721866130))
+   (token              :initform (cons 430675 2721866130) :initarg token) ; hard code
    (token-time         :initform t)
    (token-expired-time :initform (* 30 60))
    (parser             :initform (gts-google-parser))))
@@ -110,7 +99,6 @@ to do the job. Although it is not perfect, it seems to work."
                                       :done (lambda ()
                                               (let* ((parser (oref o parser))
                                                      (result (gts-parse parser text (buffer-string))))
-                                                (put-text-property 0 (length result) 'engine o result)
                                                 (funcall rendercb result)))
                                       :fail (lambda (status)
                                               (funcall rendercb status))))))
@@ -184,17 +172,9 @@ Code from `google-translate', maybe improve it someday."
     (reverse result)))
 
 (cl-defmethod gts-tts ((o gts-google-engine) text lang)
-  (cond (gts-tts-speaker
-         (let ((urls (gts-tts-gen-urls o text lang)))
-           (with-temp-message "Speaking..."
-             (apply #'call-process gts-tts-speaker nil nil nil urls))))
-        ((executable-find "powershell")
-         (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
-           (shell-command (format "powershell -Command \"& {%s}\""
-                                  (encode-coding-string
-                                   (replace-regexp-in-string "\n" " " cmd)
-                                   (keyboard-coding-system))))))
-        (t (user-error "Program mplayer/powershell or others is need for tts"))))
+  (let ((urls (gts-tts-gen-urls o text lang)))
+    (with-temp-message "Speaking..."
+      (apply #'call-process gts-tts-speaker nil nil nil urls))))
 
 
 ;;; Parser
@@ -270,14 +250,15 @@ Code from `google-translate', maybe improve it someday."
                                do (insert "\n")))
           (insert "\n"))
         ;; at last, fill and return
-        (setq result (buffer-string))
+        (setq result (string-trim (buffer-string)))
         (add-text-properties 0 (length result) `(text ,text tbeg ,tbeg tend ,tend) result)
         result))))
 
 ;; summary-mode
 
 (cl-defmethod gts-parse ((o gts-google-summary-parser) text resp)
-  (let ((result (gts-result--brief o (gts-resp-to-json o resp))))
+  (let ((result (string-trim
+                 (gts-result--brief o (gts-resp-to-json o resp)))))
     (add-text-properties 0 1 `(text ,text tbeg 1 tend ,(+ 1 (length result))) result)
     result))
 
@@ -447,9 +428,10 @@ It will use the tkk from Google translate page."
     (format "%s.%s"
             (car (split-string (number-to-string a) "\\."))
             (car (split-string (number-to-string
-                                (gts-google-token--logxor a b)) "\\.")))))
+                                (gts-google-token--logxor a b))
+                               "\\.")))))
 
 
-(provide 'gts-google)
+(provide 'gts-engine-google)
 
-;;; gts-google.el ends here
+;;; gts-engine-google.el ends here

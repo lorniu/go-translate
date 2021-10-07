@@ -10,7 +10,6 @@
 
 (require 'eieio)
 (require 'subr-x)
-(require 'url)
 
 (defgroup gts nil
   "Translate Framework for Emacs, asynchronous and flexible."
@@ -72,8 +71,8 @@ When success execute CALLBACK, or execute ERRORBACK."
                      (if headers (format "\n  HEADER: %s" headers))
                      (if data (format "\n  DATA:   %s" data))))
         (gts-request gts-default-http-client url
-                     :data data
                      :headers headers
+                     :data data
                      :done (lambda ()
                              (gts-do-log tag (format "DONE! (%s)" url))
                              (funcall done))
@@ -128,8 +127,7 @@ You can implements your rules.")
 
 ;; render
 
-(defclass gts-render ()
-  ((tag :documentation "Used to display as name")))
+(defclass gts-render () ())
 
 ;; silence byte-compiler
 (eieio-declare-slots task-queue text from to)
@@ -239,7 +237,20 @@ It will check slot data in O, and reset all the states."
 (cl-defgeneric gts-text (texter)
   "Get the init translation source text via TEXTER.")
 
-(defvar gts-translate-list nil)
+(defcustom gts-translate-list nil
+  "Setup your translate languages. Just like:
+
+Single:
+
+ (setq gts-translate-list '((\"en\" \"zh\")))
+
+Or multiple:
+
+ (setq gts-translate-list '((\"en\" \"zh\") (\"en\" \"fr\")))
+
+The picker will give the translate from/to pair according this."
+  :type 'alist
+  :group 'gts)
 
 (defvar gts-picker-last-path nil)
 
@@ -323,7 +334,7 @@ It's an asynchronous request with a CALLBACK that should accept the parsed resul
 (cl-defgeneric gts-tts (engine text lang)
   "TTS, do the speak for TEXT with LANG."
   (:method ((e gts-engine) &rest _)
-           (user-error "No TTS service found on engine %s" (oref e tag))))
+           (user-error "No TTS service found on engine `%s'" (oref e tag))))
 
 (cl-defgeneric gts-parse (parser text result)
   (:documentation "PARSE/TEXT/RESULT response content, (cons result args).")
@@ -366,9 +377,57 @@ Default dispatch to gts-out with all results concated.")
              (cl-loop for task in (oref translator task-queue)
                       for result = (plist-get task :result)
                       for engine = (oref (plist-get task :engine) tag)
-                      for formatted = (format "%s\n--> by %s" result engine)
+                      for wrapped = (> (length result) 10)
+                      for formatted = (concat
+                                       (propertize (format "%-7s" engine) 'face 'gts-pop-posframe-me-header-face)
+                                       (if wrapped "\n" " ") result (if wrapped "\n"))
                       collect formatted into rlist
-                      finally (gts-out r (mapconcat #'identity rlist "\n\n"))))))
+                      finally (gts-out r (mapconcat #'identity rlist "\n"))))))
+
+
+;;; TTS
+
+(defcustom gts-tts-speaker (or (executable-find "mpv")
+                               (executable-find "mplayer"))
+  "The program to use to speak the translation.
+
+On Windows, if it is not found, will fallback to use `powershell`
+to do the job. Although it is not perfect, it seems to work."
+  :type 'string
+  :group 'gts)
+
+(defcustom gts-tts-try-speak-locally t
+  "If fallback to locally TTS service when engine's TTS failed.
+For example, it will use powershell on Windows to speak the word
+when this is set to t. "
+  :type 'boolean
+  :group 'gts)
+
+(defun gts-tts-speak-buffer-data ()
+  "Speak the current buffer's data."
+  (let ((proc (make-process :name (format "gts-tts-process-%s" (+ 1000 (random 1000)))
+                            :command (list gts-tts-speaker "-")
+                            :buffer nil
+                            :noquery t
+                            :connection-type 'pipe)))
+    (process-send-region proc (point-min) (point-max))
+    (if (process-live-p proc) (process-send-eof proc))))
+
+(defun gts-do-tts (text lang handler)
+  "TTS TEXT in LANG with possible tts service.
+If HANDLER speak failed, then try using locally TTS if `gts-tts-try-speak-locally' is set."
+  (condition-case err
+      (if gts-tts-speaker
+          (funcall handler)
+        (user-error "No mpv/mplayer found"))
+    (error (if gts-tts-try-speak-locally
+               (cond ((executable-find "powershell")
+                      (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
+                        (shell-command (format "powershell -Command \"& {%s}\""
+                                               (encode-coding-string
+                                                (replace-regexp-in-string "\n" " " cmd)
+                                                (keyboard-coding-system))))))
+                     (t (message "[TTS] %s" (cadr err))))))))
 
 
 ;;; Utils

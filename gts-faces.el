@@ -38,7 +38,7 @@
   :group 'gts-faces)
 
 
-;;; Google Render
+;;; Google Buffer Render
 
 (defface gts-google-buffer-headline-face '((t :inherit font-lock-function-name-face :weight bold))
   "Propertize the headline in buffer rendering."
@@ -66,6 +66,13 @@
 
 (defface gts-google-buffer-detail-demo-face '((t :inherit font-lock-doc-face))
   "Propertize the detail demo in buffer rendering."
+  :group 'gts-faces)
+
+
+;;; Posframe Render
+
+(defface gts-pop-posframe-me-header-face '((t :foreground "grey"))
+  "Used in the posframe pop buffer engine header."
   :group 'gts-faces)
 
 
