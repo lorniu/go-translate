@@ -90,7 +90,12 @@
                                (let ((result (gts-parse parser text (buffer-string))))
                                  (funcall rendercb result)))
                        :fail (lambda (status)
-                               (funcall rendercb status)))))))
+                               (let ((r (cond ((ignore-errors
+                                                 (= (cl-third (car status)) 429))
+                                               "[HTTP ERROR]: Too Many Requests! Try later.")
+                                              (t status))))
+                                 (funcall rendercb r))))))))
+
 
 ;;; TTS
 
