@@ -10,11 +10,19 @@
 
 (require 'gts-core)
 
+(defgroup gts-faces nil
+  "The faces for this framework."
+  :group 'gts)
+
 
 ;;; Common
 
-(defface gts-logger-buffer-tag-face '(( t :inherit font-lock-comment-face))
+(defface gts-logger-buffer-tag-face '((t :inherit font-lock-comment-face))
   "Used in the logger buffer tag keyword."
+  :group 'gts-faces)
+
+(defface gts-logger-buffer-timestamp-face '((t :foreground "grey"))
+  "Used in the logger buffer timestamp keyword."
   :group 'gts-faces)
 
 (defface gts-render-buffer-header-line-lang-face '((t :inherit font-lock-keyword-face))

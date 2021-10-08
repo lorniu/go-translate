@@ -99,7 +99,7 @@ When success execute CALLBACK, or execute ERRORBACK."
   (if (and gts-default-http-client
            (eieio-object-p gts-default-http-client)
            (object-of-class-p gts-default-http-client 'gts-http-client))
-      (let ((tag (format "request/%s" (eieio-object-class-name gts-default-http-client)))
+      (let ((tag (format "%s" (eieio-object-class-name gts-default-http-client)))
             (data (gts-format-params data)))
         (gts-do-log tag
                     (concat
@@ -128,12 +128,21 @@ When success execute CALLBACK, or execute ERRORBACK."
    (from :documentation "source language")
    (to   :documentation "target language")
 
-   (plan-cnt :initform 0 :documentation "count of engines in a translation")
-   (task-queue           :documentation "translation tasks")
+   (plan-cnt :initform 0 :documentation
+             "count of engines in a translation")
+   (task-queue :initform nil :documentation
+               "translation tasks. :id/:engine/:result")
+   (state :initform 0 :documentation
+          "Inner state of the translator:
+0: new translator without any tasks,
+1: tasks add finished, but not running,
+2: prepare render finished, and begin to running,
+3: all tasks running finished,
+4: rendered done, all over.")
 
-   (picker  :initarg :picker)
-   (engines :initarg :engines)
-   (render  :initarg :render)))
+   (picker     :initarg :picker)
+   (engines    :initarg :engines)
+   (render     :initarg :render)))
 
 ;; picker/texter
 
@@ -183,57 +192,65 @@ from the picker instance in O."
   (oset o to to)
   (with-slots (text from to engines render) o
     (unless engines (user-error "No translate engines found"))
-    (setq engines
-          (if (listp engines) engines (list engines)))
-    (let ((buf (current-buffer)))
-      (gts-do-log "Translator"
-                  (concat "\n"
-                          (format "from: %s, to: %s, text: %s\n" from to text)
-                          (format "engines: %s\n" (mapconcat (lambda (e) (format "%s" (eieio-object-class-name e))) engines ", "))
-                          (format "render:  %s" (eieio-object-class-name render))))
-      (cond ((= 1 (length engines))
-             (gts-pre render text from to o)
-             ;; first, try cache
-             (if-let ((r (gts-cache-get gts-default-cacher (car engines) render text from to)))
-                 (gts-out render r)
-               (gts-translate (car engines) text from to
-                              (lambda (result)
-                                (with-current-buffer buf
-                                  (gts-do-log (format "Engine/%s" (eieio-object-class-name (car engines))) "Done!")
-                                  (gts-out render result)
-                                  (gts-do-log (format "Render/%s" (eieio-object-class-name render)) "Done!")
-                                  ;; refresh cache
-                                  (when (stringp result)
-                                    (gts-cache-set gts-default-cacher (car engines) render text from to result)))))))
-            (t
-             (gts-init o (length engines))
-             (cl-loop
-              for engine in engines
-              do (let ((id (gts-add-task o engine))
-                       (edesc (format "Engine/%-10s" (eieio-object-class-name engine)))
-                       (rdesc (format "Render/%-10s" (eieio-object-class-name render))))
-                   (gts-me-pre render o)
-                   (condition-case err
-                       ;; first, try cache
-                       (if-let ((r (gts-cache-get gts-default-cacher engine render text from to)))
-                           (progn (gts-add-result o id r)
-                                  (gts-me-out render o id))
-                         ;; then fetch from engine
-                         (let ((engine engine))
-                           (gts-translate engine text from to
-                                          (lambda (result)
-                                            (with-current-buffer buf
-                                              ;; log then render
-                                              (gts-do-log edesc (format "Done! (id: %s)" id))
-                                              (gts-add-result o id result)
-                                              (gts-me-out render o id)
-                                              (gts-do-log rdesc (format "Done! (id: %s)" id))
-                                              ;; refresh cache
-                                              (when (stringp result)
-                                                (gts-cache-set gts-default-cacher engine render text from to result)))))))
-                     (error
-                      (gts-add-result o id (cadr err))
-                      (gts-me-out render o id))))))))))
+    (let ((buf (current-buffer))
+          (rd-name (eieio-object-class-name render))
+          (engines (if (listp engines) engines (list engines))))
+      ;; log
+      (gts-do-log 'translator (concat "\n"
+                                      (format "from: %s, to: %s, text: %s\n" from to text)
+                                      (format "engines: %s\n" (mapconcat (lambda (e) (format "%s" (eieio-object-class-name e))) engines ", "))
+                                      (format "render:  %s" (eieio-object-class-name render))))
+      ;; single engine
+      (if (= 1 (length engines))
+          (let* ((eg (car engines))
+                 (eg-name (eieio-object-class-name eg)))
+            (gts-pre render text from to o)
+            (gts-do-log 'translator "pre-render finished.")
+            ;; first, try cache
+            (if-let ((r (gts-cache-get gts-default-cacher eg render text from to)))
+                (progn (gts-out render r)
+                       (gts-do-log 'translator (format "%s Done (with cache)!" rd-name)))
+              ;; second, try engine
+              (gts-translate eg text from to (lambda (result)
+                                               (with-current-buffer buf
+                                                 (gts-do-log 'translator (format "%s Done!" eg-name))
+                                                 (gts-out render result)
+                                                 (gts-do-log 'translator (format "%s Done!" rd-name))
+                                                 ;; refresh cache
+                                                 (when (stringp result)
+                                                   (gts-cache-set gts-default-cacher eg render text from to result)))))))
+        ;; multiple engines
+        (gts-init o (length engines))
+        (cl-loop for engine in engines do (gts-add-task o engine))
+        (gts-me-pre render o)
+        (gts-do-log 'translator "me-pre-render finished.")
+        (cl-loop for task in (oref o task-queue)
+                 for id = (plist-get task :id)
+                 for eg = (plist-get task :engine)
+                 for eg-name = (eieio-object-class-name eg)
+                 for cache = (gts-cache-get gts-default-cacher eg render text from to)
+                 if cache do (progn (gts-add-result o id cache)
+                                    (gts-me-out render o id)
+                                    (gts-do-log 'translator (format "%s done with cache ! (id: %s)" rd-name id)))
+                 else do (condition-case err
+                             (let ((id id) (eg eg))
+                               (gts-do-log 'translator (format "begin to start engine for %s..."  id))
+                               (gts-translate eg text from to
+                                              (lambda (result)
+                                                (with-current-buffer buf
+                                                  ;; log, then render
+                                                  (gts-do-log 'translator (format "%s Done! (id: %s)" eg-name id))
+                                                  (gts-add-result o id result)
+                                                  (gts-me-out render o id)
+                                                  (gts-do-log 'translator (format "%s Done! (id: %s)" rd-name id))
+                                                  ;; refresh cache
+                                                  (when (stringp result)
+                                                    (gts-cache-set gts-default-cacher eg render text from to result))))))
+                           (error
+                            (gts-do-log 'translator (format "error? %s" err))
+                            (gts-add-result o id (cadr err))
+                            (gts-me-out render o id)))
+                 finally (gts-me-out render o nil))))))
 
 ;; these methods only used for multiple engine tasks.
 
@@ -246,33 +263,33 @@ It will check slot data in O, and reset all the states."
   (cl-assert (oref o engines))
   (cl-assert (oref o render))
   (oset o plan-cnt cnt)
-  (oset o task-queue nil))
+  (oset o task-queue nil)
+  (oset o state 0))
 
 (cl-defmethod gts-add-task ((o gts-translator) engine)
   "Add a new task to translator O. Task is started by ENGINE."
-  (let ((id (gensym)))
-    (with-slots (plan-cnt task-queue) o
-      (if (>= (length task-queue) plan-cnt)
-          (user-error "Task queue is full, can't add more")
-        (setf task-queue
-              (append task-queue
-                      (list (list :id id :engine engine :result nil))))))
-    id))
+  (with-slots (plan-cnt task-queue state) o
+    (when (= state 0)
+      (let* ((id (gensym))
+             (task (list :id id :engine engine :result nil)))
+        (setf task-queue (append task-queue (list task)))
+        (gts-do-log 'translator (format "add task: %s" id))))
+    (when (and (= state 0) (= (length task-queue) plan-cnt))
+      (setf state 1))))
 
 (cl-defmethod gts-add-result ((o gts-translator) id result)
   "Update the task of ID's RESULT in O."
-  (with-slots (task-queue) o
+  (with-slots (task-queue plan-cnt state) o
     (when-let ((task (cl-find-if (lambda (task) (equal (plist-get task :id) id)) task-queue)))
-      (plist-put task :result result))))
+      (plist-put task :result result)
+      (gts-do-log 'translator (format "result ready: %s" id)))
+    (when (and (= state 2) (= plan-cnt (length (gts-done-tasks o))))
+      (setf state 3))))
 
 (cl-defmethod gts-done-tasks ((o gts-translator))
   "Return the tasks finished in translator O."
-  (with-slots (plan-cnt task-queue) o
+  (with-slots (task-queue) o
     (cl-remove-if-not (lambda (task) (plist-get task :result)) task-queue)))
-
-(cl-defmethod gts-finished-p ((o gts-translator))
-  "If all tasks in O is finished."
-  (= (length (gts-done-tasks o)) (oref o plan-cnt)))
 
 
 ;;; Picker/Texter
@@ -415,9 +432,10 @@ Used only for single engine.")
 It used only when multiple engines exists.
 Default dispatch to gts-pre when first pre-render.")
   (:method ((r gts-render) translator)
-           (with-slots (text from to task-queue) translator
-             (when (= (length task-queue) 1)
-               (gts-pre r text from to translator)))))
+           (with-slots (text from to task-queue state) translator
+             (when (= state 1)
+               (gts-pre r text from to translator)
+               (setf state 2)))))
 
 (cl-defgeneric gts-me-out (render translator id)
   (:documentation "Render result of ID for TRANSLATOR.
@@ -425,16 +443,18 @@ It used only when multiple engines exists.
 Default dispatch to gts-out with all results concated.")
   (:method ((r gts-render) translator _id)
            ;; show only when all tasks finished.
-           (when (gts-finished-p translator)
+           (when (= (oref translator state) 3)
              (cl-loop for task in (oref translator task-queue)
-                      for result = (plist-get task :result)
+                      for result = (format "%s" (plist-get task :result))
                       for engine = (oref (plist-get task :engine) tag)
                       for wrapped = (> (length result) 10)
                       for formatted = (concat
                                        (propertize (format "%-7s" engine) 'face 'gts-pop-posframe-me-header-face)
                                        (if wrapped "\n" " ") result (if wrapped "\n"))
                       collect formatted into rlist
-                      finally (gts-out r (mapconcat #'identity rlist "\n"))))))
+                      finally (progn
+                                (oset translator state 4)
+                                (gts-out r (mapconcat #'identity rlist "\n")))))))
 
 
 ;;; TTS
