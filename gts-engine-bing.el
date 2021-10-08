@@ -72,7 +72,7 @@
                                         (eieio-object-class-name o) err))))
                       :fail
                       (lambda (status)
-                        (error (format "ERR: %s" status)))))))
+                        (error (error "ERR: %s" status)))))))
 
 (cl-defmethod gts-translate ((engine gts-bing-engine) &optional text from to rendercb)
   (gts-with-token
@@ -92,7 +92,7 @@
                        :fail (lambda (status)
                                (let ((r (cond ((ignore-errors
                                                  (= (cl-third (car status)) 429))
-                                               "[HTTP ERROR]: Too Many Requests! Try later.")
+                                               (cons "[HTTP ERROR]: Too Many Requests! Try later." 429))
                                               (t status))))
                                  (funcall rendercb r))))))))
 

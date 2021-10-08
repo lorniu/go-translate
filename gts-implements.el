@@ -34,6 +34,42 @@
 (setq gts-default-logger (gts-buffer-logger))
 
 
+;;; [Cacher] Cache in the memory
+
+(defclass gts-memory-cacher (gts-cacher) ()
+  "Cache in the memory")
+
+(cl-defmethod gts-cache-get ((o gts-memory-cacher) engine render text from to)
+  (when gts-enable-cache
+    (with-slots (caches expired) o
+      (let ((key (gts-cache-key o engine render text from to)))
+        (when-let ((cache (assoc key caches)))
+          (when (> (cddr cache) (time-to-seconds))
+            (gts-do-log 'mem-cacher-get (format "Fetch: %s (%s)" key (length caches)))
+            (cadr cache)))))))
+
+(cl-defmethod gts-cache-set ((o gts-memory-cacher) engine render text from to result)
+  (when gts-enable-cache
+    (with-slots (caches expired) o
+      (let* ((key (gts-cache-key o engine render text from to))
+             (cache (assoc key caches))
+             (etime
+              ;; sentence with shorter expired time, but word with longer.
+              (if (string-match-p "[[:space:]\n]" text)
+                  (+ (time-to-seconds) gts-cache-expired-factor)
+                (+ (time-to-seconds) (* 100 gts-cache-expired-factor)))))
+        (if cache
+            (progn
+              (setf (cadr cache) result)
+              (setf (cddr cache) etime)
+              (gts-do-log 'mem-cacher-set (format "Update: %s (%s)" key (length caches))))
+          (oset o caches (cons (cons key (cons result etime)) caches))
+          (gts-do-log 'mem-cacher-set (format "Add: %s (%s)" key (length caches))))
+        (gts-clear-expired o)))))
+
+(setq gts-default-cacher (gts-memory-cacher))
+
+
 ;;; [Http Client] implement with builtin `url.el'.
 ;; This will be used as the default http client.
 
@@ -189,7 +225,9 @@ including FROM/TO and other DESC."
                            (if curreng
                                (gts-do-tts text from (lambda () (gts-tts curreng text from)))
                              (message "[TTS] No engine found at point")))))
+    (local-set-key "C" (lambda () (interactive) (gts-cache-clear gts-default-cacher)))
     (local-set-key "q" #'kill-buffer-and-window)
+    (local-set-key "h" (lambda () (interactive) (message "g: refresh, x: reverse, y: tts, C: clean cache, q: quit")))
     ;; execute the hook if exists
     (run-hooks 'gts-after-buffer-prepared-hook)))
 
@@ -239,11 +277,16 @@ including FROM/TO and other DESC."
                    for parser = (oref engine parser)
                    for parser-tag = (slot-value parser 'tag)
                    for head = (funcall gts-render-buffer-me-header-function engine-tag parser-tag)
-                   for content = (if result
-                                     (let ((pr (concat head (format "\n%s\n\n" result))))
-                                       (put-text-property 0 (length pr) 'engine engine pr)
-                                       pr)
-                                   (concat head "\nLoading...\n\n"))
+                   for content = (cond ((null result)
+                                        (concat head "\nLoading...\n\n"))
+                                       ((consp result)
+                                        (concat head
+                                                (propertize
+                                                 (format "\n%s\n\n" result)
+                                                 'face 'gts-render-buffer-error-face)))
+                                       (t (let ((pr (concat head (format "\n%s\n\n" result))))
+                                            (put-text-property 0 (length pr) 'engine engine pr)
+                                            pr)))
                    do (insert content)))
         ;; states
         (set-buffer-modified-p nil)
