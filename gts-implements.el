@@ -17,17 +17,20 @@
 
 ;;; [Logger] Log all to a standalone buffer
 
-(defvar gts-buffer-logger-buffer " *gts-logger*")
+(defvar gts-logger-buffer-name " *gts-logger*")
 
 (defclass gts-buffer-logger (gts-logger)
   ((buffer :initarg buf :initform nil))) ; dont set :initarg to buffer, it will make an error on emacsv27.
 
 (cl-defmethod gts-log ((logger gts-buffer-logger) tag msg)
-  (with-current-buffer (get-buffer-create (or (oref logger buffer) gts-buffer-logger-buffer))
+  (with-current-buffer (get-buffer-create (or (oref logger buffer) gts-logger-buffer-name))
     (goto-char (point-max))
     (if (or (= (length msg) 0) (string= msg "\n"))
         (insert "")
-      (insert (propertize (concat "[" tag "] ") 'face 'gts-logger-buffer-tag-face))
+      (insert
+       (propertize (subseq (format "%-.1f" (time-to-seconds)) 6) 'face 'gts-logger-buffer-timestamp-face)
+       " "
+       (propertize (concat "[" tag "] ") 'face 'gts-logger-buffer-tag-face))
       (insert msg))
     (insert "\n")))
 
@@ -45,7 +48,7 @@
       (let ((key (gts-cache-key o engine render text from to)))
         (when-let ((cache (assoc key caches)))
           (when (> (cddr cache) (time-to-seconds))
-            (gts-do-log 'mem-cacher-get (format "Fetch: %s (%s)" key (length caches)))
+            (gts-do-log 'memory-cacher (format "Fetch: %s (%s)" key (length caches)))
             (cadr cache)))))))
 
 (cl-defmethod gts-cache-set ((o gts-memory-cacher) engine render text from to result)
@@ -62,9 +65,9 @@
             (progn
               (setf (cadr cache) result)
               (setf (cddr cache) etime)
-              (gts-do-log 'mem-cacher-set (format "Update: %s (%s)" key (length caches))))
+              (gts-do-log 'memory-cacher (format "Update: %s (%s)" key (length caches))))
           (oset o caches (cons (cons key (cons result etime)) caches))
-          (gts-do-log 'mem-cacher-set (format "Add: %s (%s)" key (length caches))))
+          (gts-do-log 'memory-cacher (format "Add: %s (%s)" key (length caches))))
         (gts-clear-expired o)))))
 
 (setq gts-default-cacher (gts-memory-cacher))
@@ -290,10 +293,11 @@ including FROM/TO and other DESC."
                    do (insert content)))
         ;; states
         (set-buffer-modified-p nil)
-        (when (gts-finished-p translator)
+        ;; all tasks finished
+        (when (= (oref translator state) 3)
           ;; cursor
           (unless (gts-get-childframe-of-buffer buf)
-            (set-window-point (get-buffer-window) (save-excursion (forward-line 3) (point))))
+            (set-window-point (get-buffer-window) (save-excursion (forward-line 2) (point))))
           ;; state
           (gts-buffer-change-header-line-state 'done))
         ;; execute the hook if exists
@@ -320,7 +324,7 @@ including FROM/TO and other DESC."
 (cl-defmethod gts-me-out ((_ gts-buffer-render) translator _id)
   ;; render & display
   (when-let ((buf (gts-render-buffer-multi-engines gts-buffer-name translator nil)))
-    (when (gts-finished-p translator)
+    (when (= (oref translator state) 3)
       (gts-buffer-display-or-focus-buffer buf))))
 
 
@@ -344,14 +348,15 @@ including FROM/TO and other DESC."
   :type 'string
   :group 'gts)
 
-(defvar gts-posframe-pop-render-timeout 20)
+(defvar gts-posframe-pop-render-timeout 30)
 (defvar gts-posframe-pop-render-poshandler nil)
 
 (defun gts-posframe-render-auto-close-handler ()
   "Close the pop-up posframe window."
   (interactive)
-  (when (or (null gts-posframe-pop-render-buffer)
-            (not (string= (buffer-name) gts-posframe-pop-render-buffer)))
+  (when (and (not (equal this-command 'gts-do-translate)) ; How to do this better?
+             (or (null gts-posframe-pop-render-buffer)
+                 (not (string= (buffer-name) gts-posframe-pop-render-buffer))))
     (ignore-errors (posframe-delete gts-posframe-pop-render-buffer))
     (remove-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
 
@@ -469,8 +474,11 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
 
 (cl-defmethod gts-out ((_ gts-kill-ring-render) result)
   (deactivate-mark)
-  (kill-new result)
-  (message "Translate result already in the kill ring."))
+  (if (stringp result)
+      (progn
+        (kill-new result)
+        (message "Translate result already in the kill ring."))
+    (user-error "%s" result)))
 
 
 ;;; [Texter] take current-at-point-or-selection as source text
