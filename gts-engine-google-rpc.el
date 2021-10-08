@@ -65,7 +65,7 @@
                                       (eieio-object-class-name o) (cadr err)))))
                     :fail
                     (lambda (status)
-                      (error (format "ERR: %s" status))))))
+                      (error (error "ERR: %s" status))))))
 
 (cl-defmethod gts-translate ((o gts-google-rpc-engine) &optional text from to rendercb)
   (condition-case err

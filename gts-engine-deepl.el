@@ -65,7 +65,8 @@
                               (funcall rendercb result)))
                     :fail (lambda (status)
                             (cond ((ignore-errors (= (cl-third (car status)) 403))
-                                   (funcall rendercb "403 error, make sure your auth_key is correct."))
+                                   (funcall rendercb
+                                            (cons "http error, make sure your auth_key is correct." 403)))
                                   (t (funcall rendercb status)))))))
 
 

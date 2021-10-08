@@ -19,7 +19,7 @@
 (defvar gts-debug-p nil)
 
 
-;;; Logger/Cacher
+;;; Logger
 
 (defclass gts-logger () ()
   "Used to log the messages."
@@ -28,8 +28,7 @@
 (cl-defgeneric gts-log (logger tag message)
   "Used to record the messages.")
 
-(defvar gts-default-logger nil
-  "The default logger.")
+(defvar gts-default-logger nil "The default logger.")
 
 (cl-defun gts-do-log (tag msgs)
   (when gts-debug-p
@@ -41,8 +40,45 @@
       (error "Make sure `gts-default-logger' is available. eg:\n
  (setq gts-default-logger (gts-buffer-logger))\n\n\n"))))
 
-(defclass gts-cacher () ()
-  "Used to cache the translate results. NOT IMPLEMENTED YET.")
+
+;;; Cacher
+
+(defcustom gts-enable-cache t
+  "Enable the cacher if this is t."
+  :type 'boolean
+  :group 'gts)
+
+(defcustom gts-cache-expired-factor (* 30 60)
+  "Cache alive time  based on this.
+Make word live longer time than sentence."
+  :type 'integer
+  :group 'gts)
+
+(defvar gts-default-cacher nil "The default cacher.")
+
+(defclass gts-cacher ()
+  ((caches  :initform nil) ; (key . (str . timestamp))
+   )
+  "Used to cache the translate results.")
+
+(cl-defgeneric gts-cache-get (cacher engine render text from to)
+  "Get item from CACHER, use ENGINE+RENDER+TEXT+FROM+TO to make key.")
+
+(cl-defgeneric gts-cache-set (cacher engine render text from to result)
+  "Add RESULT to CACHER, use ENGINE+RENDER+TEXT+FROM+TO to make key.")
+
+(cl-defmethod gts-cache-key ((_ gts-cacher) engine render text from to)
+  (sha1 (format "%s-%s-%s-%s-%s"
+                text from to
+                (eieio-object-class-name engine)
+                (eieio-object-class-name render))))
+
+(cl-defmethod gts-clear-expired ((o gts-cacher))
+  (with-slots (caches expired) o
+    (cl-delete-if (lambda (c) (> (time-to-seconds) (cddr c))) caches)))
+
+(cl-defmethod gts-cache-clear ((o gts-cacher))
+  (oset o caches nil))
 
 
 ;;; Http Client
@@ -156,13 +192,19 @@ from the picker instance in O."
                           (format "engines: %s\n" (mapconcat (lambda (e) (format "%s" (eieio-object-class-name e))) engines ", "))
                           (format "render:  %s" (eieio-object-class-name render))))
       (cond ((= 1 (length engines))
-             (gts-pre render text from to (car engines))
-             (gts-translate (car engines) text from to
-                            (lambda (result)
-                              (with-current-buffer buf
-                                (gts-do-log (format "Engine/%s" (eieio-object-class-name (car engines))) "Done!")
-                                (gts-out render result)
-                                (gts-do-log (format "Render/%s" (eieio-object-class-name render)) "Done!")))))
+             (gts-pre render text from to o)
+             ;; first, try cache
+             (if-let ((r (gts-cache-get gts-default-cacher (car engines) render text from to)))
+                 (gts-out render r)
+               (gts-translate (car engines) text from to
+                              (lambda (result)
+                                (with-current-buffer buf
+                                  (gts-do-log (format "Engine/%s" (eieio-object-class-name (car engines))) "Done!")
+                                  (gts-out render result)
+                                  (gts-do-log (format "Render/%s" (eieio-object-class-name render)) "Done!")
+                                  ;; refresh cache
+                                  (when (stringp result)
+                                    (gts-cache-set gts-default-cacher (car engines) render text from to result)))))))
             (t
              (gts-init o (length engines))
              (cl-loop
@@ -172,13 +214,23 @@ from the picker instance in O."
                        (rdesc (format "Render/%-10s" (eieio-object-class-name render))))
                    (gts-me-pre render o)
                    (condition-case err
-                       (gts-translate engine text from to
-                                      (lambda (result)
-                                        (with-current-buffer buf
-                                          (gts-do-log edesc (format "Done! (id: %s)" id))
-                                          (gts-add-result o id result)
-                                          (gts-me-out render o id)
-                                          (gts-do-log rdesc (format "Done! (id: %s)" id)))))
+                       ;; first, try cache
+                       (if-let ((r (gts-cache-get gts-default-cacher engine render text from to)))
+                           (progn (gts-add-result o id r)
+                                  (gts-me-out render o id))
+                         ;; then fetch from engine
+                         (let ((engine engine))
+                           (gts-translate engine text from to
+                                          (lambda (result)
+                                            (with-current-buffer buf
+                                              ;; log then render
+                                              (gts-do-log edesc (format "Done! (id: %s)" id))
+                                              (gts-add-result o id result)
+                                              (gts-me-out render o id)
+                                              (gts-do-log rdesc (format "Done! (id: %s)" id))
+                                              ;; refresh cache
+                                              (when (stringp result)
+                                                (gts-cache-set gts-default-cacher engine render text from to result)))))))
                      (error
                       (gts-add-result o id (cadr err))
                       (gts-me-out render o id))))))))))
@@ -413,7 +465,7 @@ when this is set to t. "
     (process-send-region proc (point-min) (point-max))
     (if (process-live-p proc) (process-send-eof proc))))
 
-(defun gts-do-tts (text lang handler)
+(defun gts-do-tts (text _lang handler)
   "TTS TEXT in LANG with possible tts service.
 If HANDLER speak failed, then try using locally TTS if `gts-tts-try-speak-locally' is set."
   (condition-case err
