@@ -11,7 +11,7 @@
 (require 'eieio)
 (require 'subr-x)
 
-(defgroup gts nil
+(defgroup go-translate nil
   "Translate Framework for Emacs, asynchronous and flexible."
   :group 'external
   :prefix 'gts-)
@@ -46,13 +46,13 @@
 (defcustom gts-enable-cache t
   "Enable the cacher if this is t."
   :type 'boolean
-  :group 'gts)
+  :group 'go-translate)
 
 (defcustom gts-cache-expired-factor (* 30 60)
   "Cache alive time  based on this.
 Make word live longer time than sentence."
   :type 'integer
-  :group 'gts)
+  :group 'go-translate)
 
 (defvar gts-default-cacher nil "The default cacher.")
 
@@ -319,7 +319,7 @@ Or multiple:
 
 The picker will give the translate from/to pair according this."
   :type 'alist
-  :group 'gts)
+  :group 'go-translate)
 
 (defvar gts-picker-last-path nil)
 
@@ -466,14 +466,14 @@ Default dispatch to gts-out with all results concated.")
 On Windows, if it is not found, will fallback to use `powershell`
 to do the job. Although it is not perfect, it seems to work."
   :type 'string
-  :group 'gts)
+  :group 'go-translate)
 
 (defcustom gts-tts-try-speak-locally t
   "If fallback to locally TTS service when engine's TTS failed.
 For example, it will use powershell on Windows to speak the word
 when this is set to t. "
   :type 'boolean
-  :group 'gts)
+  :group 'go-translate)
 
 (defun gts-tts-speak-buffer-data ()
   "Speak the current buffer's data."

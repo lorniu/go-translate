@@ -20,7 +20,7 @@
   ((tag :initform "Summary")))
 
 (defclass gts-google-rpc-engine (gts-engine)
-  ((tag       :initform "Gooogle")
+  ((tag       :initform "Google-RPC")
    (base-url  :initform "https://translate.google.cn")
    (sub-url   :initform "/_/TranslateWebserverUi/data/batchexecute")
    (parser    :initform (gts-google-rpc-parser))

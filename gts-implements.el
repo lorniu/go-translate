@@ -79,7 +79,7 @@
 (defcustom gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
   "The user agent used when send a request."
   :type 'string
-  :group 'gts)
+  :group 'go-translate)
 
 (defclass gts-url-http-client (gts-http-client) ())
 
@@ -111,12 +111,12 @@ Execute CALLBACK when success, or ERRORBACK when failed."
 (defcustom gts-buffer-follow-p t
   "If t then pop to the result window after translation."
   :type 'boolean
-  :group 'gts)
+  :group 'go-translate)
 
 (defcustom gts-buffer-name "*GT-Buffer*"
   "The name of translation result buffer."
   :type 'string
-  :group 'gts)
+  :group 'go-translate)
 
 (defcustom gts-buffer-window-config nil
   "Window configuration used by the result buffer window.
@@ -128,12 +128,12 @@ For example, set to:
 
 will force opening in right side window."
   :type 'list
-  :group 'gts)
+  :group 'go-translate)
 
 (defcustom gts-render-buffer-me-header-function #'gts-render-buffer-me-engine-header
   "Function used to render the engine's header when in multiple engines's query."
   :type 'function
-  :group 'gts)
+  :group 'go-translate)
 
 (defun gts-buffer-init-header-line (from to &optional desc)
   "Setup header line format.
@@ -285,7 +285,8 @@ including FROM/TO and other DESC."
                                        ((consp result)
                                         (concat head
                                                 (propertize
-                                                 (format "\n%s\n\n" result)
+                                                 ;; (msg . code) (http code msg)
+                                                 (format "\n%s\n\n" (if (atom (cdr result)) (car result) result))
                                                  'face 'gts-render-buffer-error-face)))
                                        (t (let ((pr (concat head (format "\n%s\n\n" result))))
                                             (put-text-property 0 (length pr) 'engine engine pr)
@@ -346,7 +347,7 @@ including FROM/TO and other DESC."
 (defcustom gts-posframe-pop-render-buffer " *GT-Pop-Posframe*"
   "Buffer name of Pop Posframe."
   :type 'string
-  :group 'gts)
+  :group 'go-translate)
 
 (defvar gts-posframe-pop-render-timeout 30)
 (defvar gts-posframe-pop-render-poshandler nil)
@@ -378,10 +379,10 @@ Manually close the frame with `q'.")
                      :timeout gts-posframe-pop-render-timeout
                      :width width
                      :height height
-                     :foreground-color forecolor
-                     :background-color backcolor
+                     :foreground-color (or forecolor gts-pop-posframe-forecolor)
+                     :background-color (or backcolor gts-pop-posframe-backcolor)
                      :internal-border-width padding
-                     :internal-border-color backcolor
+                     :internal-border-color (or backcolor gts-pop-posframe-backcolor)
                      :accept-focus t
                      :position (point)
                      :poshandler gts-posframe-pop-render-poshandler)
@@ -408,19 +409,20 @@ Manually close the frame with `q'.")
 (defcustom gts-posframe-pin-render-buffer " *GT-Pin-Posframe*"
   "Buffer name of Pin Posframe."
   :type 'string
-  :group 'gts)
+  :group 'go-translate)
 
 (defvar gts-posframe-pin-render-frame nil)
 (defvar gts-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)
 
 (defclass gts-posframe-pin-render (gts-posframe-pop-render)
-  ((width       :initarg :width      :initform 60)
-   (height      :initarg :height     :initform 20)
-   (padding     :initarg :padding    :initform 8)
-   (bd-width    :initarg :bd-width   :initform 1)
-   (bd-color    :initarg :bd-color   :initform "#000000")
-   (backcolor   :initarg :backcolor  :initform nil)
-   (position    :initarg :position   :initform nil))
+  ((width       :initarg :width        :initform 60)
+   (height      :initarg :height       :initform 20)
+   (padding     :initarg :padding      :initform 8)
+   (bd-width    :initarg :bd-width     :initform 1)
+   (bd-color    :initarg :bd-color     :initform nil)
+   (backcolor   :initarg :backcolor    :initform nil)
+   (fri-color   :initarg :fringe-color :initform nil)
+   (position    :initarg :position     :initform nil))
   "Pin the childframe in a fixed position to display the translate result.
 The childframe will not close, until you kill it with `q'.
 Other operations in the childframe buffer, just like in `gts-buffer-render'.")
@@ -437,10 +439,10 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
                            :height height
                            :min-width width
                            :min-height height
-                           :foreground-color forecolor
-                           :background-color backcolor
+                           :foreground-color (or forecolor gts-pin-posframe-forecolor)
+                           :background-color (or backcolor gts-pin-posframe-backcolor)
                            :internal-border-width bd-width
-                           :border-color bd-color
+                           :border-color (or bd-color gts-pin-posframe-bdcolor)
                            :left-fringe padding
                            :right-fringe padding
                            :refresh nil
@@ -449,7 +451,9 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
                            :position position
                            :poshandler (unless position gts-posframe-pin-render-poshandler))))
     (set-frame-parameter gts-posframe-pin-render-frame 'drag-internal-border t)
-    (set-frame-parameter gts-posframe-pin-render-frame 'drag-with-header-line t))
+    (set-frame-parameter gts-posframe-pin-render-frame 'drag-with-header-line t)
+    (when-let ((color (or (oref r fri-color) gts-pin-posframe-fringe-color)))
+      (set-face-background 'fringe color  gts-posframe-pin-render-frame)))
   ;; render
   (gts-render-buffer-prepare gts-posframe-pin-render-buffer text from to provider)
   (gts-buffer-ensure-a-blank-line-at-beginning gts-posframe-pin-render-buffer)

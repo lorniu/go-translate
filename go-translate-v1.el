@@ -48,9 +48,9 @@
 
 ;;; Customizations
 
-(defgroup go-translate nil
+(defgroup go-translate-v1 nil
   "Google Translate for Emacs, asynchronous and simple."
-  :group 'external
+  :group 'go-translate
   :prefix 'go-translate-)
 
 (defcustom go-translate-base-url "https://translate.googleapis.com"
