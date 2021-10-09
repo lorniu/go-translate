@@ -44,7 +44,7 @@ Add this to your configuration file:
 (setq gts-default-translator
       (gts-translator
        :picker (gts-prompt-picker)
-       :engines (list (gts-google-engine) (gts-google-rpc-engine))
+       :engines (list (gts-bing-engine) (gts-google-engine))
        :render (gts-buffer-render)))
 ```
 
@@ -77,8 +77,8 @@ Then use `gts-do-translate` to start translation.
         ;;(gts-deepl-engine :auth-key [YOUR_AUTH_KEY] :pro nil)
         (gts-google-engine :parser (gts-google-summary-parser))
         ;;(gts-google-engine :parser (gts-google-parser))
-        ;;(gts-google-rpc-engine :parser (gts-google-rpc-summary-parser))
-        (gts-google-rpc-engine :parser (gts-google-rpc-parser))
+        ;;(gts-google-rpc-engine :parser (gts-google-rpc-summary-parser) :url "https://translate.google.com")
+        (gts-google-rpc-engine :parser (gts-google-rpc-parser) :url "https://translate.google.com")
         )
 
        :render ; render, only one, used to consumer the output result. Install posframe yourself when use gts-posframe-xxx

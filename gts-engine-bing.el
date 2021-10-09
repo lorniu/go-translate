@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 
-;; site: https://cn.bing.cn/translator
+;; https://bing.com/translator
 
 ;;; Code:
 
@@ -74,30 +74,34 @@
                       (lambda (status)
                         (error (error "ERR: %s" status)))))))
 
-(cl-defmethod gts-translate ((engine gts-bing-engine) &optional text from to rendercb)
+(cl-defmethod gts-translate ((engine gts-bing-engine) task rendercb)
   (gts-with-token
    engine
    (lambda ()
-     (with-slots (tld-url sub-url token key ig parser) engine
-       (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
-                       :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                       :data `(("fromLang" . ,(gts-get-lang engine from))
-                               ("to"       . ,(gts-get-lang engine to))
-                               ("text"     . ,text)
-                               ("key"      . ,key)
-                               ("token"    . ,token))
-                       :done (lambda ()
-                               (let ((result (gts-parse parser text (buffer-string))))
-                                 (funcall rendercb result)))
-                       :fail (lambda (status)
-                               (let ((r (cond ((ignore-errors
-                                                 (= (cl-third (car status)) 429))
-                                               (cons "[HTTP ERROR]: Too Many Requests! Try later." 429))
-                                              (t status))))
-                                 (funcall rendercb r))))))))
+     (with-slots (text from to raw) task
+       (with-slots (tld-url sub-url token key ig parser) engine
+         (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
+                         :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
+                         :data `(("fromLang" . ,(gts-get-lang engine from))
+                                 ("to"       . ,(gts-get-lang engine to))
+                                 ("text"     . ,text)
+                                 ("key"      . ,key)
+                                 ("token"    . ,token))
+                         :done (lambda ()
+                                 (gts-update-raw task (buffer-string))
+                                 (gts-parse parser task)
+                                 (funcall rendercb task))
+                         :fail (lambda (status)
+                                 (cond ((ignore-errors
+                                          (= (cl-third (car status)) 429))
+                                        (gts-update-parsed task "[HTTP ERROR]: Too Many Requests! Try later." 429))
+                                       (t (gts-update-parsed task status t)))
+                                 (funcall rendercb task))))))))
 
 
 ;;; TTS
+
+(defvar url-http-end-of-headers)
 
 (defvar gts-bing-tts-langs-mapping '(("zh" . ("zh-CN" . "zh-CN-XiaoxiaoNeural"))
                                      ("en" . ("en-US" . "en-US-AriaNeural"))
@@ -132,7 +136,7 @@
                                                             ("x-microsoft-outputformat" . "audio-16khz-32kbitrate-mono-mp3"))
                                                  :done (lambda ()
                                                          (gts-tts-speak-buffer-data))
-                                                 :fail (lambda (status)
+                                                 :fail (lambda (_)
                                                          (user-error "[BING-TTS] error when play sound")))))
                        :fail (lambda (status)
                                (user-error "%s" status)))))))
@@ -140,10 +144,10 @@
 
 ;;; Parser
 
-(cl-defmethod gts-parse ((_ gts-bing-parser) _text resp)
+(cl-defmethod gts-parse ((_ gts-bing-parser) task)
   (with-temp-buffer
     (set-buffer-multibyte t)
-    (insert resp)
+    (insert (oref task raw))
     (goto-char (point-min))
     (re-search-forward "\n\n")
     (delete-region (point-min) (point))
@@ -156,10 +160,11 @@
                                  (aref
                                   (cdr (assoc 'translations (aref json 0)))
                                   0))))))
-      (or result
-          (progn
-            (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
-            (buffer-string))))))
+      (if result
+          (progn (add-text-properties 0 1 `(tbeg 1 tend ,(+ 1 (length result))) result)
+                 (gts-update-parsed task result))
+        (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
+        (gts-update-parsed task (buffer-string) t)))))
 
 
 (provide 'gts-engine-bing)

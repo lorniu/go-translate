@@ -4,7 +4,8 @@
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;;
+
+;; https://www.deepl.com
 
 ;;; Code:
 
@@ -52,29 +53,31 @@
   (with-slots (free-url pro-url sub-url pro) o
     (format "%s%s" (if pro pro-url free-url) sub-url)))
 
-(cl-defmethod gts-translate ((o gts-deepl-engine) &optional text from to rendercb)
-  (with-slots (auth-key parser) o
-    (gts-do-request (gts-gen-url o)
-                    :headers '(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                    :data `(("auth_key" . ,auth-key)
-                            ("text" . ,text)
-                            ("source_lang" . ,(gts-get-lang o from))
-                            ("target_lang" . ,(gts-get-lang o to)))
-                    :done (lambda ()
-                            (let ((result (gts-parse parser text (buffer-string))))
-                              (funcall rendercb result)))
-                    :fail (lambda (status)
-                            (cond ((ignore-errors (= (cl-third (car status)) 403))
-                                   (funcall rendercb
-                                            (cons "http error, make sure your auth_key is correct." 403)))
-                                  (t (funcall rendercb status)))))))
+(cl-defmethod gts-translate ((o gts-deepl-engine) &optional task rendercb)
+  (with-slots (text from to) task
+    (with-slots (auth-key parser) o
+      (gts-do-request (gts-gen-url o)
+                      :headers '(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
+                      :data `(("auth_key" . ,auth-key)
+                              ("text" . ,text)
+                              ("source_lang" . ,(gts-get-lang o from))
+                              ("target_lang" . ,(gts-get-lang o to)))
+                      :done (lambda ()
+                              (gts-update-raw (buffer-string))
+                              (gts-parse parser task)
+                              (funcall rendercb task))
+                      :fail (lambda (status)
+                              (cond ((ignore-errors (= (cl-third (car status)) 403))
+                                     (gts-update-parsed task "http error, make sure your auth_key is correct." 403))
+                                    (t (gts-update-parsed task status t)))
+                              (funcall rendercb task))))))
 
 
 ;;; Parser
 
-(cl-defmethod gts-parse ((_ gts-deepl-parser) text resp)
+(cl-defmethod gts-parse ((_ gts-deepl-parser) task)
   (with-temp-buffer
-    (insert resp)
+    (insert (oref task raw))
     (goto-char (point-min))
     (re-search-forward "\n\n")
     (let* ((rstr (buffer-substring-no-properties (point) (point-max)))
@@ -82,14 +85,14 @@
            (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
            tbeg tend)
       (erase-buffer)
-      (insert (propertize text 'face 'gts-google-buffer-brief-result-face) "\n\n")
+      (insert (propertize (oref task text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))
       (insert result)
       (setq tend (point))
       (insert "\n")
       (setq result (buffer-string))
-      (add-text-properties 0 (length result) `(text ,text tbeg ,tbeg tend ,tend) result)
-      result)))
+      (add-text-properties 0 (length result) `(tbeg ,tbeg tend ,tend) result)
+      (gts-update-parsed task result))))
 
 
 (provide 'gts-engine-deepl)

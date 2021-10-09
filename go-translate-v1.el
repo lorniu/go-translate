@@ -7,7 +7,7 @@
 ;; Package-Requires: ((emacs "26.1"))
 ;; Keywords: convenience
 ;; SPDX-License-Identifier: MIT
-;; Version: 0.1
+;; Version: 1.0
 
 ;;; Commentary:
 
@@ -1258,6 +1258,14 @@ Here we implement it with let-binding style."
            (deactivate-mark)
            (message "%s" (go-translate-result--translation resp)))))
     (call-interactively #'go-translate)))
+
+;;; please use new version
+(make-obsolete 'go-translate 'gts-do-translate "2.0")
+(make-obsolete 'go-translate-popup 'gts-do-translate "2.0")
+(make-obsolete 'go-translate-popup-current 'gts-do-translate "2.0")
+(make-obsolete 'go-translate-kill-ring-save 'gts-do-translate "2.0")
+(make-obsolete 'go-translate-echo-area 'gts-do-translate "2.0")
+(make-obsolete 'go-translate-change-local-and-target-language 'gts-do-translate "2.0")
 
 
 (provide 'go-translate-v1)
