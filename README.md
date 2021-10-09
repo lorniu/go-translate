@@ -3,23 +3,20 @@
 
 # Go-Translate
 
-Improved Google Translate interface with asynchronous request and better user experience.
+I rewrote this plugin to make it more flexible and powerful. May it will be the best translate plugin on Emacs.
 
 - [中文版文档 - 重构了，不止支持 Google，不止是一个翻译框架](README-zh.md)
-- [中文版文档 (old version, deprecated)](README-zh_old.md)
+- [Documentation of the old version, deprecated](README_v1.md)
 
-I have used translation frequently in recent days.
+In addition to Google Translate, it now supports more engines like Google RPC API, Bing, DeepL.
+You can easily add other translation engines on the basis of the framework.
 
-I tried [Google Translate](https://github.com/atykhonov/google-translate), it is cool, but something troubled me:
-- It's synchronous, every query will block anything, and the user experience is not good enough, especially when the network is poor
-- The result buffer is not formatted enough, and the operation is less user-friendly
-- The code is too long too old, make it hard to hack and extend new functions
+Very scalable, very flexible, asynchronous request and better user experience.
 
-So I wrote this plugin. It borrows some ideas and codes from [Google Translate](https://github.com/atykhonov/google-translate), and its main features are:
-- Completely asynchronous, without any blocking problems, so very smoothly
-- Optimize the display of translation results, the interface is more beautiful and natural
-- It is convenient for switch between different languages, and support many interactive operations
-- The code is clean, and easy to expand. New functions can be constructed very simply
+The reason I rewrite this is that I want to add the new RPC API of Google translation to this plugin.
+Since adding new API, it's not nice to implement the plugin as a translation framework first.
+
+Then, there is it.
 
 ## Installation
 
@@ -36,73 +33,204 @@ Or manually download `go-translate.el` then put into `/some-path`, then add this
 (require 'go-translate)
 ```
 
-## Configuration
+## Basic Usage
 
-First, config the local language and your default target language:
+Add this to your configuration file:
 ```elisp
-(setq go-translate-local-language "en")
-(setq go-translate-target-language "fr")
+(require 'go-translate)
+
+(setq gts-translate-list '(("en" "zh")))
+
+(setq gts-default-translator
+      (gts-translator
+       :picker (gts-prompt-picker)
+       :engines (list (gts-google-engine) (gts-google-rpc-engine))
+       :render (gts-buffer-render)))
 ```
 
-If you have any other translation plans, then put them into `go-translate-extra-directions`:
-```elisp
-(add-to-list go-translate-extra-directions (cons "ja" "ru"))  ; from japanese to russian
-(add-to-list go-translate-extra-directions (cons "en" "fr"))  ; from english to french
+Then use `gts-do-translate` to start translation.
 
-;; or
-(setq go-translate-extra-directions '(("ja" . "ru") ("en" . "fr")))
+## More configuration
+
+```elisp
+;; your languages pair used to translate
+(setq gts-translate-list '(("en" "zh") ("fr" "en")))
+
+;; config the default translator, it will be used by command gts-do-translate
+(setq gts-default-translator
+      (gts-translator
+
+       :picker ; used to pick source text, from, to. choose one.
+
+       ;;(gts-noprompt-picker)
+       ;;(gts-noprompt-picker :texter (gts-whole-buffer-texter))
+       (gts-prompt-picker)
+       ;;(gts-prompt-picker :single t)
+       ;;(gts-prompt-picker :texter (gts-current-or-selection-texter) :single t)
+
+       :engines ; engines, one or more. Provide a parser to give different output.
+
+       (list
+        (gts-bing-cn-engine)
+        ;;(gts-google-engine)
+        ;;(gts-google-rpc-engine)
+        ;;(gts-deepl-engine :auth-key [YOUR_AUTH_KEY] :pro nil)
+        (gts-google-engine :parser (gts-google-summary-parser))
+        ;;(gts-google-engine :parser (gts-google-parser))
+        ;;(gts-google-rpc-engine :parser (gts-google-rpc-summary-parser))
+        (gts-google-rpc-engine :parser (gts-google-rpc-parser))
+        )
+
+       :render ; render, only one, used to consumer the output result. Install posframe yourself when use gts-posframe-xxx
+
+       (gts-buffer-render)
+       ;;(gts-posframe-pop-render)
+       ;;(gts-posframe-pop-render :backcolor "#333333" :forecolor "#ffffff")
+       ;;(gts-posframe-pin-render)
+       ;;(gts-posframe-pin-render :position (cons 1200 20))
+       ;;(gts-posframe-pin-render :width 80 :height 25 :position (cons 1000 20) :forecolor "#ffffff" :backcolor "#111111")
+       ;;(gts-kill-ring-render)
+       ))
 ```
 
-Other customizations you can look into `custom-group` - `go-translate`, eg:
+You can look into `customize-group` - `go-translate` for more configurations.
+
+## Extend your commands
+
+In addition to setup `gts-default-translator` and direct use `gts-do-translate`, you can define your own commands.
+
+Eg, pick directly and use Google RPC API to translate:
 ```elisp
-(setq go-translate-buffer-follow-p t)       ; focus the result window
-(setq go-translate-buffer-source-fold-p t)  ; fold the source text in the result window
-(setq go-translate-buffer-window-config ..) ; config the result window as your wish
+(defun my-translate-command-1 ()
+  (interactive)
+  (do-translate (gts-translator
+				 :picker (gts-noprompt-picker)
+				 :engines (gts-google-rpc-engine)
+				 :render (gts-buffer-render))))
 ```
 
-## Usage
-
-The core command is `go-translate`, and there are several extended commands such as `go-translate-popup`.
-You can bind keys for them. such as:
+Eg, pick directly and add the results into kill-ring:
 ```elisp
-(global-set-key "\C-ct" 'go-translate)
-(global-set-key "\C-cT" 'go-translate-popup)
+(defun my-translate-command-2 ()
+  (interactive)
+  (do-translate (gts-translator
+				 :picker (gts-noprompt-picker)
+				 :engines (gts-google-rpc-engine)
+				 :render (gts-kill-ring-render))))
 ```
 
-`go-translate` will use a buffer to display translation results. In the result buffer, there are several shortcut keys:
+Eg, pop a childframe to show the translation result:
+```elisp
+(defun my-translate-command-3 ()
+  (interactive)
+  (do-translate (gts-translator
+				 :picker (gts-prompt-picker)
+				 :engines (gts-google-rpc-engine)
+				 :render (gts-posframe-pop-render))))
+```
+
+Eg, show multiple engines's result (Google/DeepL) in a pin childframe:
+```elisp
+(defun my-translate-command-4 ()
+  (interactive)
+  (do-translate (gts-translator
+				 :picker (gts-prompt-picker)
+				 :engines (list (gts-google-rpc-engine :parser (gts-google-rpc-summary-parser)) (gts-deepl-engine))
+				 :render (gts-kill-ring-render))))
+```
+
+To avoid the cost of creating objects every time you call a command, you can define your command this way:
+```elisp
+;; predefine
+(defvar my-translator-n
+  (gts-translator :picker .. :engines .. :render ..))
+
+;; reference
+(defun my-translate-command-n ()
+  (interactive)
+  (do-translate my-translator-n)
+```
+
+Compose yourself. Whatever you like.
+
+## Builtin Components
+
+The command `gts-do-translate` will take `gts-default-translator` as the default translator.
+
+### gts-buffer-render
+
+By default, it use `gts-buffer-render` to display translation results. In the result buffer, there are several shortcut keys:
+- `h` show help
 - `g` refresh `q` exit
 - `x` exchanges `source language` and `target language` and refresh the translation
 - `M-n` and `M-p`, switch to the next/prev available translation direction, and refresh
-- `y` to speak the current selection or word. You should have `mplayer` installed, or on Windows it will fallback to use `powershell` to do the tts job.
+- `y` to speak the current selection or word. You should have `mplayer/mpv` installed, or on Windows it will fallback to use `powershell` to do the tts job.
+- `C` clear all caches in gts-default-cacher
 
-The `go-translate` will take the currently selected text or `word-at-point` as the default input.
-In the pop-up `read-from-minibuffer` interface, you can use `C-l` to clear the input, and fire the translation
-with `Return` or `C-return`. `C-return` will force the cursor follow the result window after translation.
-Also, you can use `C-n` and `C-p` to switch translation direcitons. These direcitons are those configured in `go-translate-extra-directions` above.
+### gts-posframe-pop-render/gts-posframe-pin-render
 
-Other commands based on `go-translate`:
-- `go-translate-popup` is to display a short translation by popping up a `posframe` at the cursor.
-- `go-translate-popup-current` is to pop the result for the current selection or word, without prompt.
-- `go-translate-kill-ring-save` will not pop any user interface, but save the result into `king-ring` for later use.
+Use childframe to show the results.
 
+You should install `posframe` from MELPA first if you want to use these renders.
 
-Extending commands is easy and happy, go and have a try!
+`gts-posframe-pop-render` will pop a childframe in current position to show the results.
+The frame will be disappeared by any user action, except when you focus into it. When you focus into the
+frame, you can use all keybindings that like in `gts-buffer-render`.
 
-## Extend
+`gts-posframe-pin-render` will pin a childframe to service for the translation result.
+It is draggable and resizable, and you can change the position/color/etc as you wish.
 
-If you want to expand your own command, you only need to overwrite or let-binding the variables below:
-- `go-translate-text-function` the default translation content. If not specified, the text selected or at the cursor will be read
-- `go-translate-inputs-function` is used to process user input and select translation languages
-- `go-translate-url-function` is used to generate the request url
-- `go-translate-prepare-function` some preparatory work done before the request is send. For example, create a buffer and render something
-- `go-translate-request-function` asynchronously request to the server to get the translation content
-- `go-translate-render-function` render the returned result
+### gts-prompt-picker/gts-noprompt-picker
 
-You can take the source code of `go-translate-popup` for example.
+By default, translator uses `gts-prompt-picker` to pick the source text and translation from/to languages.
 
-In addition, a number of `go-translate-result-*` methods are also encapsulated to extract relevant content from the request result.
-They are useful when customizing the render function.
+`gts-prompt-picker` uses a texter to decide the initial source text, the default texter is `gts-current-or-selection-texter`,
+it takes the currently selected text or `word-at-point` as the default source text.
+
+In the pop-up `read-from-minibuffer` interface triggled by `gts-prompt-picker`, you can use `C-l` to clear the input, and fire the translation
+with `Return`. Also, you can use `C-n` and `C-p` to switch translation directions. These directions are those configured in `gts-translate-list` above.
+
+The `gts-noprompt-picker` is another choice if you don't like the prompting style's picking.
+It will automately take the text from texter and choose a suitable from/to, then translate directly.
+
+## Extend your components
+
+Extending components is easy and happy, go and have a try!
+
+You can replace almost everything. logger/cacher/http-client, picker/texter/render and engine...
+
+For example, you want to insert the results directly into the buffer,
+create your own render like below.
+
+Define class and override methods:
+```elisp
+;; A class
+(defclass your-render (gts-render) ())
+
+;; A method
+(cl-defmethod gts-out ((_ your-render) result)
+  (deactivate-mark)
+  (insert result))
+```
+
+Use them in your translator:
+```elisp
+(defun my-translate-command-5 ()
+  (interactive)
+  (do-translate (gts-translator
+				 :picker (gts-noprompt-picker)
+				 :engines (gts-google-rpc-engine)
+				 :render (your-render) ; yeap!
+                 )))
+```
+
+Of course, it's relatively easy to build a new translation engine too:
+- create a class from `gts-engine`, implement `gts-translate/gts-tts`
+- create a class from `gts-parser`, implement `gts-parse`
+
+For example, if you can't stand the poor performance of `url.el`,
+you can implement your own `gts-http-client` with curl, etc.
 
 ## Miscellaneous
 
-Nothing more to say now.
+More documentation will be added later.
