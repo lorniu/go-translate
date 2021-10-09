@@ -4,7 +4,8 @@
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;;
+
+;; http://translate.google.com
 
 ;;; Code:
 
@@ -92,16 +93,18 @@
                       :fail (lambda (status)
                               (user-error (format "ERR: %s" status)))))))
 
-(cl-defmethod gts-translate ((o gts-google-engine) &optional text from to rendercb)
+(cl-defmethod gts-translate ((o gts-google-engine) task rendercb)
   (gts-with-token o (lambda ()
-                      (gts-do-request (gts-gen-url o text from to)
-                                      :headers gts-google-request-headers
-                                      :done (lambda ()
-                                              (let* ((parser (oref o parser))
-                                                     (result (gts-parse parser text (buffer-string))))
-                                                (funcall rendercb result)))
-                                      :fail (lambda (status)
-                                              (funcall rendercb status))))))
+                      (with-slots (text from to) task
+                        (gts-do-request (gts-gen-url o text from to)
+                                        :headers gts-google-request-headers
+                                        :done (lambda ()
+                                                (gts-update-raw task (buffer-string))
+                                                (gts-parse (oref o parser) task)
+                                                (funcall rendercb task))
+                                        :fail (lambda (status)
+                                                (gts-update-parsed task status t)
+                                                (funcall rendercb task)))))))
 
 ;; tts
 
@@ -181,8 +184,9 @@ Code from `google-translate', maybe improve it someday."
 
 ;; detail-mode, use as default
 
-(cl-defmethod gts-parse ((o gts-google-parser) text resp)
-  (let* ((json        (gts-resp-to-json o resp))
+(cl-defmethod gts-parse ((o gts-google-parser) task)
+  (let* ((resp        (oref task raw))
+         (json        (gts-resp-to-json o resp))
          (brief       (gts-result--brief o json))
          (sphonetic   (gts-result--sphonetic o json))
          (tphonetic   (gts-result--tphonetic o json))
@@ -198,7 +202,7 @@ Code from `google-translate', maybe improve it someday."
                 (propertize (format "[%s]\n" line) 'face 'gts-google-buffer-headline-face)))
       (with-temp-buffer
         ;; source
-        (insert text)
+        (insert (oref task text))
         (setq send (point))
         ;; suggestion
         (when (> (length suggestion) 0)
@@ -251,29 +255,29 @@ Code from `google-translate', maybe improve it someday."
           (insert "\n"))
         ;; at last, fill and return
         (setq result (string-trim (buffer-string)))
-        (add-text-properties 0 (length result) `(text ,text tbeg ,tbeg tend ,tend) result)
-        result))))
+        (add-text-properties 0 (length result) `(tbeg ,tbeg tend ,tend) result)
+        (gts-update-parsed task result)))))
 
 ;; summary-mode
 
-(cl-defmethod gts-parse ((o gts-google-summary-parser) text resp)
-  (let ((result (string-trim
-                 (gts-result--brief o (gts-resp-to-json o resp)))))
-    (add-text-properties 0 1 `(text ,text tbeg 1 tend ,(+ 1 (length result))) result)
-    result))
+(cl-defmethod gts-parse ((o gts-google-summary-parser) task)
+  (let* ((resp (oref task raw))
+         (result (string-trim (gts-result--brief o (gts-resp-to-json o resp)))))
+    (add-text-properties 0 1 `(tbeg 1 tend ,(+ 1 (length result))) result)
+    (gts-update-parsed task result)))
 
 ;; Extract results from response
 
 (cl-defmethod gts-resp-to-json ((_ gts-google-parser) resp)
   "Convert the buffer RESP into JSON."
-  (condition-case nil
+  (condition-case err
       (with-temp-buffer
         (insert resp)
         (goto-char (point-min))
         (re-search-forward "\n\n")
         (let ((result (buffer-substring-no-properties (point) (point-max))))
           (json-read-from-string (decode-coding-string result 'utf-8))))
-    (error (user-error "Result conversion error"))))
+    (error (user-error "Result conversion error: %s" err))))
 
 (cl-defmethod gts-result--brief ((_ gts-google-parser) json)
   "Get the translation text from JSON."

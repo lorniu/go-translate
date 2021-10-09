@@ -9,10 +9,10 @@
 - DeepL，需要自行提供 auth_key
 
 支持多种渲染方式。目前添加的渲染方式有:
+- 通过 buffer 显示结果 (默认)
 - 将结果拷贝到 Kill-Ring
-- 通过 buffer 显示结果
 - 通过 posframe 在当前位置弹出结果
-- 通过固定一个 posframe 窗口进行渲染 (推荐)
+- 通过固定一个 posframe 窗口进行渲染
 
 ## 基本使用
 
@@ -147,6 +147,7 @@ Whatever you like.
 - `x` 交换 `source language` 和 `target language` 翻译
 - `M-n` 和 `M-p`, 切换下一组语言并重新翻译
 - `y` 语音播报 (tts)。如果 `gts-tts-try-speak-locally` 为 t，那如果引擎没有提供 tts 服务，将尽量使用本地的 TTS 功能进行播报。比如 windows 上使用 powershell 脚本
+- `t` 开关 `gts-buffer-follow-p`。如果设置 `gts-buffer-follow-p` 为 t，翻译完成将会自动跳到 buffer 窗口。通过 `C-x C-x` 可以快速选择翻译结果
 - `C` 清空缓存
 
 如果对默认的显示不满意，你可以继承并重写 `gts-buffer-render` 的相关方法。

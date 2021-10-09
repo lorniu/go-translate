@@ -1,10 +1,11 @@
-;;; gts-faces.el --- face definitions -*- lexical-binding: t -*-
+;;; gts-faces.el --- Face definitions -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;;
+
+;; The faces and colors.
 
 ;;; Code:
 
@@ -79,12 +80,12 @@
 
 ;;; Posframe Render
 
-(defcustom gts-pop-posframe-forecolor nil
+(defcustom gts-pop-posframe-forecolor "white"
   "Default foreground color of pop posframe."
   :type 'string
   :group 'go-translate-faces)
 
-(defcustom gts-pop-posframe-backcolor "lightyellow"
+(defcustom gts-pop-posframe-backcolor "black"
   "Default background color of pop posframe."
   :type 'string
   :group 'go-translate-faces)
@@ -110,6 +111,10 @@
   :group 'go-translate-faces)
 
 (defface gts-pop-posframe-me-header-face '((t :foreground "grey"))
+  "Used in the posframe pop buffer engine header."
+  :group 'go-translate-faces)
+
+(defface gts-pop-posframe-me-header-2-face '((t (:foreground "#666666" :underline t :extend t)))
   "Used in the posframe pop buffer engine header."
   :group 'go-translate-faces)
 

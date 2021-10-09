@@ -1,18 +1,22 @@
-;;; gts-implements.el --- component implements -*- lexical-binding: t -*-
+;;; gts-implements.el --- Component implements -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;;
+
+;; Builtin implements of basic components
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'url)
 (require 'facemenu)
 
 (require 'gts-core)
 (require 'gts-faces)
+
+(defvar url-http-end-of-headers)
 
 
 ;;; [Logger] Log all to a standalone buffer
@@ -28,7 +32,7 @@
     (if (or (= (length msg) 0) (string= msg "\n"))
         (insert "")
       (insert
-       (propertize (subseq (format "%-.1f" (time-to-seconds)) 6) 'face 'gts-logger-buffer-timestamp-face)
+       (propertize (cl-subseq (format "%-.1f" (time-to-seconds)) 6) 'face 'gts-logger-buffer-timestamp-face)
        " "
        (propertize (concat "[" tag "] ") 'face 'gts-logger-buffer-tag-face))
       (insert msg))
@@ -42,20 +46,21 @@
 (defclass gts-memory-cacher (gts-cacher) ()
   "Cache in the memory")
 
-(cl-defmethod gts-cache-get ((o gts-memory-cacher) engine render text from to)
-  (when gts-enable-cache
-    (with-slots (caches expired) o
-      (let ((key (gts-cache-key o engine render text from to)))
+(cl-defmethod gts-cache-get ((cacher gts-memory-cacher) task)
+  (when gts-cache-enable
+    (with-slots (caches expired) cacher
+      (let ((key (gts-cache-key cacher task)))
         (when-let ((cache (assoc key caches)))
           (when (> (cddr cache) (time-to-seconds))
-            (gts-do-log 'memory-cacher (format "Fetch: %s (%s)" key (length caches)))
+            (gts-do-log 'memory-cacher (format "%s: get from cache %s (%s)" (oref task id) key (length caches)))
             (cadr cache)))))))
 
-(cl-defmethod gts-cache-set ((o gts-memory-cacher) engine render text from to result)
-  (when gts-enable-cache
+(cl-defmethod gts-cache-set ((o gts-memory-cacher) task result)
+  (when gts-cache-enable
     (with-slots (caches expired) o
-      (let* ((key (gts-cache-key o engine render text from to))
+      (let* ((key (gts-cache-key o task))
              (cache (assoc key caches))
+             (text (oref task text))
              (etime
               ;; sentence with shorter expired time, but word with longer.
               (if (string-match-p "[[:space:]\n]" text)
@@ -65,9 +70,9 @@
             (progn
               (setf (cadr cache) result)
               (setf (cddr cache) etime)
-              (gts-do-log 'memory-cacher (format "Update: %s (%s)" key (length caches))))
+              (gts-do-log 'memory-cacher (format "%s: update cache %s (%s)" (oref task id) key (length caches))))
           (oset o caches (cons (cons key (cons result etime)) caches))
-          (gts-do-log 'memory-cacher (format "Add: %s (%s)" key (length caches))))
+          (gts-do-log 'memory-cacher (format "%s: add to cache %s (%s)" (oref task id) key (length caches))))
         (gts-clear-expired o)))))
 
 (setq gts-default-cacher (gts-memory-cacher))
@@ -113,7 +118,7 @@ Execute CALLBACK when success, or ERRORBACK when failed."
   :type 'boolean
   :group 'go-translate)
 
-(defcustom gts-buffer-name "*GT-Buffer*"
+(defcustom gts-buffer-name "*Go-Translate*"
   "The name of translation result buffer."
   :type 'string
   :group 'go-translate)
@@ -130,10 +135,22 @@ will force opening in right side window."
   :type 'list
   :group 'go-translate)
 
-(defcustom gts-render-buffer-me-header-function #'gts-render-buffer-me-engine-header
-  "Function used to render the engine's header when in multiple engines's query."
+(defcustom gts-buffer-render-task-header-function #'gts-buffer-render-task-header
+  "Function used to render the task header when in multiple engines's query."
   :type 'function
   :group 'go-translate)
+
+(defvar-local gts-buffer-keybinding-messages nil)
+
+(cl-defmacro gts-buffer-set-key ((key &optional desc) form)
+  "Helper for define key in buffer."
+  (declare (indent 1))
+  `(progn (local-set-key
+           (kbd ,key)
+           ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form)))
+          (when ,desc
+            (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
+            (push (cons ,key ,desc) gts-buffer-keybinding-messages))))
 
 (defun gts-buffer-init-header-line (from to &optional desc)
   "Setup header line format.
@@ -146,7 +163,7 @@ including FROM/TO and other DESC."
          (if desc (concat " ― " (propertize desc 'face 'gts-render-buffer-header-line-desc-face)) "")
          " → "
          "[" (propertize to 'face 'gts-render-buffer-header-line-lang-face) "]"
-
+         "   (" (propertize "h" 'face 'font-lock-type-face) " for help)"
          "          "
          "Loading...")))
 
@@ -163,168 +180,169 @@ including FROM/TO and other DESC."
     (if gts-buffer-follow-p (pop-to-buffer buffer)
       (display-buffer buffer))))
 
-(defun gts-get-childframe-of-buffer (&optional buffer)
-  "Get the childframe of BUFFER if it exists, or return nil."
-  (let ((cf (window-frame (get-buffer-window buffer 't))))
-    (when (frame-parameter cf 'parent-frame) cf)))
-
 (defun gts-buffer-ensure-a-blank-line-at-beginning (buffer)
   "Ensure a blank line at beginning of BUFFER."
   (with-current-buffer buffer
     (save-excursion
-      (goto-char (point-min))
-      (unless (equal (char-after) ?\n)
-        (insert "\n")))))
+      (let ((m (mark-marker)))
+        (goto-char (point-min))
+        (unless (equal (char-after) ?\n)
+          (insert "\n"))
+        (when (ignore-errors (= (marker-position m) 1))
+          (setf (marker-position m) (point)))))))
 
-(defun gts-render-buffer-me-engine-header (engine-tag parser-tag)
+(defun gts-childframe-of-buffer (&optional buffer)
+  "Get the childframe of BUFFER if it exists, or return nil."
+  (let ((cf (window-frame (get-buffer-window buffer 't))))
+    (when (frame-parameter cf 'parent-frame) cf)))
+
+(defun gts-buffer-render-task-header (engine-tag parser-tag)
   (concat (propertize
            (format "%s %s\n" engine-tag (if parser-tag (format "(%s) " parser-tag) ""))
            'face 'gts-render-buffer-me-header-backgroud-face)))
 
 ;; functions
 
-(defun gts-render-buffer-prepare (buffer text from to &optional provider)
+(defun gts-render-buffer-prepare (buffer task)
   (with-current-buffer (get-buffer-create buffer)
-    ;; setup
-    (deactivate-mark)
-    (read-only-mode -1)
-    (visual-line-mode -1)
-    (setq-local cursor-type 'hbar)
-    (setq-local cursor-in-non-selected-windows nil)
-    ;; headline
-    (gts-buffer-init-header-line
-     from to (if (and provider
-                      (object-of-class-p provider 'gts-engine))
-                 (oref provider tag)))
-    ;; source text
-    (erase-buffer)
-    (unless (gts-get-childframe-of-buffer (current-buffer)) ; except childframe
-      (insert "\n"))
-    (insert text)
-    (set-buffer-modified-p nil)
-    ;; keybinds.
-    ;;  q for quit and kill the window.
-    ;;  x for switch sl and tl.
-    ;;  M-n and M-p to re-query with next/prev path
-    ;;  g for re-query/refresh
-    ;;  s to speak the current selection or word
-    (local-set-key (kbd "M-n")
-                   (lambda ()
-                     (interactive)
-                     (let ((next (gts-next-path (oref provider picker) text from to)))
-                       (gts-translate provider text (car next) (cdr next)))))
-    (local-set-key (kbd "M-p")
-                   (lambda ()
-                     (interactive)
-                     (let ((prev (gts-next-path (oref provider picker) text from to t)))
-                       (gts-translate provider text (car prev) (cdr prev)))))
-    (local-set-key "g" (lambda () (interactive) (gts-translate provider text from to)))
-    (local-set-key "x" (lambda () (interactive) (gts-translate provider text to from)))
-    (local-set-key "y" (lambda ()
-                         (interactive)
-                         (let ((curreng
-                                (if (object-of-class-p provider 'gts-engine) provider
-                                  (get-text-property (point) 'engine))))
-                           (if curreng
-                               (gts-do-tts text from (lambda () (gts-tts curreng text from)))
-                             (message "[TTS] No engine found at point")))))
-    (local-set-key "C" (lambda () (interactive) (gts-cache-clear gts-default-cacher)))
-    (local-set-key "q" #'kill-buffer-and-window)
-    (local-set-key "h" (lambda () (interactive) (message "g: refresh, x: reverse, y: tts, C: clean cache, q: quit")))
-    ;; execute the hook if exists
-    (run-hooks 'gts-after-buffer-prepared-hook)))
+    (with-slots (text from to translator engine) task
+      ;; setup
+      (deactivate-mark)
+      (read-only-mode -1)
+      (visual-line-mode -1)
+      (setq-local cursor-type 'hbar)
+      (setq-local cursor-in-non-selected-windows nil)
+      ;; headline
+      (gts-buffer-init-header-line from to (when (= (oref translator plan-cnt) 1)
+                                             (oref engine tag)))
+      ;; source text
+      (erase-buffer)
+      (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
+      (insert text)
+      ;; keybinds.
+      ;;  q for quit and kill the window.
+      ;;  x for switch sl and tl.
+      ;;  M-n and M-p, translate with next/prev direction.
+      ;;  g for refresh.
+      ;;  y to speak the current selection or word.
+      (gts-buffer-set-key ("M-n" "Next direction")
+        (let ((next (gts-next-path (oref translator picker) text from to)))
+          (gts-translate translator text (car next) (cdr next))))
+      (gts-buffer-set-key ("M-p" "Prev direction")
+        (let ((prev (gts-next-path (oref translator picker) text from to t)))
+          (gts-translate translator text (car prev) (cdr prev))))
+      (gts-buffer-set-key ("y" "TTS")
+        (if-let ((eg (if (> (oref translator plan-cnt) 1)
+                         (get-text-property (point) 'engine)
+                       engine)))
+            (gts-do-tts text from (lambda () (gts-tts eg text from)))
+          (message "[TTS] No engine found at point")))
+      (gts-buffer-set-key ("g" "Refresh")          (gts-translate translator text from to))
+      (gts-buffer-set-key ("x" "Reverse-Translate") (gts-translate translator text to from))
+      (gts-buffer-set-key ("C" "Clean Cache")       (gts-clear-all gts-default-cacher))
+      (gts-buffer-set-key ("q" "Quit") #'kill-buffer-and-window)
+      (gts-buffer-set-key ("h")
+        (message (mapconcat
+                  (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))
+                  (reverse gts-buffer-keybinding-messages) " ")))
+      ;; execute the hook if exists
+      (run-hooks 'gts-after-buffer-prepared-hook))))
 
-(defun gts-render-buffer (buffer result)
+(defun gts-render-buffer (buffer task)
   "For single engine translation."
   (when-let ((buf (get-buffer buffer)))
     (with-current-buffer buf
-      (cond
-       ((stringp result)
-        ;; content
-        (erase-buffer)
-        (insert result)
-        ;; try set mark in beginning of the translate result,
-        ;; and set currsor position in end of the translate result,
-        ;; so you can quick select the translate result with C-x C-x.
-        (unless (gts-get-childframe-of-buffer buf) ; when not childframe
-          (when-let ((tbeg (get-text-property 0 'tbeg result))
-                     (tend (get-text-property 0 'tend result)))
-            (push-mark tbeg 'nomsg)
-            (goto-char tend)
-            (set-window-point (get-buffer-window buf) tend))))
-       (t
-        ;; error display
-        (goto-char (point-max))
-        (insert (propertize (format "\n\n\n%s" result) 'face 'gts-render-buffer-error-face))))
-      ;; update states
-      (set-buffer-modified-p nil)
-      (gts-buffer-change-header-line-state 'done)
-      (put-text-property (point-min) (point-max) 'engine (get-text-property 0 'engine result))
-      ;; execute the hook if exists
-      (run-hooks 'gts-after-buffer-render-hook))
-    buf))
-
-(defun gts-render-buffer-multi-engines (buffer translator _id)
-  "For multiple engines translation."
-  (when-let ((buf (get-buffer buffer)))
-    (with-slots (text from to plan-cnt task-queue engines) translator
-      (with-current-buffer buf
-        (erase-buffer)
-        (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
-        ;; content
-        (save-excursion
-          (cl-loop for task in task-queue
-                   for result = (plist-get task :result)
-                   for engine = (plist-get task :engine)
-                   for engine-tag = (slot-value engine 'tag)
-                   for parser = (oref engine parser)
-                   for parser-tag = (slot-value parser 'tag)
-                   for head = (funcall gts-render-buffer-me-header-function engine-tag parser-tag)
-                   for content = (cond ((null result)
-                                        (concat head "\nLoading...\n\n"))
-                                       ((consp result)
-                                        (concat head
-                                                (propertize
-                                                 ;; (msg . code) (http code msg)
-                                                 (format "\n%s\n\n" (if (atom (cdr result)) (car result) result))
-                                                 'face 'gts-render-buffer-error-face)))
-                                       (t (let ((pr (concat head (format "\n%s\n\n" result))))
-                                            (put-text-property 0 (length pr) 'engine engine pr)
-                                            pr)))
-                   do (insert content)))
-        ;; states
+      (with-slots (result ecode engine) task
+        (if ecode
+            (progn ;; error display
+              (goto-char (point-max))
+              (insert (propertize (format "\n\n\n%s" result) 'face 'gts-render-buffer-error-face)))
+          ;; content
+          (erase-buffer)
+          (insert result)
+          ;; try set mark in beginning of the translate result,
+          ;; and set currsor position in end of the translate result,
+          ;; so you can quick select the translate result with C-x C-x.
+          (unless (gts-childframe-of-buffer buf) ; when not childframe
+            (when-let ((tbeg (get-text-property 0 'tbeg result))
+                       (tend (get-text-property 0 'tend result)))
+              (push-mark tbeg 'nomsg)
+              (goto-char tend)
+              (set-window-point (get-buffer-window buf) tend))))
+        ;; update states
         (set-buffer-modified-p nil)
-        ;; all tasks finished
-        (when (= (oref translator state) 3)
-          ;; cursor
-          (unless (gts-get-childframe-of-buffer buf)
-            (set-window-point (get-buffer-window) (save-excursion (forward-line 2) (point))))
-          ;; state
-          (gts-buffer-change-header-line-state 'done))
+        (gts-buffer-change-header-line-state 'done)
+        (put-text-property (point-min) (point-max) 'engine engine)
         ;; execute the hook if exists
-        (run-hooks 'gts-after-buffer-multiple-render-hook)))
-    buf))
+        (run-hooks 'gts-after-buffer-render-hook))
+      buf)))
+
+(defun gts-render-buffer-multi-engines (buffer translator task)
+  "For multiple engines translation."
+  (when-let ((buf (and task (get-buffer buffer))))
+    (with-slots (text from to) task
+      (with-slots (plan-cnt task-queue engines) translator
+        (with-current-buffer buf
+          (erase-buffer)
+          (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
+          ;; content
+          (save-excursion
+            (cl-loop for task in task-queue
+                     for result = (oref task result)
+                     for ecode = (oref task ecode)
+                     for engine = (oref task engine)
+                     for engine-tag = (oref engine tag)
+                     for parser = (oref engine parser)
+                     for parser-tag = (oref parser tag)
+                     for header = (funcall gts-buffer-render-task-header-function engine-tag parser-tag)
+                     for content = (cond ((null result)
+                                          (concat header "\nLoading...\n\n"))
+                                         (ecode
+                                          (concat header
+                                                  (propertize
+                                                   ;; (msg . code) (http code msg)
+                                                   (format "\n%s\n\n" result) 'face 'gts-render-buffer-error-face)))
+                                         (t (let ((pr (concat header (format "\n%s\n\n" result))))
+                                              (put-text-property 0 (length pr) 'engine engine pr) pr)))
+                     do (insert content)))
+          ;; states
+          (set-buffer-modified-p nil)
+          ;; all tasks finished
+          (when (= (oref translator state) 3)
+            ;; cursor
+            (unless (gts-childframe-of-buffer buf)
+              (set-window-point (get-buffer-window) (save-excursion (forward-line 2) (point))))
+            ;; state
+            (gts-buffer-change-header-line-state 'done))
+          ;; execute the hook if exists
+          (run-hooks 'gts-after-buffer-multiple-render-hook)))
+      buf)))
 
 ;; component
 
 (defclass gts-buffer-render (gts-render) ())
 
-(cl-defmethod gts-pre ((_ gts-buffer-render) text from to &optional provider)
+(cl-defmethod gts-pre ((_ gts-buffer-render) task)
   ;; init and setup
-  (gts-render-buffer-prepare gts-buffer-name text from to provider)
+  (gts-render-buffer-prepare gts-buffer-name task)
+  ;; add keybind, toggle follow
+  (with-current-buffer gts-buffer-name
+    (gts-buffer-set-key ("t" "T-Follow")
+      (message "Now, buffer following %s."
+               (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled"))))
   ;; display
   (let ((split-width-threshold gts-split-width-threshold))
     (display-buffer gts-buffer-name gts-buffer-window-config)))
 
-(cl-defmethod gts-out ((_ gts-buffer-render) result)
+(cl-defmethod gts-out ((_ gts-buffer-render) task)
   ;; render & display
-  (when-let ((buf (gts-render-buffer gts-buffer-name result)))
+  (when-let ((buf (gts-render-buffer gts-buffer-name task)))
     (gts-buffer-ensure-a-blank-line-at-beginning buf)
     (gts-buffer-display-or-focus-buffer buf)))
 
-(cl-defmethod gts-me-out ((_ gts-buffer-render) translator _id)
+(cl-defmethod gts-me-out ((_ gts-buffer-render) translator task)
   ;; render & display
-  (when-let ((buf (gts-render-buffer-multi-engines gts-buffer-name translator nil)))
+  (when-let ((buf (gts-render-buffer-multi-engines gts-buffer-name translator task)))
     (when (= (oref translator state) 3)
       (gts-buffer-display-or-focus-buffer buf))))
 
@@ -344,7 +362,7 @@ including FROM/TO and other DESC."
 
 ;; implement
 
-(defcustom gts-posframe-pop-render-buffer " *GT-Pop-Posframe*"
+(defcustom gts-posframe-pop-render-buffer " *GTS-Pop-Posframe*"
   "Buffer name of Pop Posframe."
   :type 'string
   :group 'go-translate)
@@ -355,9 +373,10 @@ including FROM/TO and other DESC."
 (defun gts-posframe-render-auto-close-handler ()
   "Close the pop-up posframe window."
   (interactive)
-  (when (and (not (equal this-command 'gts-do-translate)) ; How to do this better?
-             (or (null gts-posframe-pop-render-buffer)
-                 (not (string= (buffer-name) gts-posframe-pop-render-buffer))))
+  (unless (or (and gts-current-command
+                   (member this-command (list gts-current-command #'exit-minibuffer)))
+              (and gts-posframe-pop-render-buffer
+                   (string= (buffer-name) gts-posframe-pop-render-buffer)))
     (ignore-errors (posframe-delete gts-posframe-pop-render-buffer))
     (remove-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
 
@@ -365,13 +384,13 @@ including FROM/TO and other DESC."
   ((width       :initarg :width        :initform 100)
    (height      :initarg :height       :initform 15)
    (forecolor   :initarg :forecolor    :initform nil)
-   (backcolor   :initarg :backcolor    :initform "lightyellow")
+   (backcolor   :initarg :backcolor    :initform nil)
    (padding     :initarg :padding      :initform 12))
   "Pop up a childframe to show the result.
 The frame will disappear when do do anything but focus in it.
 Manually close the frame with `q'.")
 
-(cl-defmethod gts-pre ((r gts-posframe-pop-render) text from to &optional provider)
+(cl-defmethod gts-pre ((r gts-posframe-pop-render) task)
   (with-slots (width height forecolor backcolor padding) r
     (let* ((buf gts-posframe-pop-render-buffer))
       (posframe-show buf
@@ -387,15 +406,15 @@ Manually close the frame with `q'.")
                      :position (point)
                      :poshandler gts-posframe-pop-render-poshandler)
       ;; render
-      (gts-render-buffer-prepare buf text from to provider)
+      (gts-render-buffer-prepare buf task)
       (posframe-refresh buf)
       ;; setup
       (with-current-buffer buf
-        (local-set-key (kbd "q") (lambda () (interactive) (posframe-delete buf)))))))
+        (gts-buffer-set-key ("q" "Close") (posframe-delete buf))))))
 
-(cl-defmethod gts-out ((_ gts-posframe-pop-render) result)
+(cl-defmethod gts-out ((_ gts-posframe-pop-render) task)
   ;; render & refresh
-  (when-let ((buf (gts-render-buffer gts-posframe-pop-render-buffer result)))
+  (when-let ((buf (gts-render-buffer gts-posframe-pop-render-buffer task)))
     (posframe-refresh buf)
     (add-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
 
@@ -406,7 +425,7 @@ Manually close the frame with `q'.")
 
 ;;; [Render] Child-Frame Render (Pin Mode)
 
-(defcustom gts-posframe-pin-render-buffer " *GT-Pin-Posframe*"
+(defcustom gts-posframe-pin-render-buffer " *GTS-Pin-Posframe*"
   "Buffer name of Pin Posframe."
   :type 'string
   :group 'go-translate)
@@ -427,7 +446,7 @@ Manually close the frame with `q'.")
 The childframe will not close, until you kill it with `q'.
 Other operations in the childframe buffer, just like in `gts-buffer-render'.")
 
-(cl-defmethod gts-pre ((r gts-posframe-pin-render) text from to &optional provider)
+(cl-defmethod gts-pre ((r gts-posframe-pin-render) task)
   ;; create/show frame
   (if (and (get-buffer gts-posframe-pin-render-buffer) gts-posframe-pin-render-frame)
       (make-frame-visible gts-posframe-pin-render-frame)
@@ -455,34 +474,34 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
     (when-let ((color (or (oref r fri-color) gts-pin-posframe-fringe-color)))
       (set-face-background 'fringe color  gts-posframe-pin-render-frame)))
   ;; render
-  (gts-render-buffer-prepare gts-posframe-pin-render-buffer text from to provider)
+  (gts-render-buffer-prepare gts-posframe-pin-render-buffer task)
   (gts-buffer-ensure-a-blank-line-at-beginning gts-posframe-pin-render-buffer)
   ;; setup
   (with-current-buffer gts-posframe-pin-render-buffer
-    (local-set-key (kbd "q") (lambda () (interactive) (posframe-hide gts-posframe-pin-render-buffer)))
-    (local-set-key (kbd "Q") (lambda () (interactive) (posframe-delete gts-posframe-pin-render-buffer)))))
+    (gts-buffer-set-key ("q" "Hide") (posframe-hide gts-posframe-pin-render-buffer))
+    (gts-buffer-set-key ("Q" "Close") (posframe-delete gts-posframe-pin-render-buffer))))
 
-(cl-defmethod gts-out ((_ gts-posframe-pin-render) result)
+(cl-defmethod gts-out ((_ gts-posframe-pin-render) task)
   ;; render & refresh
-  (when-let ((buf (gts-render-buffer gts-posframe-pin-render-buffer result)))
+  (when-let ((buf (gts-render-buffer gts-posframe-pin-render-buffer task)))
     (gts-buffer-ensure-a-blank-line-at-beginning buf)))
 
-(cl-defmethod gts-me-out ((_ gts-posframe-pin-render) translator id)
+(cl-defmethod gts-me-out ((_ gts-posframe-pin-render) translator task)
   ;; render & refresh
-  (gts-render-buffer-multi-engines gts-posframe-pin-render-buffer translator id))
+  (gts-render-buffer-multi-engines gts-posframe-pin-render-buffer translator task))
 
 
 ;;; [Render] kill-ring render
 
 (defclass gts-kill-ring-render (gts-render) ())
 
-(cl-defmethod gts-out ((_ gts-kill-ring-render) result)
+(cl-defmethod gts-out ((_ gts-kill-ring-render) task)
   (deactivate-mark)
-  (if (stringp result)
-      (progn
-        (kill-new result)
-        (message "Translate result already in the kill ring."))
-    (user-error "%s" result)))
+  (with-slots (result ecode) task
+    (if ecode
+        (user-error "%s" result)
+      (kill-new result)
+      (message "Translate result already in the kill ring."))))
 
 
 ;;; [Texter] take current-at-point-or-selection as source text

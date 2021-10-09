@@ -1,10 +1,11 @@
-;;; gts-engine-google-rpc.el --- google translation with rpc api -*- lexical-binding: t -*-
+;;; gts-engine-google-rpc.el --- Google translation with rpc api -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:
-;;
+
+;; http://translate.google.com, new RPC API
 
 ;;; Code:
 
@@ -20,7 +21,7 @@
   ((tag :initform "Summary")))
 
 (defclass gts-google-rpc-engine (gts-engine)
-  ((tag       :initform "Google-RPC")
+  ((tag       :initform "Google/RPC")
    (base-url  :initform "https://translate.google.cn")
    (sub-url   :initform "/_/TranslateWebserverUi/data/batchexecute")
    (parser    :initform (gts-google-rpc-parser))
@@ -65,28 +66,31 @@
                     (lambda (status)
                       (error (error "ERR: %s" status))))))
 
-(cl-defmethod gts-translate ((o gts-google-rpc-engine) &optional text from to rendercb)
+(cl-defmethod gts-translate ((o gts-google-rpc-engine) task rendercb)
   (condition-case err
       (gts-with-token o (lambda (url-tpl)
-                          (with-slots (base-url sub-url rpc-translate rpc-fd-trans parser) o
-                            (gts-do-request (funcall url-tpl rpc-translate to)
-                                            :headers gts-google-rpc-request-headers
-                                            :data (format
-                                                   "f.req=%s&"
-                                                   (url-hexify-string
-                                                    (let ((outer [[[rpcid inner nil "generic"]]])
-                                                          (inner [[text from to t][nil]]))
-                                                      (setf (aref (aref inner 0) 0) text)
-                                                      (setf (aref (aref inner 0) 1) from)
-                                                      (setf (aref (aref inner 0) 2) to)
-                                                      (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
-                                                      (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
-                                                      (json-encode outer))))
-                                            :done (lambda ()
-                                                    (let ((result (gts-parse parser text (buffer-string))))
-                                                      (funcall rendercb result)))
-                                            :fail (lambda (status)
-                                                    (funcall rendercb status))))))
+                          (with-slots (text from to) task
+                            (with-slots (base-url sub-url rpc-translate rpc-fd-trans parser) o
+                              (gts-do-request (funcall url-tpl rpc-translate to)
+                                              :headers gts-google-rpc-request-headers
+                                              :data (format
+                                                     "f.req=%s&"
+                                                     (url-hexify-string
+                                                      (let ((outer [[[rpcid inner nil "generic"]]])
+                                                            (inner [[text from to t][nil]]))
+                                                        (setf (aref (aref inner 0) 0) text)
+                                                        (setf (aref (aref inner 0) 1) from)
+                                                        (setf (aref (aref inner 0) 2) to)
+                                                        (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
+                                                        (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
+                                                        (json-encode outer))))
+                                              :done (lambda ()
+                                                      (gts-update-raw task (buffer-string))
+                                                      (gts-parse parser task)
+                                                      (funcall rendercb task))
+                                              :fail (lambda (status)
+                                                      (gts-update-parsed task status t)
+                                                      (funcall rendercb task)))))))
     (error (funcall rendercb err))))
 
 (cl-defmethod gts-tts ((o gts-google-rpc-engine) text lang)
@@ -105,7 +109,7 @@
                                                   (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
                                                   (json-encode outer))))
                                         :done (lambda ()
-                                                (let (beg end json code proc)
+                                                (let (beg end json code)
                                                   (goto-char (point-min))
                                                   (re-search-forward "\n\n")
                                                   (re-search-forward "^[0-9]+$")
