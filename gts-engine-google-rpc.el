@@ -28,9 +28,7 @@
    (rpc-translate :initform "MkEWBc")
    (rpc-tts       :initform "jQ1olc")
    (rpc-sid       :initform "FdrFJe")
-   (rpc-bl        :initform "cfb2h")
-   (rpc-fd-trans  :initform "[[[\"%s\",\"[[\\\"%s\\\",\\\"%s\\\",\\\"%s\\\",true],[null]]\",null,\"generic\"]]]")
-   (rpc-fd-tts    :initform "[[[\"%s\",\"[\\\"%s\\\",\\\"%s\\\",null]\",null,\"generic\"]]]")))
+   (rpc-bl        :initform "cfb2h")))
 
 
 ;;; Engine
@@ -76,9 +74,14 @@
                                             :data (format
                                                    "f.req=%s&"
                                                    (url-hexify-string
-                                                    (format rpc-fd-trans rpc-translate
-                                                            (replace-regexp-in-string "\n" "\\\\\\\\n" text)
-                                                            from to)))
+                                                    (let ((outer [[[rpcid inner nil "generic"]]])
+                                                          (inner [[text from to t][nil]]))
+                                                      (setf (aref (aref inner 0) 0) text)
+                                                      (setf (aref (aref inner 0) 1) from)
+                                                      (setf (aref (aref inner 0) 2) to)
+                                                      (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
+                                                      (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
+                                                      (json-encode outer))))
                                             :done (lambda ()
                                                     (let ((result (gts-parse parser text (buffer-string))))
                                                       (funcall rendercb result)))
@@ -94,7 +97,13 @@
                                         :data (format
                                                "f.req=%s&"
                                                (url-hexify-string
-                                                (format rpc-fd-tts rpc-tts (replace-regexp-in-string "\n" "\\\\\\\\n" text) lang)))
+                                                (let ((outer [[[rpcid inner nil "generic"]]])
+                                                      (inner [text lang nil nil]))
+                                                  (setf (aref inner 0) text)
+                                                  (setf (aref inner 1) lang)
+                                                  (setf (aref (aref (aref outer 0) 0) 0) rpc-tts)
+                                                  (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
+                                                  (json-encode outer))))
                                         :done (lambda ()
                                                 (let (beg end json code proc)
                                                   (goto-char (point-min))
