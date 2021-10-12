@@ -29,9 +29,6 @@
 
 ;;; Code:
 
-(require 'url)
-(require 'facemenu)
-
 (require 'gts-core)
 (require 'gts-implements)
 (require 'gts-engine-bing)
