@@ -212,18 +212,18 @@ Code from `google-translate', maybe improve it someday."
           (insert suggestion))
         ;; phonetic & translate
         (if (or details definitions)
-          (progn
-            (insert (phonetic sphonetic) " ")
-            (setq tbeg (point))
-            (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
-            (setq tend (point))
-            (insert (phonetic tphonetic) "\n\n"))
+            (progn
+              (insert (phonetic sphonetic) " ")
+              (setq tbeg (point))
+              (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
+              (setq tend (point))
+              (insert (phonetic tphonetic) "\n\n"))
           (insert "\n\n")
           (setq tbeg (point))
           (insert brief)
           (setq tend (point))
           (insert "\n\n")
-          (facemenu-add-face 'gts-google-buffer-source-face (point-min) send))
+          (put-text-property (point-min) send 'face 'gts-google-buffer-source-face))
         ;; details
         (when details
           (insert (headline "Details"))

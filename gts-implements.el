@@ -11,12 +11,11 @@
 
 (require 'cl-lib)
 (require 'url)
-(require 'facemenu)
 
 (require 'gts-core)
 (require 'gts-faces)
 
-(defvar url-http-end-of-headers)
+(defvar url-http-end-of-headers nil)
 
 
 ;;; [Logger] Log all to a standalone buffer

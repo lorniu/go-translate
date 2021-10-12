@@ -55,7 +55,7 @@
                       (lambda ()
                         (condition-case err
                             (let (key token ig tld)
-                              (goto-char (point-min))
+                              (goto-char url-http-end-of-headers)
                               (re-search-forward "curUrl=.*/\\([a-z]+\\.bing.com\\)")
                               (setq tld (match-string 1))
                               (re-search-forward "\"ig\":\"\\([^\"]+\\).*params_RichTranslateHelper = \\[\\([0-9]+\\),\"\\([^\"]+\\)")
@@ -100,8 +100,6 @@
 
 
 ;;; TTS
-
-(defvar url-http-end-of-headers)
 
 (defvar gts-bing-tts-langs-mapping '(("zh" . ("zh-CN" . "zh-CN-XiaoxiaoNeural"))
                                      ("en" . ("en-US" . "en-US-AriaNeural"))
