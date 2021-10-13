@@ -159,7 +159,7 @@
                                   (cdr (assoc 'translations (aref json 0)))
                                   0))))))
       (if result
-          (progn (add-text-properties 0 1 `(tbeg 1 tend ,(+ 1 (length result))) result)
+          (progn (put-text-property 0 1 'meta `(:tbeg 1 :tend ,(+ 1 (length result))) result)
                  (gts-update-parsed task result))
         (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
         (gts-update-parsed task (buffer-string) t)))))

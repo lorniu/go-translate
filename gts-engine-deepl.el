@@ -91,7 +91,7 @@
       (setq tend (point))
       (insert "\n")
       (setq result (buffer-string))
-      (add-text-properties 0 (length result) `(tbeg ,tbeg tend ,tend) result)
+      (put-text-property 0 (length result) 'meta `(:tbeg ,tbeg :tend ,tend) result)
       (gts-update-parsed task result))))
 
 
