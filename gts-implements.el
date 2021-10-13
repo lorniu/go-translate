@@ -263,8 +263,9 @@ including FROM/TO and other DESC."
           ;; and set currsor position in end of the translate result,
           ;; so you can quick select the translate result with C-x C-x.
           (unless (gts-childframe-of-buffer buf) ; when not childframe
-            (when-let ((tbeg (get-text-property 0 'tbeg result))
-                       (tend (get-text-property 0 'tend result)))
+            (when-let* ((meta (get-text-property 0 'meta result))
+                        (tbeg (plist-get meta :tbeg))
+                        (tend (plist-get meta :tend)))
               (push-mark tbeg 'nomsg)
               (goto-char tend)
               (set-window-point (get-buffer-window buf) tend))))
@@ -301,8 +302,16 @@ including FROM/TO and other DESC."
                                                   (propertize
                                                    ;; (msg . code) (http code msg)
                                                    (format "\n%s\n\n" result) 'face 'gts-render-buffer-error-face)))
-                                         (t (let ((pr (concat header (format "\n%s\n\n" result))))
-                                              (put-text-property 0 (length pr) 'engine engine pr) pr)))
+                                         (t (let* ((meta (get-text-property 0 'meta result))
+                                                   (send (plist-get meta :send))
+                                                   (tbeg (plist-get meta :tbeg))
+                                                   (last (concat
+                                                          header "\n"
+                                                          (if (and tbeg send (equal 10 (aref result (- send 1))))
+                                                              (subseq result tbeg) result) ; hide source text in me output
+                                                          "\n\n")))
+                                              (put-text-property 0 (length last) 'engine engine last)
+                                              last)))
                      do (insert content)))
           ;; states
           (set-buffer-modified-p nil)

@@ -193,7 +193,7 @@ Code from `google-translate', maybe improve it someday."
          (details     (gts-result--details o json))
          (definitions (gts-result--definitions o json))
          (suggestion  (gts-result--suggestion o json))
-         tbeg tend result send)
+         sbeg send tbeg tend result)
     (cl-flet ((phonetic (ph)
                 (if (and (or definitions definitions) (> (length ph) 0))
                     (propertize (format " [%s]" ph) 'face 'gts-google-buffer-phonetic-face)
@@ -202,6 +202,7 @@ Code from `google-translate', maybe improve it someday."
                 (propertize (format "[%s]\n" line) 'face 'gts-google-buffer-headline-face)))
       (with-temp-buffer
         ;; source
+        (setq sbeg (point))
         (insert (oref task text))
         (setq send (point))
         ;; suggestion
@@ -255,7 +256,7 @@ Code from `google-translate', maybe improve it someday."
           (insert "\n"))
         ;; at last, fill and return
         (setq result (string-trim (buffer-string)))
-        (add-text-properties 0 (length result) `(tbeg ,tbeg tend ,tend) result)
+        (put-text-property 0 (length result) 'meta `(:sbeg ,sbeg, :send ,send :tbeg ,tbeg :tend ,tend) result)
         (gts-update-parsed task result)))))
 
 ;; summary-mode
@@ -263,7 +264,7 @@ Code from `google-translate', maybe improve it someday."
 (cl-defmethod gts-parse ((o gts-google-summary-parser) task)
   (let* ((resp (oref task raw))
          (result (string-trim (gts-result--brief o (gts-resp-to-json o resp)))))
-    (add-text-properties 0 1 `(tbeg 1 tend ,(+ 1 (length result))) result)
+    (put-text-property 0 1 'meta `(:tbeg 1 :tend ,(+ 1 (length result))) result)
     (gts-update-parsed task result)))
 
 ;; Extract results from response
