@@ -6,7 +6,7 @@
 I rewrote this plugin to make it more flexible and powerful. May it will be the best translate plugin on Emacs.
 
 - [中文版文档 - 重构了，不止支持 Google，不止是一个翻译框架](README-zh.md)
-- [Documentation of the old version, deprecated](README_v1.md)
+- [Documentation of the old version (v1, deprecated)](v1/README_v1.md)
 
 In addition to Google Translate, it now supports more engines like Google RPC API, Bing, DeepL.
 You can easily add other translation engines on the basis of the framework.

@@ -36,9 +36,6 @@
 (require 'gts-engine-google-rpc)
 (require 'gts-engine-deepl)
 
-;; compatible
-(require 'go-translate-v1)
-
 
 ;;; Commands
 
