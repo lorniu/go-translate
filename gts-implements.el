@@ -240,6 +240,10 @@ including FROM/TO and other DESC."
       (gts-buffer-set-key ("x" "Reverse-Translate") (gts-translate translator text to from))
       (gts-buffer-set-key ("C" "Clean Cache")       (gts-clear-all gts-default-cacher))
       (gts-buffer-set-key ("q" "Quit") #'kill-buffer-and-window)
+      (gts-buffer-set-key ("C-g")
+        (unwind-protect
+            (gts-tts-try-interrupt-playing-process)
+          (keyboard-quit)))
       (gts-buffer-set-key ("h")
         (message (mapconcat
                   (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))

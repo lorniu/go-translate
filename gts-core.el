@@ -511,15 +511,24 @@ when this is set to t. "
   :type 'boolean
   :group 'go-translate)
 
+(defvar gts-tts-playing-process nil)
+
 (defun gts-tts-speak-buffer-data ()
   "Speak the current buffer's data."
+  (gts-tts-try-interrupt-playing-process)
   (let ((proc (make-process :name (format "gts-tts-process-%s" (+ 1000 (random 1000)))
                             :command (list gts-tts-speaker "-")
                             :buffer nil
                             :noquery t
                             :connection-type 'pipe)))
+    (setq gts-tts-playing-process proc)
     (process-send-region proc (point-min) (point-max))
     (if (process-live-p proc) (process-send-eof proc))))
+
+(defun gts-tts-try-interrupt-playing-process ()
+  (when (and gts-tts-playing-process (process-live-p gts-tts-playing-process))
+    (ignore-errors (kill-process gts-tts-playing-process))
+    (setq gts-tts-playing-process nil)))
 
 (defun gts-do-tts (text _lang handler)
   "TTS TEXT in LANG with possible tts service.
