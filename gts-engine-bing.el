@@ -55,7 +55,6 @@
                       (lambda ()
                         (condition-case err
                             (let (key token ig tld)
-                              (goto-char url-http-end-of-headers)
                               (re-search-forward "curUrl=.*/\\([a-z]+\\.bing.com\\)")
                               (setq tld (match-string 1))
                               (re-search-forward "\"ig\":\"\\([^\"]+\\).*params_RichTranslateHelper = \\[\\([0-9]+\\),\"\\([^\"]+\\)")
@@ -122,7 +121,6 @@
                        :headers '(("content-type" . "application/x-www-form-urlencoded"))
                        :data `(("token" . ,token) ("key" . ,key))
                        :done (lambda ()
-                               (goto-char url-http-end-of-headers)
                                (let* ((json (json-read))
                                       (token (cdr (assoc 'token json)))
                                       (region (cdr (assoc 'region json))))
@@ -143,26 +141,21 @@
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-bing-parser) task)
-  (with-temp-buffer
-    (set-buffer-multibyte t)
-    (insert (oref task raw))
-    (goto-char (point-min))
-    (re-search-forward "\n\n")
-    (delete-region (point-min) (point))
-    (decode-coding-region (point-min) (point-max) 'utf-8)
-    (goto-char (point-min))
-    (gts-do-log 'bing-result (buffer-string))
-    (let* ((json (json-read))
-           (result (ignore-errors
-                     (cdr (assoc 'text
-                                 (aref
-                                  (cdr (assoc 'translations (aref json 0)))
-                                  0))))))
-      (if result
-          (progn (put-text-property 0 1 'meta `(:tbeg 1 :tend ,(+ 1 (length result))) result)
-                 (gts-update-parsed task result))
-        (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
-        (gts-update-parsed task (buffer-string) t)))))
+  (set-buffer-multibyte t)
+  (decode-coding-region (point-min) (point-max) 'utf-8)
+  (gts-do-log 'bing-result (buffer-string))
+  (goto-char (point-min))
+  (let* ((json (json-read))
+         (result (ignore-errors
+                   (cdr (assoc 'text
+                               (aref
+                                (cdr (assoc 'translations (aref json 0)))
+                                0))))))
+    (if result
+        (progn (put-text-property 0 1 'meta `(:tbeg 1 :tend ,(+ 1 (length result))) result)
+               (gts-update-parsed task result))
+      (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
+      (gts-update-parsed task (buffer-string) t))))
 
 
 (provide 'gts-engine-bing)

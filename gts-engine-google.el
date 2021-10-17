@@ -81,14 +81,14 @@
       (gts-do-request base-url
                       :headers gts-google-request-headers
                       :done (lambda ()
-                              (condition-case _err
-                                  (progn
-                                    (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
-                                    (let ((token (cons (string-to-number (match-string 1))
-                                                       (string-to-number (match-string 2)))))
-                                      (setf token token)
-                                      (setf token-time (current-time))
-                                      (funcall callback)))
+                              (condition-case nil
+                                  (let ((tk (progn
+                                              (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                                              (cons (string-to-number (match-string 1))
+                                                    (string-to-number (match-string 2))))))
+                                    (setf token tk)
+                                    (setf token-time (current-time))
+                                    (funcall callback))
                                 (error (user-error "Error when fetching Token-Key. Check your network and proxy, or retry later"))))
                       :fail (lambda (status)
                               (user-error (format "ERR: %s" status)))))))
@@ -177,6 +177,7 @@ Code from `google-translate', maybe improve it someday."
 (cl-defmethod gts-tts ((o gts-google-engine) text lang)
   (let ((urls (gts-tts-gen-urls o text lang)))
     (with-temp-message "Speaking..."
+      (gts-tts-try-interrupt-playing-process)
       (apply #'call-process gts-tts-speaker nil nil nil urls))))
 
 
@@ -185,8 +186,7 @@ Code from `google-translate', maybe improve it someday."
 ;; detail-mode, use as default
 
 (cl-defmethod gts-parse ((o gts-google-parser) task)
-  (let* ((resp        (oref task raw))
-         (json        (gts-resp-to-json o resp))
+  (let* ((json        (gts-resp-to-json o (buffer-string)))
          (brief       (gts-result--brief o json))
          (sphonetic   (gts-result--sphonetic o json))
          (tphonetic   (gts-result--tphonetic o json))
@@ -262,8 +262,8 @@ Code from `google-translate', maybe improve it someday."
 ;; summary-mode
 
 (cl-defmethod gts-parse ((o gts-google-summary-parser) task)
-  (let* ((resp (oref task raw))
-         (result (string-trim (gts-result--brief o (gts-resp-to-json o resp)))))
+  (let* ((json (gts-resp-to-json o (buffer-string)))
+         (result (string-trim (gts-result--brief o json))))
     (put-text-property 0 1 'meta `(:tbeg 1 :tend ,(+ 1 (length result))) result)
     (gts-update-parsed task result)))
 
@@ -272,12 +272,7 @@ Code from `google-translate', maybe improve it someday."
 (cl-defmethod gts-resp-to-json ((_ gts-google-parser) resp)
   "Convert the buffer RESP into JSON."
   (condition-case err
-      (with-temp-buffer
-        (insert resp)
-        (goto-char (point-min))
-        (re-search-forward "\n\n")
-        (let ((result (buffer-substring-no-properties (point) (point-max))))
-          (json-read-from-string (decode-coding-string result 'utf-8))))
+      (json-read-from-string (decode-coding-string resp 'utf-8))
     (error (user-error "Result conversion error: %s" err))))
 
 (cl-defmethod gts-result--brief ((_ gts-google-parser) json)
