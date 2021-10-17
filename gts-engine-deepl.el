@@ -63,7 +63,7 @@
                               ("source_lang" . ,(gts-get-lang o from))
                               ("target_lang" . ,(gts-get-lang o to)))
                       :done (lambda ()
-                              (gts-update-raw (buffer-string))
+                              (gts-update-raw task (buffer-string))
                               (gts-parse parser task)
                               (funcall rendercb task))
                       :fail (lambda (status)
@@ -76,14 +76,10 @@
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-deepl-parser) task)
-  (with-temp-buffer
-    (insert (oref task raw))
-    (goto-char (point-min))
-    (re-search-forward "\n\n")
-    (let* ((rstr (buffer-substring-no-properties (point) (point-max)))
-           (json (json-read-from-string rstr))
-           (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
-           tbeg tend)
+  (let* ((json (json-read-from-string (buffer-string)))
+         (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
+         tbeg tend)
+    (with-temp-buffer
       (erase-buffer)
       (insert (propertize (oref task text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))

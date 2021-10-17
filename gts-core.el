@@ -306,7 +306,7 @@ It will check slot data in O, and reset all the states."
     (cl-remove-if-not (lambda (task) (oref task raw)) task-queue)))
 
 (cl-defgeneric gts-update-raw (task raw)
-  "Update the RAW result without parsed to TASK."
+  "Update non-parsed RAW result to TASK."
   (:method ((task gts-task) resp)
            (with-slots (translator raw id) task
              (with-slots (task-queue plan-cnt state) translator

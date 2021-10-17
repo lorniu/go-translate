@@ -218,7 +218,29 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 - 创建一个 `gts-engine` 类，实现其 `gts-translate/gts-tts` 方法，分别用于翻译和语音播报。后面一个可选
 - 创建一个 `gts-parser` 类，实现其 `gts-parse` 方法，用于将 engine 传来的字符串，格式化为最终渲染的字符串
 
-再比如，如果你无法忍受 `url.el` 的缓慢，你可以借助 curl 等实现并替换自己的 gts-http-client 组件。
+再比如，如果你无法忍受 `url.el` 的缓慢，你可以借助 curl/request.el 等实现并替换自己的 gts-http-client 组件。示例:
+```elisp
+  (require 'request)
+
+  (defclass gts-request-http-client (gts-http-client) ())
+
+  (cl-defmethod gts-request ((o gts-request-http-client) url &key done fail data headers)
+    (let ((url-user-agent gts-user-agent))
+      (request url
+        :data data
+        :type (if data "POST" "GET")
+        :headers headers
+        :parser #'buffer-string
+        :success (cl-function (lambda (&key data &allow-other-keys)
+                                (with-temp-buffer
+                                  (insert data)
+                                  (goto-char (point-min))
+                                  (funcall done))))
+        :error (cl-function (lambda (&rest args &key error-thrown &allow-other-keys)
+                              (funcall fail error-thrown))))))
+
+  (setq gts-default-http-client (gts-request-http-client))
+```
 
 ## 设计思路
 

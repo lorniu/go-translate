@@ -11,11 +11,8 @@
 
 (require 'cl-lib)
 (require 'url)
-
 (require 'gts-core)
 (require 'gts-faces)
-
-(defvar url-http-end-of-headers nil)
 
 
 ;;; [Logger] Log all to a standalone buffer
@@ -85,6 +82,8 @@
   :type 'string
   :group 'go-translate)
 
+(defvar url-http-end-of-headers)
+
 (defclass gts-url-http-client (gts-http-client) ())
 
 (cl-defmethod gts-request ((_ gts-url-http-client) url &key done fail data headers)
@@ -100,6 +99,7 @@ Execute CALLBACK when success, or ERRORBACK when failed."
                             (if (and fail (eq (car status) :error))
                                 (funcall fail (cdr status))
                               (when done
+                                (delete-region (point-min) url-http-end-of-headers)
                                 (funcall done)))
                           (kill-buffer)))
                   nil t)))
@@ -339,7 +339,7 @@ including FROM/TO and other DESC."
   (gts-render-buffer-prepare gts-buffer-name task)
   ;; add keybind, toggle follow
   (with-current-buffer gts-buffer-name
-    (gts-buffer-set-key ("t" "T-Follow")
+    (gts-buffer-set-key ("t" "Toggle-Follow")
       (message "Now, buffer following %s."
                (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled"))))
   ;; display
