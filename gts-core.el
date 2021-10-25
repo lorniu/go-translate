@@ -359,7 +359,8 @@ The picker will give the translate from/to pair according this."
   (list
    (cons "en"  "^[-a-zA-Z0-9,.;_ ]+$")
    (cons "zh"  "\\cc")
-   (cons "ja"  (lambda (text) (string-match-p "\\cj" text)))))
+   (cons "ja"  (lambda (text) (string-match-p "\\cj" text)))
+   (cons "ru" "\\cy")))
 
 (defun gts-picker-lang-matcher (lang)
   "judge source, sure case, yes:no:unknown.
