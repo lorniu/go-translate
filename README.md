@@ -103,40 +103,40 @@ Eg, pick directly and use Google RPC API to translate:
 ```elisp
 (defun my-translate-command-1 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-noprompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (gts-buffer-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-noprompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (gts-buffer-render))))
 ```
 
 Eg, pick directly and add the results into kill-ring:
 ```elisp
 (defun my-translate-command-2 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-noprompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (gts-kill-ring-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-noprompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (gts-kill-ring-render))))
 ```
 
 Eg, pop a childframe to show the translation result:
 ```elisp
 (defun my-translate-command-3 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-prompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (gts-posframe-pop-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-prompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (gts-posframe-pop-render))))
 ```
 
 Eg, show multiple engines's result (Google/DeepL) in a pin childframe:
 ```elisp
 (defun my-translate-command-4 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-prompt-picker)
-				 :engines (list (gts-google-rpc-engine :parser (gts-google-rpc-summary-parser)) (gts-deepl-engine))
-				 :render (gts-kill-ring-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-prompt-picker)
+                  :engines (list (gts-google-rpc-engine :parser (gts-google-rpc-summary-parser)) (gts-deepl-engine))
+                  :render (gts-kill-ring-render))))
 ```
 
 To avoid the cost of creating objects every time you call a command, you can define your command this way:
@@ -148,7 +148,7 @@ To avoid the cost of creating objects every time you call a command, you can def
 ;; reference
 (defun my-translate-command-n ()
   (interactive)
-  (do-translate my-translator-n)
+  (gts-translate my-translator-n)
 ```
 
 Compose yourself. Whatever you like.
@@ -217,11 +217,11 @@ Use them in your translator:
 ```elisp
 (defun my-translate-command-5 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-noprompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (your-render) ; yeap!
-                 )))
+  (gts-translate (gts-translator
+                  :picker (gts-noprompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (your-render) ; yeap!
+                  )))
 ```
 
 Of course, it's relatively easy to build a new translation engine too:
