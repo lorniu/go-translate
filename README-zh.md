@@ -86,40 +86,40 @@
 ```elisp
 (defun my-translate-command-1 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-noprompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (gts-buffer-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-noprompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (gts-buffer-render))))
 ```
 
 比如，直接拾取，并将结果添加到 Kill-Ring 中:
 ```elisp
 (defun my-translate-command-2 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-noprompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (gts-kill-ring-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-noprompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (gts-kill-ring-render))))
 ```
 
 比如，在光标位置弹出翻译结果:
 ```elisp
 (defun my-translate-command-3 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-prompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (gts-posframe-pop-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-prompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (gts-posframe-pop-render))))
 ```
 
 比如，聚合 Google/DeepL 的翻译结果到固定的 Childframe 窗口:
 ```elisp
 (defun my-translate-command-4 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-prompt-picker)
-				 :engines (list (gts-google-rpc-engine :parser (gts-google-rpc-summary-parser)) (gts-deepl-engine))
-				 :render (gts-kill-ring-render))))
+  (gts-translate (gts-translator
+                  :picker (gts-prompt-picker)
+                  :engines (list (gts-google-rpc-engine :parser (gts-google-rpc-summary-parser)) (gts-deepl-engine))
+                  :render (gts-kill-ring-render))))
 ```
 
 为了避免每次调用命令都创建对象的开销，你可以这样定义你的命令:
@@ -131,7 +131,7 @@
 ;; 你的命令引用创建好的其他 Component
 (defun my-translate-command-n ()
   (interactive)
-  (do-translate my-translator-n)
+  (gts-translate my-translator-n)
 ```
 
 随意组合。
@@ -207,11 +207,11 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 ```elisp
 (defun my-translate-command-5 ()
   (interactive)
-  (do-translate (gts-translator
-				 :picker (gts-noprompt-picker)
-				 :engines (gts-google-rpc-engine)
-				 :render (your-render) ; 使用！
-                 )))
+  (gts-translate (gts-translator
+                  :picker (gts-noprompt-picker)
+                  :engines (gts-google-rpc-engine)
+                  :render (your-render) ; 使用！
+                  )))
 ```
 
 当然，新建翻译引擎也比较简单:
