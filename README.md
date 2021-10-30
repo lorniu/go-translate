@@ -208,9 +208,9 @@ Define class and override methods:
 (defclass your-render (gts-render) ())
 
 ;; A method
-(cl-defmethod gts-out ((_ your-render) result)
+(cl-defmethod gts-out ((_ your-render) task)
   (deactivate-mark)
-  (insert result))
+  (insert (oref task result)))
 ```
 
 Use them in your translator:
