@@ -198,9 +198,9 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 (defclass your-render (gts-render) ())
 
 ;; 重写一个方法
-(cl-defmethod gts-out ((_ your-render) result)
+(cl-defmethod gts-out ((_ your-render) task)
   (deactivate-mark)
-  (insert result))
+  (insert (oref task result)))
 ```
 
 然后，使用就可以了:
