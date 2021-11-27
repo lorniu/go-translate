@@ -408,8 +408,8 @@ Manually close the frame with `q'.")
       (posframe-show buf
                      :string "Loading..."
                      :timeout gts-posframe-pop-render-timeout
-                     :width width
-                     :height height
+                     :max-width width
+                     :max-height height
                      :foreground-color (or forecolor gts-pop-posframe-forecolor)
                      :background-color (or backcolor gts-pop-posframe-backcolor)
                      :internal-border-width padding
