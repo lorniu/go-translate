@@ -40,7 +40,7 @@
 ;;; [Cacher] Cache in the memory
 
 (defclass gts-memory-cacher (gts-cacher) ()
-  "Cache in the memory")
+  "Cache in the memory.")
 
 (cl-defmethod gts-cache-get ((cacher gts-memory-cacher) task)
   (when gts-cache-enable
@@ -142,7 +142,7 @@ will force opening in right side window."
 (defvar-local gts-buffer-keybinding-messages nil)
 
 (cl-defmacro gts-buffer-set-key ((key &optional desc) form)
-  "Helper for define key in buffer."
+  "Helper for define KEY in buffer."
   (declare (indent 1))
   `(progn (local-set-key
            (kbd ,key)
@@ -312,7 +312,7 @@ including FROM/TO and other DESC."
                                                    (last (concat
                                                           header "\n"
                                                           (if (and tbeg send (equal 10 (aref result (- send 1))))
-                                                              (subseq result tbeg) result) ; hide source text in me output
+                                                              (cl-subseq result tbeg) result) ; hide source text in me output
                                                           "\n\n")))
                                               (put-text-property 0 (length last) 'engine engine last)
                                               last)))
@@ -364,6 +364,9 @@ including FROM/TO and other DESC."
 
 (require 'posframe nil t)
 (declare-function posframe-show "ext:posframe.el" t t)
+(declare-function posframe-delete "ext:posframe.el" t t)
+(declare-function posframe-hide "ext:posframe.el" t t)
+(declare-function posframe-refresh "ext:posframe.el" t t)
 (declare-function posframe-poshandler-frame-top-right-corner "ext:posframe.el" t t)
 
 (defun gts-posframe-init-header-line (from to)
@@ -432,7 +435,7 @@ Manually close the frame with `q'.")
 
 (cl-defmethod initialize-instance :after ((_ gts-posframe-pop-render) &rest _)
   (unless (featurep 'posframe)
-    (user-error "To use `gts-posframe-render', you should install and load package `posframe' first.")))
+    (user-error "To use `gts-posframe-render', you should install and load package `posframe' first")))
 
 
 ;;; [Render] Child-Frame Render (Pin Mode)
@@ -575,13 +578,15 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
 (defclass gts-prompt-picker (gts-picker)
   ((texter :initarg :texter :initform (gts-current-or-selection-texter))))
 
-(defun gts-prompt-picker-next-path (arg)
+(defun gts-prompt-picker-next-path (&optional backwardp)
+  "Pick next available translate path.
+If BACKWARDP is t, then pick the previous one."
   (interactive "P")
   (let ((p (gts-next-path gts-picker-current-picker
                           gts-picker-current-text
                           (car gts-picker-current-path)
                           (cdr gts-picker-current-path)
-                          arg)))
+                          backwardp)))
     (setq gts-picker-current-path p)
     (gts-picker-prompt-pick (minibuffer-contents) p)
     (exit-minibuffer)))
