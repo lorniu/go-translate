@@ -312,7 +312,7 @@ including FROM/TO and other DESC."
                                                    (last (concat
                                                           header "\n"
                                                           (if (and tbeg send (equal 10 (aref result (- send 1))))
-                                                              (cl-subseq result tbeg) result) ; hide source text in me output
+                                                              (cl-subseq result (1- tbeg)) result) ; hide source text in me output
                                                           "\n\n")))
                                               (put-text-property 0 (length last) 'engine engine last)
                                               last)))
