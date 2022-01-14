@@ -83,7 +83,7 @@
       (erase-buffer)
       (insert (propertize (oref task text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))
-      (insert result)
+      (insert (string-as-multibyte result))
       (setq tend (point))
       (insert "\n")
       (setq result (buffer-string))
