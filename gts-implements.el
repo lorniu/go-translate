@@ -109,8 +109,12 @@ Execute CALLBACK when success, or ERRORBACK when failed."
 
 ;;; [Render] buffer render
 
-(defvar gts-split-width-threshold 80
-  "Threshold width for window horizontal split.")
+(defcustom gts-split-width-threshold 80
+  "Threshold width for window horizontal split."
+  :group 'go-translate
+  :type '(choice
+	  (const :tag "Disable" nil)
+	  (integer :tag "Threshold")))
 
 (defcustom gts-buffer-follow-p t
   "If t then pop to the result window after translation."
@@ -343,7 +347,7 @@ including FROM/TO and other DESC."
       (message "Now, buffer following %s."
                (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled"))))
   ;; display
-  (let ((split-width-threshold gts-split-width-threshold))
+  (let ((split-width-threshold (or gts-split-width-threshold split-width-threshold)))
     (display-buffer gts-buffer-name gts-buffer-window-config)))
 
 (cl-defmethod gts-out ((_ gts-buffer-render) task)
