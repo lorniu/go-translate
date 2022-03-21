@@ -380,10 +380,11 @@ choose path, from main, then extra path match"
     (cl-loop with candidates = (if (oref o single)
                                    (list (car gts-translate-list))
                                  gts-translate-list)
-             for path in candidates
+             for (lang1 . lang2) in candidates
+             for lang2 = (if (consp lang2) (car lang2) lang2)
              do (progn
-                  (cl-pushnew (cons (car path) (cadr path)) paths :test 'equal)
-                  (cl-pushnew (cons (cadr path) (car path)) paths :test 'equal)))
+                  (cl-pushnew (cons lang1 lang2) paths :test 'equal)
+                  (cl-pushnew (cons lang2 lang1) paths :test 'equal)))
     (reverse paths)))
 
 (cl-defmethod gts-matched-paths ((o gts-picker) text)
