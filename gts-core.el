@@ -353,14 +353,21 @@ The picker will give the translate from/to pair according this."
   :type 'alist
   :group 'go-translate)
 
-(defvar gts-picker-last-path nil)
-
-(defvar gts-picker-lang-match-alist
+(defcustom gts-picker-lang-match-alist
   (list
    (cons "en"  "^[-a-zA-Z0-9,.;_ ]+$")
    (cons "zh"  "\\cc")
    (cons "ja"  (lambda (text) (string-match-p "\\cj" text)))
-   (cons "ru" "\\cy")))
+   (cons "ru" "\\cy"))
+  "Setup language match rules.
+
+Used to pick the right language for current translate text.
+
+Key should be the language, and value should be a regexp string or function."
+  :type 'alist
+  :group 'go-translate)
+
+(defvar gts-picker-last-path nil)
 
 (defun gts-picker-lang-matcher (lang)
   "judge source, sure case, yes:no:unknown.
@@ -552,7 +559,7 @@ If HANDLER speak failed, then try using locally TTS if `gts-tts-try-speak-locall
 ;;; Utils
 
 (defun gts-aref-for (vector &rest ns)
-  "Recursively find the element in vector. NS is indexes, as the path."
+  "Recursively find the element in VECTOR. NS is indexes, as the path."
   (while ns
     (setq vector (aref vector (pop ns))))
   vector)
