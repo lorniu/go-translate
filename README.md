@@ -71,7 +71,7 @@ Then use `gts-do-translate` to start translation.
        :engines ; engines, one or more. Provide a parser to give different output.
 
        (list
-        (gts-bing-cn-engine)
+        (gts-bing-engine)
         ;;(gts-google-engine)
         ;;(gts-google-rpc-engine)
         ;;(gts-deepl-engine :auth-key [YOUR_AUTH_KEY] :pro nil)
