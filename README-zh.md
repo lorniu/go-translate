@@ -52,7 +52,7 @@
        :engines ; 翻译引擎，可以配置多个。另外可以传入不同的 Parser 从而使用不同样式的输出
 
        (list
-        (gts-bing-cn-engine)
+        (gts-bing-engine)
         ;;(gts-google-engine)
         ;;(gts-google-rpc-engine)
         ;;(gts-deepl-engine :auth-key [YOUR_AUTH_KEY] :pro nil)
