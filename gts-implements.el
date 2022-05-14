@@ -196,7 +196,7 @@ including FROM/TO and other DESC."
 
 (defun gts-childframe-of-buffer (&optional buffer)
   "Get the childframe of BUFFER if it exists, or return nil."
-  (let ((cf (window-frame (get-buffer-window buffer 't))))
+  (let ((cf (window-frame (get-buffer-window buffer t))))
     (when (frame-parameter cf 'parent-frame) cf)))
 
 (defun gts-buffer-render-task-header (engine-tag parser-tag)
@@ -276,7 +276,7 @@ including FROM/TO and other DESC."
                         (tend (plist-get meta :tend)))
               (push-mark tbeg 'nomsg)
               (goto-char tend)
-              (set-window-point (get-buffer-window buf) tend))))
+              (set-window-point (get-buffer-window buf t) tend))))
         ;; update states
         (set-buffer-modified-p nil)
         (gts-buffer-change-header-line-state 'done)
@@ -327,7 +327,7 @@ including FROM/TO and other DESC."
           (when (= (oref translator state) 3)
             ;; cursor
             (unless (gts-childframe-of-buffer buf)
-              (set-window-point (get-buffer-window) (save-excursion (forward-line 2) (point))))
+              (set-window-point (get-buffer-window buf t) (save-excursion (forward-line 2) (point))))
             ;; state
             (gts-buffer-change-header-line-state 'done))
           ;; execute the hook if exists
