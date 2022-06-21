@@ -93,6 +93,31 @@ Then use `gts-do-translate` to start translation.
        ))
 ```
 
+Slots `picker/engines/render` can be a function or lambda, it allows the dynamic initialization of slots while translating.
+For example, set a separate translation behavior for pdf-tools:
+```
+(setq gts-default-translator
+      (gts-translator
+       :picker
+       (lambda ()
+         (cond ((equal major-mode 'pdf-view-mode)
+                (gts-noprompt-picker :texter (gts-current-or-selection-texter)))
+               (t (gts-prompt-picker))))
+       :engines
+       (lambda ()
+         (cond ((equal major-mode 'pdf-view-mode)
+                (gts-bing-engine))
+               (t (list
+                   (gts-bing-engine)
+                   (gts-google-engine :parser (gts-google-summary-parser))
+                   (gts-google-rpc-engine)))))
+       :render
+       (lambda ()
+         (cond ((equal major-mode 'pdf-view-mode)
+                (gts-posframe-pop-render))
+               (t (gts-buffer-render))))))
+```
+
 You can look into `customize-group` - `go-translate` for more configurations.
 
 ## Extend your commands
