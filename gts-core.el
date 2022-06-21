@@ -41,9 +41,9 @@
 ;; translator/task
 
 (defclass gts-translator ()
-  ((picker     :initarg :picker)
-   (engines    :initarg :engines)
-   (render     :initarg :render)
+  ((picker     :initarg :picker  :documentation "`gts-picker' object or a function return it")
+   (engines    :initarg :engines :documentation "a list of `gts-engine' objects or a function return them")
+   (render     :initarg :render  :documentation "`gts-render' object or a function return it")
 
    (plan-cnt   :initform 0   :documentation "count of tasks in a translation")
    (task-queue :initform nil :documentation "translation tasks.")
@@ -205,7 +205,13 @@ ARGS should be text/from/to/callback or task/callback.")
 (cl-defmethod gts-translate ((o gts-translator) &optional text from to)
   "Do a translation for O, which is a translator instance.
 It will take TEXT/FROM/TO as source if they are present, or will pick from the Picker."
-  (with-slots (picker engines render) o
+  (let ((picker (let ((p (slot-value o 'picker)))
+                  (if (functionp p) (funcall p) p)))
+        (engines (let ((rs (slot-value o 'engines)))
+                   (if (functionp rs) (setq rs (funcall rs)))
+                   (if (listp rs) rs (list rs))))
+        (render (let ((r (slot-value o 'render)))
+                  (if (functionp r) (funcall r) r))))
     ;; check
     (unless picker (user-error "No picker found in the current translator"))
     (unless render (user-error "No render found in the current translator"))

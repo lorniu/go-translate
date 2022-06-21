@@ -74,6 +74,30 @@
        ))
 ```
 
+槽 `picker/engines/render` 的值可以是函数，从而允许在触发翻译的时候动态生成 translator 对象。比如为 pdf-tools 的 buffer 单独设置翻译行为:
+```
+(setq gts-default-translator
+      (gts-translator
+       :picker
+       (lambda ()
+         (cond ((equal major-mode 'pdf-view-mode)
+                (gts-noprompt-picker :texter (gts-current-or-selection-texter)))
+               (t (gts-prompt-picker))))
+       :engines
+       (lambda ()
+         (cond ((equal major-mode 'pdf-view-mode)
+                (gts-bing-engine))
+               (t (list
+                   (gts-bing-engine)
+                   (gts-google-engine :parser (gts-google-summary-parser))
+                   (gts-google-rpc-engine)))))
+       :render
+       (lambda ()
+         (cond ((equal major-mode 'pdf-view-mode)
+                (gts-posframe-pop-render))
+               (t (gts-buffer-render))))))
+```
+
 其他:
 - 常用参数，可以到 `customize-group` - `go-translate` 进行修改
 - 界面的 face，到 `customize-group` - `go-translate-faces` 进行修改
