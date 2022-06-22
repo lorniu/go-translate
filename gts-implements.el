@@ -96,8 +96,10 @@ Execute CALLBACK when success, or ERRORBACK when failed."
         (url-request-data data))
     (url-retrieve url (lambda (status)
                         (unwind-protect
-                            (if (and fail (eq (car status) :error))
-                                (funcall fail (cdr status))
+                            (if-let ((err (cond
+                                           ((null status) "Empty response")
+                                           ((eq (car status) :error) (cdr status)))))
+                                (when fail (funcall fail err))
                               (when done
                                 (delete-region (point-min) url-http-end-of-headers)
                                 (funcall done)))
@@ -142,6 +144,8 @@ will force opening in right side window."
   "Function used to render the task header when in multiple engines's query."
   :type 'function
   :group 'go-translate)
+
+(defvar-local gts-buffer-source-text nil)
 
 (defvar-local gts-buffer-keybinding-messages nil)
 
@@ -221,6 +225,7 @@ including FROM/TO and other DESC."
       ;; source text
       (erase-buffer)
       (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
+      (setq-local gts-buffer-source-text text)
       (insert text)
       ;; keybinds.
       ;;  q for quit and kill the window.
@@ -289,49 +294,50 @@ including FROM/TO and other DESC."
   "For multiple engines translation."
   (when-let ((buf (and task (get-buffer buffer))))
     (with-slots (text from to) task
-      (with-slots (plan-cnt task-queue engines) translator
-        (with-current-buffer buf
-          (erase-buffer)
-          (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
-          ;; content
-          (save-excursion
-            (cl-loop for task in task-queue
-                     for result = (oref task result)
-                     for ecode = (oref task ecode)
-                     for engine = (oref task engine)
-                     for engine-tag = (oref engine tag)
-                     for parser = (oref engine parser)
-                     for parser-tag = (oref parser tag)
-                     for header = (funcall gts-buffer-render-task-header-function engine-tag parser-tag)
-                     for content = (cond ((null result)
-                                          (concat header "\nLoading...\n\n"))
-                                         (ecode
-                                          (concat header
-                                                  (propertize
-                                                   ;; (msg . code) (http code msg)
-                                                   (format "\n%s\n\n" result) 'face 'gts-render-buffer-error-face)))
-                                         (t (let* ((meta (get-text-property 0 'meta result))
-                                                   (send (plist-get meta :send))
-                                                   (tbeg (plist-get meta :tbeg))
-                                                   (last (concat
-                                                          header "\n"
-                                                          (if (and tbeg send (equal 10 (aref result (- send 1))))
-                                                              (cl-subseq result (1- tbeg)) result) ; hide source text in me output
-                                                          "\n\n")))
-                                              (put-text-property 0 (length last) 'engine engine last)
-                                              last)))
-                     do (insert content)))
-          ;; states
-          (set-buffer-modified-p nil)
-          ;; all tasks finished
-          (when (= (oref translator state) 3)
-            ;; cursor
-            (unless (gts-childframe-of-buffer buf)
-              (set-window-point (get-buffer-window buf t) (save-excursion (forward-line 2) (point))))
-            ;; state
-            (gts-buffer-change-header-line-state 'done))
-          ;; execute the hook if exists
-          (run-hooks 'gts-after-buffer-multiple-render-hook)))
+      (with-current-buffer buf
+        (when (equal text gts-buffer-source-text)
+          (with-slots (plan-cnt task-queue engines) translator
+            (erase-buffer)
+            (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
+            ;; content
+            (save-excursion
+              (cl-loop for task in task-queue
+                       for result = (oref task result)
+                       for ecode = (oref task ecode)
+                       for engine = (oref task engine)
+                       for engine-tag = (oref engine tag)
+                       for parser = (oref engine parser)
+                       for parser-tag = (oref parser tag)
+                       for header = (funcall gts-buffer-render-task-header-function engine-tag parser-tag)
+                       for content = (cond ((null result)
+                                            (concat header "\nLoading...\n\n"))
+                                           (ecode
+                                            (concat header
+                                                    (propertize
+                                                     ;; (msg . code) (http code msg)
+                                                     (format "\n%s\n\n" result) 'face 'gts-render-buffer-error-face)))
+                                           (t (let* ((meta (get-text-property 0 'meta result))
+                                                     (send (plist-get meta :send))
+                                                     (tbeg (plist-get meta :tbeg))
+                                                     (last (concat
+                                                            header "\n"
+                                                            (if (and tbeg send (equal 10 (aref result (- send 1))))
+                                                                (cl-subseq result (1- tbeg)) result) ; hide source text in me output
+                                                            "\n\n")))
+                                                (put-text-property 0 (length last) 'engine engine last)
+                                                last)))
+                       do (insert content)))
+            ;; states
+            (set-buffer-modified-p nil)
+            ;; all tasks finished
+            (when (= (oref translator state) 3)
+              ;; cursor
+              (unless (gts-childframe-of-buffer buf)
+                (set-window-point (get-buffer-window buf t) (save-excursion (forward-line 2) (point))))
+              ;; state
+              (gts-buffer-change-header-line-state 'done))
+            ;; execute the hook if exists
+            (run-hooks 'gts-after-buffer-multiple-render-hook))))
       buf)))
 
 ;; component
