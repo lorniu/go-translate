@@ -97,7 +97,7 @@ Execute CALLBACK when success, or ERRORBACK when failed."
     (url-retrieve url (lambda (status)
                         (unwind-protect
                             (if-let ((err (cond
-                                           ((null status) "Empty response")
+                                           ((null url-http-end-of-headers) "Empty response")
                                            ((eq (car status) :error) (cdr status)))))
                                 (when fail (funcall fail err))
                               (when done
