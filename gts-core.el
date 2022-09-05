@@ -374,6 +374,7 @@ Key should be the language, and value should be a regexp string or function."
   :group 'go-translate)
 
 (defvar gts-picker-last-path nil)
+(defvar gts-path-candidates nil)
 
 (defun gts-picker-lang-matcher (lang)
   "judge source, sure case, yes:no:unknown.
@@ -415,18 +416,22 @@ choose path, from main, then extra path match"
 
 (cl-defmethod gts-path ((o gts-picker) text)
   "Get translate from/to path. TEXT for auto match, TYPE give all. TODO."
-  (let ((paths (gts-matched-paths o text)))
-    (if paths (car paths) (car (gts-all-paths o)))))
+  (let ((matched-paths (gts-matched-paths o text))
+        (all-paths (gts-all-paths o)))
+    (cl-loop for p in (append matched-paths all-paths)
+             do (cl-pushnew p gts-path-candidates :test 'equal))
+    (setq gts-path-candidates (reverse gts-path-candidates))
+    (if matched-paths (car matched-paths)
+        (or gts-picker-last-path (car all-paths)))))
 
 (cl-defmethod gts-next-path ((o gts-picker) text from to &optional backwardp)
-  (let (candidates idx)
-    (cl-loop for p in (append (gts-matched-paths o text) (gts-all-paths o))
-             do (cl-pushnew p candidates :test 'equal))
-    (setq candidates (reverse candidates))
-    (setq idx (cl-position (cons from to) candidates :test 'equal))
-    (if backwardp
-        (elt candidates (if (= 0 idx) (- (length candidates) 1) (- idx 1)))
-      (elt candidates (if (= (+ 1 idx) (length candidates)) 0 (+ 1 idx))))))
+  (let (idx)
+    (setq idx (cl-position (cons from to) gts-path-candidates :test 'equal))
+    (setq gts-picker-last-path
+          (if backwardp
+              (elt gts-path-candidates (if (= 0 idx) (- (length gts-path-candidates) 1) (- idx 1)))
+              (elt gts-path-candidates (if (= (+ 1 idx) (length gts-path-candidates)) 0 (+ 1 idx)))))
+    gts-picker-last-path))
 
 
 ;;; Engine/Parser
