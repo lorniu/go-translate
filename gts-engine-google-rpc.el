@@ -11,6 +11,12 @@
 
 (require 'gts-engine-google)
 
+(defcustom gts-google-rpc-base-url "https://translate.google.com"
+  "The base url of Google translate used by google-rpc engine.
+you can customize it according to your country region."
+  :type 'string
+  :group 'go-translate)
+
 
 ;;; Components
 
@@ -22,7 +28,7 @@
 
 (defclass gts-google-rpc-engine (gts-engine)
   ((tag       :initform "Google/RPC")
-   (base-url  :initform "https://translate.google.cn")
+   (base-url  :initform gts-google-rpc-base-url)
    (sub-url   :initform "/_/TranslateWebserverUi/data/batchexecute")
    (parser    :initform (gts-google-rpc-parser))
 
