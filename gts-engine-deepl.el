@@ -57,9 +57,9 @@
   (with-slots (text from to) task
     (with-slots (auth-key parser) o
       (gts-do-request (gts-gen-url o)
-                      :headers '(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                      :data `(("auth_key" . ,auth-key)
-                              ("text" . ,text)
+                      :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8")
+                                 ("Authorization" . ,(concat "DeepL-Auth-Key " auth-key)))
+                      :data `(("text" . ,text)
                               ("source_lang" . ,(gts-get-lang o from))
                               ("target_lang" . ,(gts-get-lang o to)))
                       :done (lambda ()
