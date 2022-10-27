@@ -149,10 +149,12 @@ will force opening in right side window."
 
 (defvar-local gts-buffer-keybinding-messages nil)
 
+(defvar-local gts-buffer-local-map nil)
+
 (cl-defmacro gts-buffer-set-key ((key &optional desc) form)
   "Helper for define KEY in buffer."
   (declare (indent 1))
-  `(progn (local-set-key
+  `(progn (define-key gts-buffer-local-map
            (kbd ,key)
            ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form)))
           (when ,desc
@@ -213,56 +215,70 @@ including FROM/TO and other DESC."
 (defun gts-render-buffer-prepare (buffer task)
   (with-current-buffer (get-buffer-create buffer)
     (with-slots (text from to translator engine) task
-      ;; setup
-      (deactivate-mark)
-      (read-only-mode -1)
-      (visual-line-mode -1)
-      (setq-local cursor-type 'hbar)
-      (setq-local cursor-in-non-selected-windows nil)
-      ;; headline
-      (gts-buffer-init-header-line from to (when (= (oref translator plan-cnt) 1)
-                                             (oref engine tag)))
-      ;; source text
-      (erase-buffer)
-      (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
-      (setq-local gts-buffer-source-text text)
-      (insert text)
-      ;; keybinds.
-      ;;  q for quit and kill the window.
-      ;;  x for switch sl and tl.
-      ;;  M-n and M-p, translate with next/prev direction.
-      ;;  g for refresh.
-      ;;  y to speak the current selection or word.
-      (gts-buffer-set-key ("M-n" "Next direction")
-        (let ((next (gts-next-path (oref translator picker) text from to)))
-          (gts-translate translator text (car next) (cdr next))))
-      (gts-buffer-set-key ("M-p" "Prev direction")
-        (let ((prev (gts-next-path (oref translator picker) text from to t)))
-          (gts-translate translator text (car prev) (cdr prev))))
-      (gts-buffer-set-key ("y" "TTS")
-        (if-let ((eg (if (> (oref translator plan-cnt) 1)
-                         (get-text-property (point) 'engine)
-                       engine)))
-            (gts-do-tts text from (lambda () (gts-tts eg text from)))
-          (message "[TTS] No engine found at point")))
-      (gts-buffer-set-key ("g" "Refresh")          (gts-translate translator text from to))
-      (gts-buffer-set-key ("x" "Reverse-Translate") (gts-translate translator text to from))
-      (gts-buffer-set-key ("C" "Clean Cache")       (gts-clear-all gts-default-cacher))
-      (gts-buffer-set-key ("q" "Quit") #'kill-buffer-and-window)
-      (gts-buffer-set-key ("C-g")
-        (unwind-protect
-            (gts-tts-try-interrupt-playing-process)
-          (keyboard-quit)))
-      (gts-buffer-set-key ("h")
-        (message (mapconcat
-                  (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))
-                  (reverse gts-buffer-keybinding-messages) " ")))
-      ;; execute the hook if exists
-      (run-hooks 'gts-after-buffer-prepared-hook))))
+      (let ((inhibit-read-only t))
+        ;; setup
+        (deactivate-mark)
+        (visual-line-mode -1)
+        (setq-local cursor-type 'hbar)
+        (setq-local cursor-in-non-selected-windows nil)
+        ;; headline
+        (gts-buffer-init-header-line from to (when (= (oref translator plan-cnt) 1)
+                                               (oref engine tag)))
+        ;; source text
+        (erase-buffer)
+        (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
+        (setq-local gts-buffer-source-text text)
+        (insert text)
+        ;; keybinds.
+        ;;  q for quit and kill the window.
+        ;;  x for switch sl and tl.
+        ;;  M-n and M-p, translate with next/prev direction.
+        ;;  g for refresh.
+        ;;  y to speak the current selection or word.
+        (setq gts-buffer-local-map (make-sparse-keymap))
+        (gts-buffer-set-key ("C-x C-q" "Toggle-Readonly")
+          (progn (read-only-mode -1)
+                 (use-local-map nil)
+                 (local-set-key (kbd "C-x C-q")
+                                (lambda ()
+                                  (interactive)
+                                  (read-only-mode 1)
+                                  (use-local-map gts-buffer-local-map)))))
+        (gts-buffer-set-key ("M-n" "Next direction")
+          (let ((next (gts-next-path (oref translator picker) text from to)))
+            (gts-translate translator text (car next) (cdr next))))
+        (gts-buffer-set-key ("M-p" "Prev direction")
+          (let ((prev (gts-next-path (oref translator picker) text from to t)))
+            (gts-translate translator text (car prev) (cdr prev))))
+        (gts-buffer-set-key ("y" "TTS")
+          (if-let ((eg (if (> (oref translator plan-cnt) 1)
+                           (get-text-property (point) 'engine)
+                         engine)))
+              (gts-do-tts text from (lambda () (gts-tts eg text from)))
+            (message "[TTS] No engine found at point")))
+        (gts-buffer-set-key ("g" "Refresh")          (gts-translate translator text from to))
+        (gts-buffer-set-key ("x" "Reverse-Translate") (gts-translate translator text to from))
+        (gts-buffer-set-key ("C" "Clean Cache")       (gts-clear-all gts-default-cacher))
+        (gts-buffer-set-key ("q" "Quit") #'kill-buffer-and-window)
+        (gts-buffer-set-key ("p") #'previous-line)
+        (gts-buffer-set-key ("n") #'next-line)
+        (gts-buffer-set-key ("C-g")
+          (unwind-protect
+              (gts-tts-try-interrupt-playing-process)
+            (keyboard-quit)))
+        (gts-buffer-set-key ("h")
+          (message (mapconcat
+                    (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))
+                    (reverse gts-buffer-keybinding-messages) " ")))
+        (read-only-mode 1)
+        (use-local-map gts-buffer-local-map)
+        ;; execute the hook if exists
+        (run-hooks 'gts-after-buffer-prepared-hook)))))
 
 (defun gts-render-buffer (buffer task)
   "For single engine translation."
-  (when-let ((buf (get-buffer buffer)))
+  (when-let ((inhibit-read-only t)
+             (buf (get-buffer buffer)))
     (with-current-buffer buf
       (with-slots (result ecode engine) task
         (if ecode
@@ -292,7 +308,8 @@ including FROM/TO and other DESC."
 
 (defun gts-render-buffer-multi-engines (buffer translator task)
   "For multiple engines translation."
-  (when-let ((buf (and task (get-buffer buffer))))
+  (when-let ((inhibit-read-only t)
+             (buf (and task (get-buffer buffer))))
     (with-slots (text from to) task
       (with-current-buffer buf
         (when (equal text gts-buffer-source-text)
