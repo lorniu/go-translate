@@ -639,7 +639,6 @@ If BACKWARDP is t, then pick the previous one."
   (let* ((text (gts-text (oref o texter)))
          (path (gts-path o text)))
     (gts-picker-prompt-pick text path)
-    (setq gts-picker-last-path gts-picker-current-path)
     (cl-values gts-picker-current-text gts-picker-current-path)))
 
 
