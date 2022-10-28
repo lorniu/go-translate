@@ -416,7 +416,9 @@ choose path, from main, then extra path match"
 (cl-defmethod gts-path ((o gts-picker) text)
   "Get translate from/to path. TEXT for auto match, TYPE give all. TODO."
   (let ((paths (gts-matched-paths o text)))
-    (if paths (car paths) (car (gts-all-paths o)))))
+    (if paths (car paths)
+      (or gts-picker-last-path
+          (car (gts-all-paths o))))))
 
 (cl-defmethod gts-next-path ((o gts-picker) text from to &optional backwardp)
   (let (candidates idx)
@@ -427,6 +429,12 @@ choose path, from main, then extra path match"
     (if backwardp
         (elt candidates (if (= 0 idx) (- (length candidates) 1) (- idx 1)))
       (elt candidates (if (= (+ 1 idx) (length candidates)) 0 (+ 1 idx))))))
+
+(cl-defmethod gts-pick :around ((_ gts-picker))
+  "Set 'gts-picker-last-path' after pick a path."
+  (let ((ret (cl-call-next-method)))
+    (setq gts-picker-last-path (cadr ret))
+    ret))
 
 
 ;;; Engine/Parser
