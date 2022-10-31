@@ -221,6 +221,7 @@ It will take TEXT/FROM/TO as source if they are present, or will pick from the P
     (unless (and text from to)
       (cl-multiple-value-bind (input path) (gts-pick picker)
         (setq text input from (car path) to (cdr path))))
+    (setq gts-picker-last-path (cons from to))
     (gts-do-log 'translator (format "\nfrom: %s, to: %s, text: %s" from to text))
     ;; translate
     (let ((buf (current-buffer))
@@ -430,12 +431,6 @@ choose path, from main, then extra path match"
         (elt candidates (if (= 0 idx) (- (length candidates) 1) (- idx 1)))
       (elt candidates (if (= (+ 1 idx) (length candidates)) 0 (+ 1 idx))))))
 
-(cl-defmethod gts-pick :around ((_ gts-picker))
-  "Set 'gts-picker-last-path' after pick a path."
-  (let ((ret (cl-call-next-method)))
-    (setq gts-picker-last-path (cadr ret))
-    ret))
-
 
 ;;; Engine/Parser
 
@@ -588,7 +583,6 @@ If HANDLER speak failed, then try using locally TTS if `gts-tts-try-speak-locall
                               (url-hexify-string (format "%s" (car arg)))
                               (url-hexify-string (format "%s" (cdr arg)))))
                     data "&"))))
-
 
 (provide 'gts-core)
 
