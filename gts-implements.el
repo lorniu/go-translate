@@ -17,10 +17,10 @@
 
 ;;; [Logger] Log all to a standalone buffer
 
-(defvar gts-logger-buffer-name " *gts-logger*")
-
 (defclass gts-buffer-logger (gts-logger)
   ((buffer :initarg buf :initform nil))) ; dont set :initarg to buffer, it will make an error on emacsv27.
+
+(defvar gts-logger-buffer-name " *gts-logger*")
 
 (cl-defmethod gts-log ((logger gts-buffer-logger) tag msg)
   (with-current-buffer (get-buffer-create (or (oref logger buffer) gts-logger-buffer-name))
@@ -77,14 +77,14 @@
 ;;; [Http Client] implement with builtin `url.el'.
 ;; This will be used as the default http client.
 
+(defclass gts-url-http-client (gts-http-client) ())
+
 (defcustom gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
   "The user agent used when send a request."
   :type 'string
   :group 'go-translate)
 
 (defvar url-http-end-of-headers)
-
-(defclass gts-url-http-client (gts-http-client) ())
 
 (cl-defmethod gts-request ((_ gts-url-http-client) url &key done fail data headers)
   "Request URL with DATA asynchronous.
@@ -111,14 +111,16 @@ Execute CALLBACK when success, or ERRORBACK when failed."
 
 ;;; [Render] buffer render
 
+(defclass gts-buffer-render (gts-render) ())
+
 (defcustom gts-split-width-threshold 80
   "Threshold width for window horizontal split."
   :group 'go-translate
   :type '(choice
-	  (const :tag "Disable" nil)
-	  (integer :tag "Threshold")))
+          (const :tag "Disable" nil)
+          (integer :tag "Threshold")))
 
-(defcustom gts-buffer-follow-p t
+(defcustom gts-buffer-follow-p nil
   "If t then pop to the result window after translation."
   :type 'boolean
   :group 'go-translate)
@@ -146,9 +148,7 @@ will force opening in right side window."
   :group 'go-translate)
 
 (defvar-local gts-buffer-source-text nil)
-
 (defvar-local gts-buffer-keybinding-messages nil)
-
 (defvar-local gts-buffer-local-map nil)
 
 (cl-defmacro gts-buffer-set-key ((key &optional desc) form)
@@ -192,13 +192,15 @@ including FROM/TO and other DESC."
 (defun gts-buffer-ensure-a-blank-line-at-beginning (buffer)
   "Ensure a blank line at beginning of BUFFER."
   (with-current-buffer buffer
-    (save-excursion
-      (let ((m (mark-marker)))
-        (goto-char (point-min))
-        (unless (equal (char-after) ?\n)
-          (insert "\n"))
-        (when (ignore-errors (= (marker-position m) 1))
-          (setf (marker-position m) (point)))))))
+    (let ((inhibit-read-only t))
+      (save-excursion
+        (let ((m (mark-marker)))
+          (goto-char (point-min))
+          (unless (equal (char-after) ?\n)
+            (insert "\n"))
+          (when (ignore-errors (= (marker-position m) 1))
+            (setf (marker-position m) (point))))
+        (set-buffer-modified-p nil)))))
 
 (defun gts-childframe-of-buffer (&optional buffer)
   "Get the childframe of BUFFER if it exists, or return nil."
@@ -209,8 +211,6 @@ including FROM/TO and other DESC."
   (concat (propertize
            (format "%s %s\n" engine-tag (if parser-tag (format "(%s) " parser-tag) ""))
            'face 'gts-render-buffer-me-header-backgroud-face)))
-
-;; functions
 
 (defun gts-render-buffer-prepare (buffer task)
   (with-current-buffer (get-buffer-create buffer)
@@ -245,14 +245,10 @@ including FROM/TO and other DESC."
                                   (read-only-mode 1)
                                   (use-local-map gts-buffer-local-map)))))
         (gts-buffer-set-key ("M-n" "Next direction")
-          (let* ((picker (let ((op (oref translator picker)))
-                           (if (functionp op) (funcall op) op)))
-                 (next (gts-next-path picker text from to)))
+          (let ((next (gts-next-path (gts-get translator 'picker) text (cons from to))))
             (gts-translate translator text (car next) (cdr next))))
         (gts-buffer-set-key ("M-p" "Prev direction")
-          (let* ((picker (let ((op (oref translator picker)))
-                           (if (functionp op) (funcall op) op)))
-                 (prev (gts-next-path picker text from to t)))
+          (let ((prev (gts-next-path (gts-get translator 'picker) text (cons from to) t)))
             (gts-translate translator text (car prev) (cdr prev))))
         (gts-buffer-set-key ("y" "TTS")
           (if-let ((eg (if (> (oref translator plan-cnt) 1)
@@ -270,6 +266,9 @@ including FROM/TO and other DESC."
           (unwind-protect
               (gts-tts-try-interrupt-playing-process)
             (keyboard-quit)))
+        (gts-buffer-set-key ("t" "Toggle-Follow")
+          (message "Now, buffer following %s."
+                   (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled")))
         (gts-buffer-set-key ("h")
           (message (mapconcat
                     (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))
@@ -361,18 +360,9 @@ including FROM/TO and other DESC."
             (run-hooks 'gts-after-buffer-multiple-render-hook))))
       buf)))
 
-;; component
-
-(defclass gts-buffer-render (gts-render) ())
-
 (cl-defmethod gts-pre ((_ gts-buffer-render) task)
   ;; init and setup
   (gts-render-buffer-prepare gts-buffer-name task)
-  ;; add keybind, toggle follow
-  (with-current-buffer gts-buffer-name
-    (gts-buffer-set-key ("t" "Toggle-Follow")
-      (message "Now, buffer following %s."
-               (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled"))))
   ;; display
   (let ((split-width-threshold (or gts-split-width-threshold split-width-threshold)))
     (display-buffer gts-buffer-name gts-buffer-window-config)))
@@ -393,20 +383,22 @@ including FROM/TO and other DESC."
 ;;; [Render] Child-Frame Render (Popup Mode)
 ;; implements via package Posframe, you should install it before use this
 
+(defclass gts-posframe-pop-render (gts-render)
+  ((width       :initarg :width        :initform 100)
+   (height      :initarg :height       :initform 15)
+   (forecolor   :initarg :forecolor    :initform nil)
+   (backcolor   :initarg :backcolor    :initform nil)
+   (padding     :initarg :padding      :initform 12))
+  "Pop up a childframe to show the result.
+The frame will disappear when do do anything but focus in it.
+Manually close the frame with `q'.")
+
 (require 'posframe nil t)
 (declare-function posframe-show "ext:posframe.el" t t)
 (declare-function posframe-delete "ext:posframe.el" t t)
 (declare-function posframe-hide "ext:posframe.el" t t)
 (declare-function posframe-refresh "ext:posframe.el" t t)
 (declare-function posframe-poshandler-frame-top-right-corner "ext:posframe.el" t t)
-
-(defun gts-posframe-init-header-line (from to)
-  (setq header-line-format
-        (list "[" (propertize from 'face 'gts-render-buffer-header-line-lang-face) "]"
-              " → "
-              "[" (propertize to 'face 'gts-render-buffer-header-line-lang-face) "]")))
-
-;; implement
 
 (defcustom gts-posframe-pop-render-buffer " *GTS-Pop-Posframe*"
   "Buffer name of Pop Posframe."
@@ -415,6 +407,12 @@ including FROM/TO and other DESC."
 
 (defvar gts-posframe-pop-render-timeout 30)
 (defvar gts-posframe-pop-render-poshandler nil)
+
+(defun gts-posframe-init-header-line (from to)
+  (setq header-line-format
+        (list "[" (propertize from 'face 'gts-render-buffer-header-line-lang-face) "]"
+              " → "
+              "[" (propertize to 'face 'gts-render-buffer-header-line-lang-face) "]")))
 
 (defun gts-posframe-render-auto-close-handler ()
   "Close the pop-up posframe window."
@@ -425,16 +423,6 @@ including FROM/TO and other DESC."
                    (string= (buffer-name) gts-posframe-pop-render-buffer)))
     (ignore-errors (posframe-delete gts-posframe-pop-render-buffer))
     (remove-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
-
-(defclass gts-posframe-pop-render (gts-render)
-  ((width       :initarg :width        :initform 100)
-   (height      :initarg :height       :initform 15)
-   (forecolor   :initarg :forecolor    :initform nil)
-   (backcolor   :initarg :backcolor    :initform nil)
-   (padding     :initarg :padding      :initform 12))
-  "Pop up a childframe to show the result.
-The frame will disappear when do do anything but focus in it.
-Manually close the frame with `q'.")
 
 (cl-defmethod gts-pre ((r gts-posframe-pop-render) task)
   (with-slots (width height forecolor backcolor padding) r
@@ -471,14 +459,6 @@ Manually close the frame with `q'.")
 
 ;;; [Render] Child-Frame Render (Pin Mode)
 
-(defcustom gts-posframe-pin-render-buffer " *GTS-Pin-Posframe*"
-  "Buffer name of Pin Posframe."
-  :type 'string
-  :group 'go-translate)
-
-(defvar gts-posframe-pin-render-frame nil)
-(defvar gts-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)
-
 (defclass gts-posframe-pin-render (gts-posframe-pop-render)
   ((width       :initarg :width        :initform 60)
    (height      :initarg :height       :initform 20)
@@ -491,6 +471,14 @@ Manually close the frame with `q'.")
   "Pin the childframe in a fixed position to display the translate result.
 The childframe will not close, until you kill it with `q'.
 Other operations in the childframe buffer, just like in `gts-buffer-render'.")
+
+(defcustom gts-posframe-pin-render-buffer " *GTS-Pin-Posframe*"
+  "Buffer name of Pin Posframe."
+  :type 'string
+  :group 'go-translate)
+
+(defvar gts-posframe-pin-render-frame nil)
+(defvar gts-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)
 
 (cl-defmethod gts-pre ((r gts-posframe-pin-render) task)
   ;; create/show frame
@@ -577,12 +565,12 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
 
 ;;; [Picker] noprompt picker
 
+(defclass gts-noprompt-picker (gts-picker)
+  ((texter :initarg :texter :initform (gts-current-or-selection-texter))))
+
 (defvar gts-picker-current-picker nil)
 (defvar gts-picker-current-text nil)
 (defvar gts-picker-current-path nil)
-
-(defclass gts-noprompt-picker (gts-picker)
-  ((texter :initarg :texter :initform (gts-current-or-selection-texter))))
 
 (cl-defmethod gts-pick ((o gts-noprompt-picker))
   (let ((text (gts-text (oref o texter))))
@@ -595,6 +583,9 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
 
 ;;; [Picker] prompt, and flexible
 
+(defclass gts-prompt-picker (gts-picker)
+  ((texter :initarg :texter :initform (gts-current-or-selection-texter))))
+
 (defvar gts-prompt-for-translate-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
@@ -606,17 +597,13 @@ Other operations in the childframe buffer, just like in `gts-buffer-render'.")
     map)
   "Minibuffer keymap used when prompt user input.")
 
-(defclass gts-prompt-picker (gts-picker)
-  ((texter :initarg :texter :initform (gts-current-or-selection-texter))))
-
 (defun gts-prompt-picker-next-path (&optional backwardp)
   "Pick next available translate path.
 If BACKWARDP is t, then pick the previous one."
   (interactive "P")
   (let ((p (gts-next-path gts-picker-current-picker
                           gts-picker-current-text
-                          (car gts-picker-current-path)
-                          (cdr gts-picker-current-path)
+                          gts-picker-current-path
                           backwardp)))
     (setq gts-picker-current-path p)
     (gts-picker-prompt-pick (minibuffer-contents) p)
