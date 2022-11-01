@@ -135,7 +135,7 @@ Execute CALLBACK when success, or ERRORBACK when failed."
 
 For example, set to:
 
- '((display-buffer-reuse-window display-buffer-in-side-window)
+ \\='((display-buffer-reuse-window display-buffer-in-side-window)
    (side . right))
 
 will force opening in right side window."
@@ -155,8 +155,8 @@ will force opening in right side window."
   "Helper for define KEY in buffer."
   (declare (indent 1))
   `(progn (define-key gts-buffer-local-map
-           (kbd ,key)
-           ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form)))
+            (kbd ,key)
+            ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form)))
           (when ,desc
             (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
             (push (cons ,key ,desc) gts-buffer-keybinding-messages))))
@@ -199,7 +199,7 @@ including FROM/TO and other DESC."
           (unless (equal (char-after) ?\n)
             (insert "\n"))
           (when (ignore-errors (= (marker-position m) 1))
-            (setf (marker-position m) (point))))
+            (set-marker m (point))))
         (set-buffer-modified-p nil)))))
 
 (defun gts-childframe-of-buffer (&optional buffer)
@@ -214,8 +214,9 @@ including FROM/TO and other DESC."
 
 (defun gts-render-buffer-prepare (buffer task)
   (with-current-buffer (get-buffer-create buffer)
-    (with-slots (text from to translator engine) task
-      (let ((inhibit-read-only t))
+    (with-slots (from to translator engine) task
+      (let ((inhibit-read-only t)
+            (text (oref translator text)))
         ;; setup
         (deactivate-mark)
         (visual-line-mode -1)
@@ -245,19 +246,17 @@ including FROM/TO and other DESC."
                                   (read-only-mode 1)
                                   (use-local-map gts-buffer-local-map)))))
         (gts-buffer-set-key ("M-n" "Next direction")
-          (let ((next (gts-next-path (gts-get translator 'picker) text (cons from to))))
-            (gts-translate translator text (car next) (cdr next))))
+          (gts-translate translator text (gts-next-path (gts-get translator 'picker) text (cons from to))))
         (gts-buffer-set-key ("M-p" "Prev direction")
-          (let ((prev (gts-next-path (gts-get translator 'picker) text (cons from to) t)))
-            (gts-translate translator text (car prev) (cdr prev))))
+          (gts-translate translator text (gts-next-path (gts-get translator 'picker) text (cons from to) t)))
         (gts-buffer-set-key ("y" "TTS")
           (if-let ((eg (if (> (oref translator plan-cnt) 1)
                            (get-text-property (point) 'engine)
                          engine)))
               (gts-do-tts text from (lambda () (gts-tts eg text from)))
             (message "[TTS] No engine found at point")))
-        (gts-buffer-set-key ("g" "Refresh")          (gts-translate translator text from to))
-        (gts-buffer-set-key ("x" "Reverse-Translate") (gts-translate translator text to from))
+        (gts-buffer-set-key ("g" "Refresh")           (gts-translate translator text (cons from to)))
+        (gts-buffer-set-key ("x" "Reverse-Translate") (gts-translate translator text (cons to from)))
         (gts-buffer-set-key ("C" "Clean Cache")       (gts-clear-all gts-default-cacher))
         (gts-buffer-set-key ("q" "Quit") #'kill-buffer-and-window)
         (gts-buffer-set-key ("p") #'previous-line)
@@ -283,24 +282,32 @@ including FROM/TO and other DESC."
   (when-let ((inhibit-read-only t)
              (buf (get-buffer buffer)))
     (with-current-buffer buf
-      (with-slots (result ecode engine) task
+      (with-slots (result ecode engine translator) task
         (if ecode
             (progn ;; error display
               (goto-char (point-max))
               (insert (propertize (format "\n\n\n%s" result) 'face 'gts-render-buffer-error-face)))
           ;; content
           (erase-buffer)
-          (insert result)
+          (if (stringp result) (insert result)
+            (cl-loop for src in (gts-get translator 'sptext)
+                     for tar in result
+                     do (progn
+                          (insert (propertize (string-trim src) 'face 'gts-render-buffer-source-face))
+                          (insert "\n\n")
+                          (insert tar)
+                          (insert "\n\n"))))
           ;; try set mark in beginning of the translate result,
           ;; and set currsor position in end of the translate result,
           ;; so you can quick select the translate result with C-x C-x.
           (unless (gts-childframe-of-buffer buf) ; when not childframe
-            (when-let* ((meta (get-text-property 0 'meta result))
-                        (tbeg (plist-get meta :tbeg))
-                        (tend (plist-get meta :tend)))
-              (push-mark tbeg 'nomsg)
-              (goto-char tend)
-              (set-window-point (get-buffer-window buf t) tend))))
+            (when (stringp result)
+              (when-let* ((meta (get-text-property 0 'meta result))
+                          (tbeg (plist-get meta :tbeg))
+                          (tend (plist-get meta :tend)))
+                (push-mark tbeg 'nomsg)
+                (goto-char tend)
+                (set-window-point (get-buffer-window buf t) tend)))))
         ;; update states
         (set-buffer-modified-p nil)
         (gts-buffer-change-header-line-state 'done)
@@ -312,8 +319,9 @@ including FROM/TO and other DESC."
 (defun gts-render-buffer-multi-engines (buffer translator task)
   "For multiple engines translation."
   (when-let ((inhibit-read-only t)
+             (text (gts-get translator 'text))
              (buf (and task (get-buffer buffer))))
-    (with-slots (text from to) task
+    (with-slots (from to) task
       (with-current-buffer buf
         (when (equal text gts-buffer-source-text)
           (with-slots (plan-cnt task-queue engines) translator
@@ -322,7 +330,8 @@ including FROM/TO and other DESC."
             ;; content
             (save-excursion
               (cl-loop for task in task-queue
-                       for result = (oref task result)
+                       for result = (let ((r (oref task result)))
+                                      (and r (if (stringp r) r (string-join r "\n\n"))))
                        for ecode = (oref task ecode)
                        for engine = (oref task engine)
                        for engine-tag = (oref engine tag)
@@ -470,7 +479,7 @@ Manually close the frame with `q'.")
    (position    :initarg :position     :initform nil))
   "Pin the childframe in a fixed position to display the translate result.
 The childframe will not close, until you kill it with `q'.
-Other operations in the childframe buffer, just like in `gts-buffer-render'.")
+Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 (defcustom gts-posframe-pin-render-buffer " *GTS-Pin-Posframe*"
   "Buffer name of Pin Posframe."
@@ -627,6 +636,15 @@ If BACKWARDP is t, then pick the previous one."
          (path (gts-path o text)))
     (gts-picker-prompt-pick text path)
     (cl-values gts-picker-current-text gts-picker-current-path)))
+
+
+;;; [Splitter] split text by paragraph
+
+(defclass gts-paragraph-splitter (gts-splitter) ())
+
+(cl-defmethod gts-split ((_ gts-paragraph-splitter) text)
+  (setq text (split-string text "\n\n" t))
+  (if (and (listp text) (cadr text)) text))
 
 
 (provide 'gts-implements)

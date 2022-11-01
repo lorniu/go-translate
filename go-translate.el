@@ -71,6 +71,9 @@
                   ;;(gts-posframe-pin-render :width 80 :height 25 :position (cons 1000 20) :forecolor "#ffffff" :backcolor "#111111")
 
                   ;;(gts-kill-ring-render)
+
+                  :splitter nil
+                  ;; (gts-paragraph-splitter)
                   ))
 
 ;;;###autoload
