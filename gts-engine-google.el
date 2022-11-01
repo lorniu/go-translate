@@ -110,7 +110,7 @@
 
 (cl-defmethod gts-tts-gen-urls ((o gts-google-engine) text lang)
   "Generate the tts urls for TEXT to LANGUAGE."
-  (cl-loop with texts = (gts-tts-text-spliter o text)
+  (cl-loop with texts = (gts-tts-text-splitter o text)
            for total = (length texts)
            for index from 0
            for piece in texts
@@ -132,7 +132,7 @@
                                           (url-hexify-string (cdr p))))
                                 params "&")))))
 
-(cl-defmethod gts-tts-text-spliter ((_ gts-google-engine) text)
+(cl-defmethod gts-tts-text-splitter ((_ gts-google-engine) text)
   "Split TEXT by maxlen at applicable point for translating.
 Code from `google-translate', maybe improve it someday."
   (let (result (maxlen 200))

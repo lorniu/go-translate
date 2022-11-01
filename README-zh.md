@@ -21,6 +21,9 @@
 (require 'go-translate)
 
 (setq gts-translate-list '(("en" "zh")))
+
+;; (setq gts-default-translator (gts-translator :engines (gts-bing-engine)))
+
 (setq gts-default-translator
       (gts-translator
        :picker (gts-prompt-picker)
@@ -71,10 +74,14 @@
        ;;(gts-posframe-pin-render :position (cons 1200 20))
        ;;(gts-posframe-pin-render :width 80 :height 25 :position (cons 1000 20) :forecolor "#ffffff" :backcolor "#111111")
        ;;(gts-kill-ring-render)
+
+       :splitter ; 分割器，可选。如果设置了，将会分段按照提供的规则分段进行翻译。可以选择定制 Render 混合输出分段翻译的结果
+
+       (gts-paragraph-splitter)
        ))
 ```
 
-槽 `picker/engines/render` 的值可以是函数，从而允许在触发翻译的时候动态生成 translator 对象。比如为 pdf-tools 的 buffer 单独设置翻译行为:
+槽 `picker/engines/render/splitter` 的值可以是函数，从而允许在触发翻译的时候动态生成 translator 对象。比如为 pdf-tools 的 buffer 单独设置翻译行为:
 ```
 (setq gts-default-translator
       (gts-translator
@@ -201,6 +208,10 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 - `C-l` 清空输入
 - `C-n` 和 `C-p` 切换语言
 - `Return` 进行翻译
+
+### gts-paragraph-splitter
+
+对翻译 text 进行分割处理，从而实现在 Render 中混排源文和译文的目的。这个 splitter 的实现比较简单，也可以根据需要自行设计更只能的分割策略。
 
 ### gts-xxx-engine
 
