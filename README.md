@@ -41,6 +41,8 @@ Add this to your configuration file:
 
 (setq gts-translate-list '(("en" "zh")))
 
+;; (setq gts-default-translator (gts-translator :engines (gts-bing-engine)))
+
 (setq gts-default-translator
       (gts-translator
        :picker (gts-prompt-picker)
@@ -90,10 +92,14 @@ Then use `gts-do-translate` to start translation.
        ;;(gts-posframe-pin-render :position (cons 1200 20))
        ;;(gts-posframe-pin-render :width 80 :height 25 :position (cons 1000 20) :forecolor "#ffffff" :backcolor "#111111")
        ;;(gts-kill-ring-render)
+
+       :splitter ; optional, used to split text into several parts, and the translation result will be a list.
+
+       (gts-paragraph-splitter)
        ))
 ```
 
-Slots `picker/engines/render` can be a function or lambda, it allows the dynamic initialization of slots while translating.
+Slots `picker/engines/render/splitter` can be a function or lambda, it allows the dynamic initialization of slots while translating.
 For example, set a separate translation behavior for pdf-tools:
 ```
 (setq gts-default-translator
@@ -217,6 +223,10 @@ with `Return`. Also, you can use `C-n` and `C-p` to switch translation direction
 
 The `gts-noprompt-picker` is another choice if you don't like the prompting style's picking.
 It will automately take the text from texter and choose a suitable from/to, then translate directly.
+
+### gts-paragraph-splitter
+
+Make mix-source-and-target-style translation possible. This is a basic implement to split source text to several parts.
 
 ## Extend your components
 
