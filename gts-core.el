@@ -84,7 +84,8 @@
 1: tasks add finished, but not running,
 2: prepare render finished, and begin to running,
 3: all tasks running finished,
-4: rendered done, all over.")))
+4: rendered done, all over.")
+   (version    :initform nil     :documentation "Used to distinguish between different translations")))
 
 (defclass gts-task ()
   ((id         :initform (gensym))
@@ -94,8 +95,9 @@
    (to         :initarg :to)
 
    (raw        :initform nil :documentation "raw result responsed by the http-client")
-   (result     :initform nil :initarg :result :documentation "formatted result parsed by parser, string or list")
-   (ecode      :initform nil :initarg :ecode :documentation "if any error, this will not nil")
+   (parsed     :initform nil :initarg :parsed :documentation "result parsed by parser, string or list")
+   (err        :initform nil :initarg :err    :documentation "error info")
+   (meta       :initform nil :initarg :meta   :documentation "extra info passed from parser to render. tbeg/tend/ft")
 
    (engine     :initarg :engine :initform nil)
    (render     :initarg :render :initform nil)
@@ -215,6 +217,9 @@ When success execute CALLBACK, or execute ERRORBACK."
   "The default http client used to send a request.")
 
 (cl-defun gts-do-request (url &key done fail data headers)
+  "Helper for `gts-request'.
+DONE is a callback based on the responsed result buffer.
+FAIL is the callback for any error occured in request or DONE."
   (if (and gts-default-http-client
            (eieio-object-p gts-default-http-client)
            (object-of-class-p gts-default-http-client 'gts-http-client))
@@ -229,7 +234,11 @@ When success execute CALLBACK, or execute ERRORBACK."
                      :data data
                      :done (lambda ()
                              (gts-do-log tag (format "DONE! (%s)" url))
-                             (funcall done))
+                             (condition-case err
+                                 (funcall done)
+                               (error
+                                (gts-do-log tag (format "FAIL in callback! (%s) %s" url err))
+                                (funcall fail err))))
                      :fail (lambda (status)
                              (gts-do-log tag (format "FAIL! (%s) %s" url status))
                              (funcall fail status))))
@@ -290,14 +299,14 @@ choose path, from main, then extra path match"
                  gts-picker-lang-match-alist))))
     (if (stringp p) (lambda (text) (string-match-p p text)) p)))
 
-(cl-defmethod gts-all-paths ((o gts-picker))
+(cl-defmethod gts-all-paths ((picker gts-picker))
   (when (or (null gts-translate-list) (not (consp (car gts-translate-list))))
     (user-error "Please make sure you set the avaiable `gts-translate-list'. eg:\n
  (setq gts-translate-list '((\"en\" \"zh\") (\"en\" \"ja\"))\n\n"))
   (let (paths)
     (when gts-picker-last-path
       (cl-pushnew gts-picker-last-path paths))
-    (cl-loop with candidates = (if (oref o single)
+    (cl-loop with candidates = (if (oref picker single)
                                    (list (car gts-translate-list))
                                  gts-translate-list)
              for (lang1 . lang2) in candidates
@@ -307,9 +316,9 @@ choose path, from main, then extra path match"
                   (cl-pushnew (cons lang2 lang1) paths :test 'equal)))
     (reverse paths)))
 
-(cl-defmethod gts-matched-paths ((o gts-picker) text)
+(cl-defmethod gts-matched-paths ((picker gts-picker) text)
   (when text
-    (let ((paths (gts-all-paths o))
+    (let ((paths (gts-all-paths picker))
           (text (with-temp-buffer ; clear punctuations
                   (insert text)
                   (goto-char (point-min))
@@ -328,10 +337,10 @@ TEXT for auto match, TYPE give all."
       (or gts-picker-last-path
           (car (gts-all-paths picker))))))
 
-(cl-defmethod gts-next-path ((o gts-picker) text path &optional backwardp)
+(cl-defmethod gts-next-path ((picker gts-picker) text path &optional backwardp)
   (let (candidates idx)
-    (cl-loop for p in (append (gts-matched-paths o text) (gts-all-paths o))
-             do (cl-pushnew p candidates :test 'equal))
+    (cl-loop for path in (append (gts-matched-paths picker text) (gts-all-paths picker))
+             do (cl-pushnew path candidates :test 'equal))
     (setq candidates (reverse candidates))
     (setq idx (cl-position path candidates :test 'equal))
     (if backwardp
@@ -356,14 +365,41 @@ It's an asynchronous request with a CALLBACK that should accept the parsed task.
                           (gts-update-raw task (buffer-string))
                           (gts-parse (oref engine parser) task)
                           (funcall callback))
-                  :fail (lambda (status)
-                          (gts-update-parsed status t)
-                          (funcall callback))))
+                  :fail (lambda (err)
+                          (gts-render-fail task err))))
+
+(cl-defmethod gts-translate :around ((engine gts-engine) task callback)
+  "Add cache and log support."
+  (with-slots (id render engine translator) task
+    (if-let ((render-name (eieio-object-class-name render))
+             (engine-name (eieio-object-class-name engine))
+             (cache (gts-cache-get gts-default-cacher task)))
+        ;; try cache
+        (let ((engines (gts-get translator 'engines)))
+          (gts-update-raw task (car cache))
+          (gts-update-parsed task (cdr cache))
+          (if (cdr engines) (gts-me-out render task)
+            (gts-out render task))
+          (gts-do-log 'render (format "%s: done with cache!" id)))
+      ;; request from engine
+      (gts-do-log 'engine (format "%s: starting %s..." id engine-name))
+      (cl-call-next-method engine task
+                           (lambda ()
+                             (gts-do-log 'engine (format "%s: %s done!" id engine-name))
+                             (funcall callback)
+                             ;; refresh cache
+                             (with-slots (err raw parsed) task
+                               (unless err
+                                 (gts-cache-set gts-default-cacher task (cons raw parsed)))))))))
+
+(cl-defgeneric gts-with-token (engine done fail)
+  (:documentation "Get token for ENGINE, if success then DONE is called.")
+  (declare (indent 1)))
 
 (cl-defgeneric gts-tts (engine text lang)
   "TTS, do the speak for TEXT with LANG."
   (:method ((e gts-engine) &rest _)
-   (user-error "No TTS service found on engine `%s'" (oref e tag))))
+           (user-error "No TTS service found on engine `%s'" (oref e tag))))
 
 (cl-defgeneric gts-parse (parser task)
   (:documentation "Parse RESPONSE for TASK, update the results into TASK.
@@ -373,59 +409,71 @@ The result can be a string with some properties, or an error cons.
 Some properties in string will provide more information to the render,
 Eg, beg/end for result position.")
   (:method ((_o gts-parser) task)
-   ;; do nothing
-   (gts-update-parsed task (oref task raw))))
+           ;; do nothing
+           (gts-update-parsed task (oref task raw))))
 
 
 ;;; Render
 
-(cl-defgeneric gts-pre (render task)
+(cl-defgeneric gts-pre (render translator)
   (:documentation "Pre-render before request success.
 Do some preparation for the gts-out.")
-  (:method ((_o gts-render) (_t gts-task)) ()))
+  (:method :after ((render gts-render) _)
+           (gts-do-log 'render (format "prepare render with %s finished" (eieio-object-class-name render))))
+  (:method ((_o gts-render) (_t gts-translator)) ()))
 
 (cl-defgeneric gts-out (render task)
   (:documentation "Render the TASK, default output to *Messages*.")
+  (:method :after ((render gts-render) task)
+           (gts-do-log 'render (format "%s: %s finished" (oref task id) (eieio-object-class-name render))))
   (:method ((_ gts-render) task)
-   (with-slots (result) task
-     (when (listp result)
-       (setq result (string-join result "\f")))
-     (setq result (string-trim result))
-     (setq result (propertize result 'face 'font-lock-keyword-face))
-     (message "-+-+-G-T-S-+-+-")
-     (message result ))))
+           (with-slots (err parsed) task
+             (when (and (not err) (listp parsed))
+               (setq parsed (string-join parsed "\n\f\n")))
+             (setq parsed (string-trim (format "%s" (or err parsed))))
+             (setq parsed (propertize parsed 'face 'font-lock-keyword-face))
+             (message "-+-G-+-T-+-S-+-")
+             (message parsed ))))
 
 (cl-defgeneric gts-me-pre (render translator)
   (:documentation "Pre-render for TRANSLATOR.
 It used only when multiple engines exists.
 Default dispatch to gts-pre when first pre-render.")
+  (:method :after ((render gts-render) _)
+           (gts-do-log 'render (format "me prepare render with %s finished" (eieio-object-class-name render))))
   (:method ((render gts-render) translator)
-   (with-slots (task-queue state) translator
-     (when (= state 1)
-       (gts-pre render (car task-queue))
-       (setf state 2)))))
+           (with-slots (task-queue state) translator
+             (when (= state 1)
+               (gts-pre render translator)
+               (setf state 2)))))
 
-(cl-defgeneric gts-me-out (render translator task)
-  (:documentation "Render TASK for TRANSLATOR.
+(cl-defgeneric gts-me-out (render task)
+  (:documentation "Render TASK with RENDER.
 It used only when multiple engines exists.
 Default dispatch to gts-out with all results concated.")
-  (:method ((r gts-render) translator _task)
-   ;; show only when all tasks finished.
-   (when (= (oref translator state) 3)
-     (cl-loop for task in (oref translator task-queue)
-              for result = (let ((r (oref task result)))
-                             (if (listp r) (string-join r "\f") r))
-              for header = (format "[%s]" (oref (oref task engine) tag))
-              collect (cons header result) into results
-              finally (let* ((newlinep (cl-find-if (lambda (r) (string-match-p "\n" (cdr r))) results))
-                             (concated (mapconcat (lambda (r)
-                                                    (if newlinep
-                                                        (concat (propertize (concat (car r) "\n") 'face 'gts-pop-posframe-me-header-2-face) "\n" (cdr r))
-                                                      (concat (propertize (format "%-7s" (car r)) 'face 'gts-pop-posframe-me-header-face) " " (cdr r))))
-                                                  results
-                                                  (if newlinep "\n\n" "\n"))))
-                        (oset translator state 4)
-                        (gts-out r (gts-task :result concated :translator translator)))))))
+  (:method :after ((render gts-render) task)
+           (gts-do-log 'render (format "%s: %s finished" (oref task id) (eieio-object-class-name render))))
+  (:method ((render gts-render) task)
+           (let ((translator (oref task translator)) results)
+             ;; show only when all tasks finished.
+             (when (= (oref translator state) 3)
+               (dolist (task (oref translator task-queue))
+                 (with-slots (err parsed engine) task
+                   (when (and (not err) (listp parsed))
+                     (setq parsed (string-join parsed "\f")))
+                   (push (cons (format "[%s]" (oref engine tag)) (or err parsed)) results)))
+               (setq results (nreverse results))
+               (let* ((newlinep (cl-find-if (lambda (r) (string-match-p "\n" (cdr r))) results))
+                      (concated (mapconcat (lambda (r)
+                                             (if newlinep
+                                                 (concat (propertize (concat (car r) "\n") 'face 'gts-pop-posframe-me-header-2-face)
+                                                         (format "\n%s" (cdr r)))
+                                               (concat (propertize (format "%-7s" (car r)) 'face 'gts-pop-posframe-me-header-face)
+                                                       (format " %s" (cdr r)))))
+                                           results
+                                           (if newlinep "\n\n" "\n"))))
+                 (oset translator state 4)
+                 (gts-out render (gts-task :parsed concated :translator translator)))))))
 
 
 ;;; TTS
@@ -485,9 +533,21 @@ if `gts-tts-try-speak-locally' is set."
 
 ;;; Translator
 
-(defvar gts-text-delimiter "---34587612---")
+(defvar gts-text-delimiter "34587612321123")
 
 (defvar gts-current-command nil "The command invoked by `gts-translate'.")
+
+(defun gts-render-fail (task err)
+  (declare (indent 1))
+  (gts-do-log 'translator (format "error? %s" err))
+  (if task
+      (with-slots (translator render) task
+        (with-slots (engines) translator
+          (gts-update-raw task nil err)
+          (if (cdr engines)
+              (gts-me-out render task)
+            (gts-out render task))))
+    (signal 'error err)))
 
 (cl-defmethod initialize-instance :after ((this gts-translator) &rest _)
   (unless (gts-ensure-plain (oref this render))
@@ -510,66 +570,79 @@ if `gts-tts-try-speak-locally' is set."
 
 (cl-defmethod gts-init ((this gts-translator) text path)
   "Init all status and tasks in THIS translator."
-  (cl-multiple-value-bind (picker splitter engines render)
-      (gts-get this 'picker 'splitter 'engines 'render)
-    ;; input
-    (unless (and text path)
-      (let ((input (gts-pick picker)))
-        (setq text (cl-nth-value 0 input))
-        (setq path (cl-nth-value 1 input))
-        (oset this text text)
-        (oset this path path)))
-    (setq gts-picker-last-path path)
+  ;; input
+  (unless (and text path)
+    (let ((input (gts-pick (gts-get this 'picker))))
+      (setq text (cl-nth-value 0 input))
+      (setq path (cl-nth-value 1 input))
+      (oset this text text)
+      (oset this path path)))
+  (setq gts-picker-last-path path)
+  (gts-do-log 'translator (format "\nBegin to translate %s" path))
+  (gts-do-log 'text text)
+  (cl-multiple-value-bind (splitter engines render version) (gts-get this 'splitter 'engines 'render 'version)
     ;; reset
     (oset this state 0)
     (oset this task-queue nil)
     (oset this plan-cnt (length engines))
+    (oset this version (time-to-seconds))
     ;; tasks
     (let* ((splitted (if splitter (gts-split splitter text)))
            (rtext (if splitted
                       (string-join splitted (concat "\n" gts-text-delimiter "\n"))
                     text)))
       (oset this sptext splitted)
-      (cl-loop for engine in engines
-               for task = (gts-task :translator this
-                                    :engine engine
-                                    :render render
-                                    :text rtext :from (car path) :to (cdr path))
-               do (gts-add-task this task)))))
+      (dolist (engine engines)
+        (let ((task (gts-task :translator this
+                              :engine engine
+                              :render render
+                              :text rtext :from (car path) :to (cdr path))))
+          (gts-add-task this task)))
+      (gts-do-log 'text (format "splitted? %s!" (if splitted "Yes" "No"))))))
 
 (cl-defmethod gts-add-task ((this gts-translator) task)
   "Add a new TASK to THIS translator."
-  (with-slots (plan-cnt task-queue state) this
-    (when (= state 0)
-      (setf task-queue (append task-queue (list task)))
-      (gts-do-log 'translator (format "- add task: %s" (oref task id))))
-    (when (and (= state 0) (= (length task-queue) plan-cnt))
-      (setf state 1))))
+  (with-slots (id engine render) task
+    (with-slots (text path plan-cnt task-queue state) this
+      (when (= state 0)
+        (setf task-queue (append task-queue (list task)))
+        (gts-do-log 'translator
+          (format "- add task %s: (%s/%s)" id
+                  (eieio-object-class-name engine) (eieio-object-class-name render))))
+      (when (and (= state 0) (= (length task-queue) plan-cnt))
+        (setf state 1)))))
 
 (cl-defmethod gts-done-tasks ((this gts-translator))
   "Return the tasks finished in THIS translator."
   (with-slots (task-queue) this
-    (cl-remove-if-not (lambda (task) (oref task raw)) task-queue)))
+    (cl-remove-if-not
+     (lambda (task) (or (oref task err) (oref task raw))) task-queue)))
 
-(cl-defgeneric gts-update-raw (task raw)
-  "Update non-parsed RAW result to TASK."
-  (:method ((task gts-task) resp)
-   (with-slots (translator raw id) task
-     (with-slots (task-queue plan-cnt state) translator
-       (setf raw resp)
-       (gts-do-log 'translator (concat (format "%s: responsed with " id) (if (equal resp t) "error" "result") "."))
-       (when (and (= state 2) (= plan-cnt (length (gts-done-tasks translator))))
-         (setf state 3))))))
+(cl-defmethod gts-update-raw (task resp &optional error)
+  "Update non-parsed RESP result to TASK, update ERROR if not null."
+  (with-slots (id raw err translator) task
+    (with-slots (task-queue plan-cnt state) translator
+      (setf raw resp)
+      (setf err error)
+      (when (and (= state 2) (= plan-cnt (length (gts-done-tasks translator))))
+        (setf state 3))
+      (gts-do-log 'translator (format "%s: **responsed** %s" id (or error "success!"))))))
 
-(cl-defgeneric gts-update-parsed (task parsed &optional ecode)
-  "Update TASK with PARSED result, update error code if ECODE not null."
-  (:method ((task gts-task) parsed &optional err-code)
-   (with-slots (raw result ecode translator) task
-     (unless raw (gts-update-raw task t))
-     (setf result (if (and (stringp parsed) (cdr (gts-get translator 'sptext)))
-                      (split-string parsed gts-text-delimiter t "\\S+")
-                    parsed))
-     (if err-code (setf ecode err-code)))))
+(cl-defmethod gts-update-parsed ((task gts-task) result &optional metadata)
+  "Update TASK with parsed RESULT, update METADATA if exists."
+  (with-slots (id raw parsed err meta translator) task
+    (if raw
+        (condition-case er
+            (progn
+              (setf parsed
+                    (if (or (listp result) (not (gts-get translator 'sptext)))
+                        result
+                      (gts-do-log 'translator
+                        (format "%s: result contains delimiter, so split to list" id))
+                      (split-string result gts-text-delimiter nil "[ \t\n\r]+")))
+              (if metadata (setf meta metadata)))
+          (error (setf err er)))
+      (gts-update-raw task t "Mybe Null Response"))))
 
 (cl-defmethod gts-translate ((this gts-translator) &optional text path)
   "Fire a translation for THIS translator instance.
@@ -579,67 +652,28 @@ the ones already saved in the translator."
   (setq gts-current-command this-command)
   ;; initialize
   (gts-init this text path)
-  (cl-multiple-value-bind (engines render tasks text path) (gts-get this 'engines 'render 'task-queue 'text 'path)
-    ;; information
-    (gts-do-log 'translator
-      (format "\npath: %s, text: %s" path text)
-      (format "engines: %s" (mapconcat (lambda (e) (format "%s" (eieio-object-class-name e))) engines ", "))
-      (format "render:  %s" (eieio-object-class-name render)))
-    ;; translate
+  (cl-multiple-value-bind (engines render tasks text path)
+      (gts-get this 'engines 'render 'task-queue 'text 'path)
     (let ((buf (current-buffer)) (render-name (eieio-object-class-name render)))
-      (cond
-       ;; single engine
-       ((= 1 (length tasks))
-        (let ((task (car tasks)))
-          (gts-pre render task)
-          (gts-do-log 'translator "pre-render finished.")
-          ;; first, try cache
-          (if-let ((cache (gts-cache-get gts-default-cacher task)))
-              (progn (gts-update-raw task (car cache))
-                     (gts-update-parsed task (cdr cache))
-                     (gts-out render task)
-                     (gts-do-log 'translator (format "%s Done (with cache)!" render-name)))
-            ;; second, try engine
+      ;; single engine
+      (if (not (cdr engines))
+          (let ((task (car tasks)))
+            (gts-pre render this)
             (gts-translate (car engines) task
-                           (lambda (_)
+                           (lambda ()
                              (with-current-buffer buf
-                               (gts-do-log 'translator (format "%s Done!" (eieio-object-class-name (car engines))))
-                               (gts-out render task)
-                               (gts-do-log 'translator (format "%s Done!" render-name))
-                               ;; refresh cache
-                               (with-slots (ecode raw result) task
-                                 (unless ecode (gts-cache-set gts-default-cacher task (cons raw result))))))))))
-       ;; multiple engines
-       (t
+                               (gts-out render task)))))
+        ;; multiple engines
         (gts-me-pre render this)
-        (gts-do-log 'translator "me-pre-render finished.")
-        (cl-loop for task in tasks
-                 do (let* ((task task)
-                           (id (oref task id))
-                           (render-name (eieio-object-class-name (oref task render))))
-                      (if-let ((cache (gts-cache-get gts-default-cacher task)))
-                          (progn (gts-update-raw task (car cache))
-                                 (gts-update-parsed task (cdr cache))
-                                 (gts-me-out render this task)
-                                 (gts-do-log 'translator (format "%s: %s done with cache!" id render-name)))
-                        (condition-case err
-                            (progn
-                              (gts-do-log 'translator (format "%s: begin to start engine..." id))
-                              (gts-translate (oref task engine) task
-                                             (lambda (_)
-                                               (with-current-buffer buf
-                                                 ;; log, then render
-                                                 (gts-do-log 'translator (format "%s: %s Done!" id (eieio-object-class-name (oref task engine))))
-                                                 (gts-me-out render this task)
-                                                 (gts-do-log 'translator (format "%s: %s Done!" id render-name))
-                                                 ;; refresh cache
-                                                 (with-slots (ecode raw result) task
-                                                   (unless ecode (gts-cache-set gts-default-cacher task (cons raw result))))))))
-                          (error
-                           (gts-do-log 'translator (format "error? %s" err))
-                           (gts-update-parsed task (cadr err) (caddr err))
-                           (gts-me-out render this task)))))
-                 finally (gts-me-out render this (gts-task :text text :from (car path) :to (cdr path)))))))))
+        (dolist (task tasks)
+          (condition-case er
+              (gts-translate (oref task engine) task
+                             (lambda ()
+                               (with-current-buffer buf
+                                 (gts-me-out render task))))
+            (error
+             (gts-render-fail task er))))
+        (gts-me-out render (gts-task :text text :from (car path) :to (cdr path) :translator this))))))
 
 
 (provide 'gts-core)
