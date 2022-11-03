@@ -34,11 +34,11 @@
 
 (defvar gts-google-request-headers '(("Connection" . "Keep-Alive")))
 
-(cl-defmethod gts-gen-url ((o gts-google-engine) text from to)
+(cl-defmethod gts-gen-url ((engine gts-google-engine) text from to)
   "Generate the url with TEXT, FROM and TO. Return a (url text from to) list."
   (format "%s%s?%s"
-          (oref o base-url)
-          (oref o sub-url)
+          (oref engine base-url)
+          (oref engine sub-url)
           (mapconcat (lambda (p)
                        (format "%s=%s" (url-hexify-string (car p)) (url-hexify-string (cdr p))))
                      `(("client" . "gtx")
@@ -63,54 +63,54 @@
                        ("sl"     . ,from)
                        ("tl"     . ,to)
                        ("q"      . ,text)
-                       ("tk"     . ,(gts-google-tkk (oref o token) text)))
+                       ("tk"     . ,(gts-google-tkk (oref engine token) text)))
                      "&")))
 
-(cl-defmethod gts-token-available-p ((o gts-google-engine))
-  (with-slots (token token-time token-expired-time) o
+(cl-defmethod gts-token-available-p ((engine gts-google-engine))
+  (with-slots (token token-time token-expired-time) engine
     (and token
          (or (eq token-time t)
              (and token-time
                   (<= (float-time (time-subtract (current-time) token-time))
                       token-expired-time))))))
 
-(cl-defmethod gts-with-token ((o gts-google-engine) callback)
-  (with-slots (token token-time base-url) o
-    (if (gts-token-available-p o)
-        (funcall callback)
+(cl-defmethod gts-with-token ((engine gts-google-engine) done fail)
+  (with-slots (token token-time base-url) engine
+    (if (gts-token-available-p engine)
+        (funcall done)
       (gts-do-request base-url
                       :headers gts-google-request-headers
                       :done (lambda ()
-                              (condition-case nil
-                                  (let ((tk (progn
-                                              (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
-                                              (cons (string-to-number (match-string 1))
-                                                    (string-to-number (match-string 2))))))
-                                    (setf token tk)
-                                    (setf token-time (current-time))
-                                    (funcall callback))
-                                (error (user-error "Error when fetching Token-Key. Check your network and proxy, or retry later"))))
-                      :fail (lambda (status)
-                              (user-error (format "ERR: %s" status)))))))
+                              (let ((tk (progn
+                                          (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                                          (cons (string-to-number (match-string 1))
+                                                (string-to-number (match-string 2))))))
+                                (setf token tk)
+                                (setf token-time (current-time))
+                                (funcall done)))
+                      :fail fail))))
 
-(cl-defmethod gts-translate ((o gts-google-engine) task rendercb)
-  (gts-with-token o (lambda ()
-                      (with-slots (text from to) task
-                        (gts-do-request (gts-gen-url o text from to)
-                                        :headers gts-google-request-headers
-                                        :done (lambda ()
-                                                (gts-update-raw task (buffer-string))
-                                                (gts-parse (oref o parser) task)
-                                                (funcall rendercb task))
-                                        :fail (lambda (status)
-                                                (gts-update-parsed task status t)
-                                                (funcall rendercb task)))))))
+(cl-defmethod gts-translate ((engine gts-google-engine) task rendercb)
+  (gts-with-token engine
+    (lambda ()
+      (with-slots (text from to) task
+        (gts-do-request (gts-gen-url engine text from to)
+                        :headers gts-google-request-headers
+                        :done (lambda ()
+                                (gts-update-raw task (buffer-string))
+                                (gts-parse (oref engine parser) task)
+                                (funcall rendercb))
+                        :fail (lambda (err)
+                                (gts-render-fail task err)))))
+    (lambda (err)
+      (gts-render-fail task
+        (format "Error when fetching Token-Key, check your network and proxy, or retry later\n\n%s" err)))))
 
 ;; tts
 
-(cl-defmethod gts-tts-gen-urls ((o gts-google-engine) text lang)
+(cl-defmethod gts-tts-gen-urls ((engine gts-google-engine) text lang)
   "Generate the tts urls for TEXT to LANGUAGE."
-  (cl-loop with texts = (gts-tts-text-splitter o text)
+  (cl-loop with texts = (gts-tts-text-splitter engine text)
            for total = (length texts)
            for index from 0
            for piece in texts
@@ -123,9 +123,9 @@
                            ("total"   . ,(number-to-string total))
                            ("idx"     . ,(number-to-string index))
                            ("textlen" . ,(number-to-string (length piece)))
-                           ("tk"      . ,(gts-google-tkk (oref o token) piece)))))
+                           ("tk"      . ,(gts-google-tkk (oref engine token) piece)))))
              (format "%s/translate_tts?%s"
-                     (oref o base-url)
+                     (oref engine base-url)
                      (mapconcat (lambda (p)
                                   (format "%s=%s"
                                           (url-hexify-string (car p))
@@ -174,8 +174,8 @@ Code from `google-translate', maybe improve it someday."
 		        (setq pos limit)))))))
     (reverse result)))
 
-(cl-defmethod gts-tts ((o gts-google-engine) text lang)
-  (let ((urls (gts-tts-gen-urls o text lang)))
+(cl-defmethod gts-tts ((engine gts-google-engine) text lang)
+  (let ((urls (gts-tts-gen-urls engine text lang)))
     (with-temp-message "Speaking..."
       (gts-tts-try-interrupt-playing-process)
       (apply #'call-process gts-tts-speaker nil nil nil urls))))
@@ -185,15 +185,15 @@ Code from `google-translate', maybe improve it someday."
 
 ;; detail-mode, use as default
 
-(cl-defmethod gts-parse ((o gts-google-parser) task)
-  (let* ((json        (gts-resp-to-json o (buffer-string)))
-         (brief       (gts-result--brief o json))
-         (sphonetic   (gts-result--sphonetic o json))
-         (tphonetic   (gts-result--tphonetic o json))
-         (details     (gts-result--details o json))
-         (definitions (gts-result--definitions o json))
-         (suggestion  (gts-result--suggestion o json))
-         sbeg send tbeg tend result)
+(cl-defmethod gts-parse ((parser gts-google-parser) task)
+  (let* ((json        (gts-resp-to-json parser (buffer-string)))
+         (brief       (gts-result--brief parser json))
+         (sphonetic   (gts-result--sphonetic parser json))
+         (tphonetic   (gts-result--tphonetic parser json))
+         (details     (gts-result--details parser json))
+         (definitions (gts-result--definitions parser json))
+         (suggestion  (gts-result--suggestion parser json))
+         ft tbeg tend result)
     (cl-flet ((phonetic (ph)
                 (if (and (or definitions definitions) (> (length ph) 0))
                     (propertize (format " [%s]" ph) 'face 'gts-google-buffer-phonetic-face)
@@ -201,71 +201,66 @@ Code from `google-translate', maybe improve it someday."
               (headline (line)
                 (propertize (format "[%s]\n" line) 'face 'gts-google-buffer-headline-face)))
       (with-temp-buffer
-        ;; source
-        (setq sbeg (point))
-        (insert (oref task text))
-        (setq send (point))
-        ;; suggestion
-        (when (> (length suggestion) 0)
-          (insert "\n\n")
-          (insert (propertize "Do you mean:" 'face 'gts-google-buffer-suggestion-desc-face) " ")
-          (insert (propertize suggestion 'face 'gts-google-buffer-suggestion-text-face) "?\n\n")
-          (insert suggestion))
-        ;; phonetic & translate
-        (if (or details definitions)
-            (progn
-              (insert (phonetic sphonetic) " ")
-              (setq tbeg (point))
-              (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
-              (setq tend (point))
-              (insert (phonetic tphonetic) "\n\n"))
-          (insert "\n\n")
-          (setq tbeg (point))
-          (insert brief)
-          (setq tend (point))
-          (insert "\n\n")
-          (put-text-property (point-min) send 'face 'gts-google-buffer-source-face))
-        ;; details
-        (when details
-          (insert (headline "Details"))
-          (cl-loop for (label . items) in details
-                   unless (= 0 (length label))
-                   do (insert (format "\n%s:\n" label))
-                   do (cl-loop with index = 0
-                               for trans in items
-                               do (insert
-                                   (format "%2d. " (cl-incf index))
-                                   (car trans)
-                                   " (" (mapconcat #'identity (cdr trans) ", ")  ")"
-                                   "\n")))
-          (insert "\n"))
-        ;; definitions
-        (when definitions
-          (insert (headline "Definitions"))
-          (cl-loop for (label . items) in definitions
-                   unless (= 0 (length label))
-                   do (insert (format "\n%s:\n" label))
-                   do (cl-loop with index = 0
-                               for (exp . eg) in items
-                               do (insert (format "%2d. " (cl-incf index)) exp)
-                               when (> (length eg) 0)
-                               do (insert
-                                   "\n    > "
-                                   (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
-                               do (insert "\n")))
-          (insert "\n"))
-        ;; at last, fill and return
-        (setq result (string-trim (buffer-string)))
-        (put-text-property 0 (length result) 'meta `(:sbeg ,sbeg, :send ,send :tbeg ,tbeg :tend ,tend) result)
-        (gts-update-parsed task result)))))
+        (let ((src (oref (oref task translator) text))
+              (suggestionp (> (length suggestion) 0)))
+          ;; suggestion
+          (when suggestionp
+            (insert (propertize "Do you mean:" 'face 'gts-google-buffer-suggestion-desc-face) " "
+                    (propertize suggestion 'face 'gts-google-buffer-suggestion-text-face) "?\n\n"))
+          ;; phonetic & translate
+          (if (or details definitions)
+              (progn
+                (insert (if suggestionp suggestion (oref (oref task translator) text)))
+                (insert (phonetic sphonetic) " ")
+                (setq tbeg (point))
+                (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
+                (setq tend (point))
+                (insert (phonetic tphonetic) "\n\n"))
+            (unless suggestionp
+              (insert src "\n\n")
+              (put-text-property (point-min) (point) 'face 'gts-google-buffer-source-face)
+              (setq ft (point)))
+            (setq tbeg (point))
+            (insert brief)
+            (setq tend (point)))
+          ;; details
+          (when details
+            (insert (headline "Details"))
+            (cl-loop for (label . items) in details
+                     unless (= 0 (length label))
+                     do (insert (format "\n%s:\n" label))
+                     do (cl-loop with index = 0
+                                 for trans in items
+                                 do (insert
+                                     (format "%2d. " (cl-incf index))
+                                     (car trans)
+                                     " (" (mapconcat #'identity (cdr trans) ", ")  ")"
+                                     "\n")))
+            (insert "\n"))
+          ;; definitions
+          (when definitions
+            (insert (headline "Definitions"))
+            (cl-loop for (label . items) in definitions
+                     unless (= 0 (length label))
+                     do (insert (format "\n%s:\n" label))
+                     do (cl-loop with index = 0
+                                 for (exp . eg) in items
+                                 do (insert (format "%2d. " (cl-incf index)) exp)
+                                 when (> (length eg) 0)
+                                 do (insert
+                                     "\n    > "
+                                     (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
+                                 do (insert "\n")))
+            (insert "\n"))
+          ;; at last, fill and return
+          (gts-update-parsed task (buffer-string) (list :ft ft :tbeg tbeg :tend tend)))))))
 
 ;; summary-mode
 
-(cl-defmethod gts-parse ((o gts-google-summary-parser) task)
-  (let* ((json (gts-resp-to-json o (buffer-string)))
-         (result (string-trim (gts-result--brief o json))))
-    (put-text-property 0 1 'meta `(:tbeg 1 :tend ,(+ 1 (length result))) result)
-    (gts-update-parsed task result)))
+(cl-defmethod gts-parse ((parser gts-google-summary-parser) task)
+  (let* ((json (gts-resp-to-json parser (buffer-string)))
+         (result (string-trim (gts-result--brief parser json))))
+    (gts-update-parsed task result (list :tbeg 1 :tend (+ 1 (length result))))))
 
 ;; Extract results from response
 

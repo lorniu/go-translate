@@ -259,7 +259,7 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 
   (defclass gts-request-http-client (gts-http-client) ())
 
-  (cl-defmethod gts-request ((o gts-request-http-client) url &key done fail data headers)
+  (cl-defmethod gts-request ((client gts-request-http-client) url &key done fail data headers)
     (let ((url-user-agent gts-user-agent))
       (request url
         :data data
