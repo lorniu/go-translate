@@ -542,7 +542,7 @@ if `gts-tts-try-speak-locally' is set."
   (gts-do-log 'translator (format "error? %s" err))
   (if task
       (with-slots (translator render) task
-        (with-slots (engines) translator
+        (let ((engines (gts-get translator 'engines)))
           (gts-update-raw task nil err)
           (if (cdr engines)
               (gts-me-out render task)
