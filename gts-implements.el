@@ -216,8 +216,9 @@ including FROM/TO and other DESC."
 
 (defun gts-render-buffer-prepare (buffer translator)
   (with-current-buffer (get-buffer-create buffer)
-    (let ((inhibit-read-only t))
-      (with-slots (text path engines version) translator
+    (let ((inhibit-read-only t)
+          (engines (gts-get translator 'engines)))
+      (with-slots (text path version) translator
         ;; setup
         (deactivate-mark)
         (visual-line-mode -1)
@@ -253,7 +254,7 @@ including FROM/TO and other DESC."
         (gts-buffer-set-key ("y" "TTS")
           (if-let ((eg (if (cdr engines)
                            (oref (get-text-property (point) 'task) engine)
-                         engine)))
+                         (car engines))))
               (gts-do-tts text (car path) (lambda () (gts-tts eg text (car path))))
             (message "[TTS] No engine found at point")))
         (gts-buffer-set-key ("g" "Refresh")           (gts-translate translator text path))
