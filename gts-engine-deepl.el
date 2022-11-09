@@ -53,7 +53,7 @@
   (with-slots (free-url pro-url sub-url pro) engine
     (format "%s%s" (if pro pro-url free-url) sub-url)))
 
-(cl-defmethod gts-translate ((engine gts-deepl-engine) &optional task rendercb)
+(cl-defmethod gts-translate ((engine gts-deepl-engine) task rendercb)
   (with-slots (text from to) task
     (with-slots (auth-key parser) engine
       (gts-do-request (gts-gen-url engine)
