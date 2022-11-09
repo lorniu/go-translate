@@ -370,7 +370,7 @@ It's an asynchronous request with a CALLBACK that should accept the parsed task.
 
 (cl-defmethod gts-translate :around ((engine gts-engine) task callback)
   "Add cache and log support."
-  (with-slots (id render engine translator) task
+  (with-slots (id render translator) task
     (if-let ((render-name (eieio-object-class-name render))
              (engine-name (eieio-object-class-name engine))
              (cache (gts-cache-get gts-default-cacher task)))
@@ -580,7 +580,7 @@ if `gts-tts-try-speak-locally' is set."
   (setq gts-picker-last-path path)
   (gts-do-log 'translator (format "\nBegin to translate %s" path))
   (gts-do-log 'text text)
-  (cl-multiple-value-bind (splitter engines render version) (gts-get this 'splitter 'engines 'render 'version)
+  (cl-multiple-value-bind (splitter engines render) (gts-get this 'splitter 'engines 'render 'version)
     ;; reset
     (oset this state 0)
     (oset this task-queue nil)
@@ -654,7 +654,7 @@ the ones already saved in the translator."
   (gts-init this text path)
   (cl-multiple-value-bind (engines render tasks text path)
       (gts-get this 'engines 'render 'task-queue 'text 'path)
-    (let ((buf (current-buffer)) (render-name (eieio-object-class-name render)))
+    (let ((buf (current-buffer)))
       ;; single engine
       (if (not (cdr engines))
           (let ((task (car tasks)))
