@@ -9,7 +9,7 @@
 
 ;;; Code:
 
-(require 'gts-core)
+(require 'gts-implements)
 
 (defclass gts-deepl-parser (gts-parser) ())
 
@@ -83,7 +83,7 @@
       (erase-buffer)
       (insert (propertize (oref task text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))
-      (insert (string-as-multibyte result))
+      (insert (decode-coding-string result 'utf-8))
       (setq tend (point))
       (insert "\n")
       (gts-update-parsed task (buffer-string) (list :tbeg tbeg :tend tend)))))

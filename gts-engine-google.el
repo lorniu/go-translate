@@ -193,7 +193,7 @@ Code from `google-translate', maybe improve it someday."
          (details     (gts-result--details parser json))
          (definitions (gts-result--definitions parser json))
          (suggestion  (gts-result--suggestion parser json))
-         ft tbeg tend result)
+         ft tbeg tend)
     (cl-flet ((phonetic (ph)
                 (if (and (or definitions definitions) (> (length ph) 0))
                     (propertize (format " [%s]" ph) 'face 'gts-google-buffer-phonetic-face)

@@ -11,6 +11,7 @@
 
 (require 'cl-lib)
 (require 'url)
+(require 'json)
 (require 'gts-core)
 (require 'gts-faces)
 
