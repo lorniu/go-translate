@@ -143,7 +143,7 @@ You can implements your rules.")
 
 (cl-defgeneric gts-translate (translator-or-engine &rest args)
   "Do the translation for TRANSLATOR-OR-ENGINE.
-ARGS should be text/from/to/callback or task/callback.")
+ARGS should be text/path or task/callback.")
 
 ;; silence byte-compiler
 (eieio-declare-slots task-queue text from to)
