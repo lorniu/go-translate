@@ -432,7 +432,8 @@ Manually close the frame with `q'.")
 
 (cl-defmethod gts-pre ((render gts-posframe-pop-render) translator)
   (with-slots (width height forecolor backcolor padding) render
-    (let* ((buf gts-posframe-pop-render-buffer))
+    (let ((inhibit-read-only t)
+          (buf gts-posframe-pop-render-buffer))
       (posframe-show buf
                      :string "Loading..."
                      :timeout gts-posframe-pop-render-timeout
@@ -492,23 +493,24 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
       (make-frame-visible gts-posframe-pin-render-frame)
     (with-slots (width height min-width min-height bd-width forecolor backcolor bd-color padding position) render
       (setq gts-posframe-pin-render-frame
-            (posframe-show gts-posframe-pin-render-buffer
-                           :string "\nLoading..."
-                           :width width
-                           :height height
-                           :min-width width
-                           :min-height height
-                           :foreground-color (or forecolor gts-pin-posframe-forecolor)
-                           :background-color (or backcolor gts-pin-posframe-backcolor)
-                           :internal-border-width bd-width
-                           :border-color (or bd-color gts-pin-posframe-bdcolor)
-                           :left-fringe padding
-                           :right-fringe padding
-                           :refresh nil
-                           :accept-focus t
-                           :respect-header-line t
-                           :position position
-                           :poshandler (unless position gts-posframe-pin-render-poshandler))))
+            (let ((inhibit-read-only t))
+              (posframe-show gts-posframe-pin-render-buffer
+                             :string "\nLoading..."
+                             :width width
+                             :height height
+                             :min-width width
+                             :min-height height
+                             :foreground-color (or forecolor gts-pin-posframe-forecolor)
+                             :background-color (or backcolor gts-pin-posframe-backcolor)
+                             :internal-border-width bd-width
+                             :border-color (or bd-color gts-pin-posframe-bdcolor)
+                             :left-fringe padding
+                             :right-fringe padding
+                             :refresh nil
+                             :accept-focus t
+                             :respect-header-line t
+                             :position position
+                             :poshandler (unless position gts-posframe-pin-render-poshandler)))))
     (set-frame-parameter gts-posframe-pin-render-frame 'drag-internal-border t)
     (set-frame-parameter gts-posframe-pin-render-frame 'drag-with-header-line t)
     (when-let ((color (or (oref render fri-color) gts-pin-posframe-fringe-color)))
