@@ -76,7 +76,7 @@
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-deepl-parser) task)
-  (let* ((json (json-read-from-string (buffer-string)))
+  (let* ((json (json-read-from-string (oref task raw)))
          (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
          tbeg tend)
     (with-temp-buffer

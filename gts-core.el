@@ -192,11 +192,10 @@ Make word live longer time than sentence."
   "Add RESULT fro TASK to CACHER.")
 
 (cl-defmethod gts-cache-key ((_ gts-cacher) task)
-  (with-slots (text from to engine render) task
-    (sha1 (format "%s-%s-%s-%s-%s"
+  (with-slots (text from to engine) task
+    (sha1 (format "%s-%s-%s-%s"
                   text from to
-                  (eieio-object-class-name engine)
-                  (eieio-object-class-name render)))))
+                  (eieio-object-class-name engine)))))
 
 (cl-defmethod gts-clear-expired ((cacher gts-cacher))
   (with-slots (caches expired) cacher
@@ -376,8 +375,8 @@ It's an asynchronous request with a CALLBACK that should accept the parsed task.
              (cache (gts-cache-get gts-default-cacher task)))
         ;; try cache
         (let ((engines (gts-get translator 'engines)))
-          (gts-update-raw task (car cache))
-          (gts-update-parsed task (cdr cache))
+          (gts-update-raw task cache)
+          (gts-parse (oref engine parser) task)
           (if (cdr engines) (gts-me-out render task)
             (gts-out render task))
           (gts-do-log 'render (format "%s: done with cache!" id)))
@@ -390,7 +389,7 @@ It's an asynchronous request with a CALLBACK that should accept the parsed task.
                              ;; refresh cache
                              (with-slots (err raw parsed) task
                                (unless err
-                                 (gts-cache-set gts-default-cacher task (cons raw parsed)))))))))
+                                 (gts-cache-set gts-default-cacher task raw))))))))
 
 (cl-defgeneric gts-with-token (engine done fail)
   (:documentation "Get token for ENGINE, if success then DONE is called.")

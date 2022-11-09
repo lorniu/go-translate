@@ -29,7 +29,7 @@
    (tts-url   :initform "https://%s.tts.speech.microsoft.com/cognitiveservices/v1")
    (tts-tpl   :initform "<speak version='1.0' xml:lang='%s'><voice xml:lang='%s' xml:gender='Female' name='%s'><prosody rate='-20.00%%'>%s</prosody></voice></speak>")
 
-   (parser   :initform (gts-bing-parser))))
+   (parser    :initform (gts-bing-parser))))
 
 
 ;;; Engine
@@ -137,20 +137,22 @@
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-bing-parser) task)
-  (set-buffer-multibyte t)
-  (decode-coding-region (point-min) (point-max) 'utf-8)
-  (gts-do-log 'bing (string-trim (buffer-string)))
-  (goto-char (point-min))
-  (let* ((json (json-read))
-         (result (ignore-errors
-                   (cdr (assoc 'text
-                               (aref
-                                (cdr (assoc 'translations (aref json 0)))
-                                0))))))
-    (if result
-        (gts-update-parsed task result (list :tbeg 1 :tend (+ 1 (length result))))
-      (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
-      (gts-update-raw task nil (buffer-string)))))
+  (with-temp-buffer
+    (set-buffer-multibyte t)
+    (insert (oref task raw))
+    (decode-coding-region (point-min) (point-max) 'utf-8)
+    (gts-do-log 'bing (string-trim (buffer-string)))
+    (goto-char (point-min))
+    (let* ((json (json-read))
+           (result (ignore-errors
+                     (cdr (assoc 'text
+                                 (aref
+                                  (cdr (assoc 'translations (aref json 0)))
+                                  0))))))
+      (if result
+          (gts-update-parsed task result (list :tbeg 1 :tend (+ 1 (length result))))
+        (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
+        (gts-update-raw task nil (buffer-string))))))
 
 
 (provide 'gts-engine-bing)

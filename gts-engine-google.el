@@ -186,7 +186,7 @@ Code from `google-translate', maybe improve it someday."
 ;; detail-mode, use as default
 
 (cl-defmethod gts-parse ((parser gts-google-parser) task)
-  (let* ((json        (gts-resp-to-json parser (buffer-string)))
+  (let* ((json        (gts-resp-to-json parser (oref task raw)))
          (brief       (gts-result--brief parser json))
          (sphonetic   (gts-result--sphonetic parser json))
          (tphonetic   (gts-result--tphonetic parser json))
@@ -258,7 +258,7 @@ Code from `google-translate', maybe improve it someday."
 ;; summary-mode
 
 (cl-defmethod gts-parse ((parser gts-google-summary-parser) task)
-  (let* ((json (gts-resp-to-json parser (buffer-string)))
+  (let* ((json (gts-resp-to-json parser (oref task raw)))
          (result (string-trim (gts-result--brief parser json))))
     (gts-update-parsed task result (list :tbeg 1 :tend (+ 1 (length result))))))
 
