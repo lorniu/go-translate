@@ -7,6 +7,7 @@
 - Google Translate，旧的 API (不挂代理也可访问)
 - Google Translate，新的 RPC API
 - DeepL，需要自行提供 auth_key
+- StarDict，用于离线翻译，需要安装 sdcv 和字典包
 
 支持多种渲染方式。目前添加的渲染方式有:
 - 通过 buffer 显示结果 (默认)
@@ -63,6 +64,7 @@
         ;;(gts-google-engine :parser (gts-google-parser))
         ;;(gts-google-rpc-engine :parser (gts-google-rpc-summary-parser))
         (gts-google-rpc-engine :parser (gts-google-rpc-parser))
+        ;;(gts-stardict-engine)
         )
 
        :render ; 渲染器，只能一个，用于输出结果到指定目标。如果使用 childframe 版本的，需自行安装 posframe

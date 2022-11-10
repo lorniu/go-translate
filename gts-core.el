@@ -126,10 +126,8 @@ You can implements your rules.")
 ;; engine/parser
 
 (defclass gts-engine ()
-  ((tag       :initarg :tag :documentation "Used to display as name")
-   (base-url  :initarg :url)
-   (sub-url)
-   (parser    :initarg :parser))
+  ((tag       :initarg :tag    :documentation "Used to display as name")
+   (parser    :initarg :parser :documentation "Used to parse the response result"))
   :abstract t)
 
 (defclass gts-parser ()
