@@ -223,6 +223,7 @@ including FROM/TO and other DESC."
         ;; setup
         (deactivate-mark)
         (visual-line-mode -1)
+        (font-lock-mode 1)
         (setq-local cursor-type 'hbar)
         (setq-local cursor-in-non-selected-windows nil)
         (setq-local gts-buffer-version version)

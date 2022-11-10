@@ -250,8 +250,7 @@ Code from `google-translate', maybe improve it someday."
                                  do (insert
                                      "\n    > "
                                      (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
-                                 do (insert "\n")))
-            (insert "\n"))
+                                 do (insert "\n"))))
           ;; at last, fill and return
           (gts-update-parsed task (buffer-string) (list :ft ft :tbeg tbeg :tend tend)))))))
 

@@ -35,6 +35,7 @@
 (require 'gts-engine-google)
 (require 'gts-engine-google-rpc)
 (require 'gts-engine-deepl)
+(require 'gts-engine-stardict)
 
 
 ;;; Commands
