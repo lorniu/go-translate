@@ -7,6 +7,7 @@
 - Google Translate，旧的 API (不挂代理也可访问)
 - Google Translate，新的 RPC API
 - DeepL，需要自行提供 auth_key
+- 有道词典，从网页抓取结果并显示，只适合中文翻译，目前实现比较粗糙
 - StarDict，用于离线翻译，需要安装 sdcv 和字典包
 
 支持多种渲染方式。目前添加的渲染方式有:
