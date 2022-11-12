@@ -29,7 +29,6 @@
 
 ;;; Code:
 
-(require 'ansi-color)
 (require 'gts-implements)
 
 (defclass gts-stardict-engine (gts-engine)
@@ -45,6 +44,7 @@
   (let* ((text (oref task text))
          (parser (oref engine parser))
          (result (with-temp-buffer
+                   (require 'ansi-color)
                    (apply #'call-process gts-stardict-program nil t nil
                           (list "--non-interactive" "--color" text)) ;--json-output
                    (ansi-color-apply (buffer-string)))))

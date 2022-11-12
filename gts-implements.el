@@ -167,7 +167,7 @@ will force opening in right side window."
 (defun gts-buffer-init-header-line (path &optional desc)
   "Setup header line format.
 It will show the basic information of the translation,
-including FROM/TO and other DESC."
+including PATH and other DESC."
   (setq header-line-format
         (list
          " "

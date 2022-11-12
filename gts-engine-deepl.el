@@ -46,7 +46,7 @@
   (let ((mapping (assoc lang gts-deepl-langs-mapping)))
     (if mapping (cdr mapping)
       (user-error
-       "Language %s not supported by DeepL.\nSupported list: %s"
+       "Language %s is not supported by DeepL.\nSupported list: %s"
        lang (mapconcat #'car gts-deepl-langs-mapping ", ")))))
 
 (cl-defmethod gts-gen-url ((engine gts-deepl-engine))
@@ -80,7 +80,6 @@
          (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
          tbeg tend)
     (with-temp-buffer
-      (erase-buffer)
       (insert (propertize (oref task text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))
       (insert (decode-coding-string result 'utf-8))
