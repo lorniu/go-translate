@@ -355,15 +355,9 @@ Return list of string, return nil if only one element.")
 ;;; Engine/Parser
 
 (cl-defmethod gts-translate ((engine gts-engine) task callback)
-  "Do the translation for TASK by ENGINE.
-It's an asynchronous request with a CALLBACK that should accept the parsed task."
-  (gts-do-request (format "%s%s" (oref engine base-url) (oref engine sub-url))
-                  :done (lambda ()
-                          (gts-update-raw task (buffer-string))
-                          (gts-parse (oref engine parser) task)
-                          (funcall callback))
-                  :fail (lambda (err)
-                          (gts-render-fail task err))))
+  "Translate TASK using ENGINE.
+After ENGINE return, parse the result and call CALLBACK."
+  (user-error "Method `gts-translate' of %s not implement" (eieio-object-class-name engine)))
 
 (cl-defmethod gts-translate :around ((engine gts-engine) task callback)
   "Add cache and log support."
