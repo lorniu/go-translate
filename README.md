@@ -3,9 +3,9 @@
 
 # Go-Translate
 
-I rewrote this plugin to make it more flexible and powerful. May it will be the best translate plugin on Emacs.
+This is a translation framework for emacs, and is flexible and powerful.
 
-- [中文版文档 - 重构了，不止支持 Google，不止是一个翻译框架](README-zh.md)
+- [点击查看《中文版文档》](README-zh.md)
 - [Documentation of the old version (v1, deprecated)](v1/README_v1.md)
 
 In addition to Google Translate, it now supports more engines like Google RPC API, Bing, DeepL.
@@ -101,7 +101,7 @@ Then use `gts-do-translate` to start translation.
 
 Slots `picker/engines/render/splitter` can be a function or lambda, it allows the dynamic initialization of slots while translating.
 For example, set a separate translation behavior for pdf-tools:
-```
+```elisp
 (setq gts-default-translator
       (gts-translator
        :picker
@@ -122,6 +122,29 @@ For example, set a separate translation behavior for pdf-tools:
          (cond ((equal major-mode 'pdf-view-mode)
                 (gts-posframe-pop-render))
                (t (gts-buffer-render))))))
+```
+
+Another example, adopt different translation strategies according to your variable or translate content:
+```elisp
+(defvar your-gts-split-enable nil
+  "Split translate?")
+
+(setq gts-default-translator
+      (gts-translator
+       :picker (gts-prompt-picker)
+       :splitter (lambda ()
+                   (if your-gts-split-enable (gts-paragraph-splitter)))
+       :engines (lambda ()
+                  (with-slots (text) gts-default-translator
+                    (if your-gts-split-enable
+                        (gts-deepl-engine :auth-key "xxx")
+                      (list
+                       (gts-bing-engine)
+                       (gts-deepl-engine :auth-key "xxx")
+                       (if (string-match-p " " text)
+                           (gts-google-rpc-engine)
+                         (gts-google-engine))))))
+       :render (gts-buffer-render)))
 ```
 
 You can look into `customize-group` - `go-translate` for more configurations.

@@ -193,7 +193,7 @@ Code from `google-translate', maybe improve it someday."
          (details     (gts-result--details parser json))
          (definitions (gts-result--definitions parser json))
          (suggestion  (gts-result--suggestion parser json))
-         ft tbeg tend)
+         (suggestionp (> (length suggestion) 0)) tbeg tend)
     (cl-flet ((phonetic (ph)
                 (if (and (or definitions definitions) (> (length ph) 0))
                     (propertize (format " [%s]" ph) 'face 'gts-google-buffer-phonetic-face)
@@ -201,58 +201,50 @@ Code from `google-translate', maybe improve it someday."
               (headline (line)
                 (propertize (format "[%s]\n" line) 'face 'gts-google-buffer-headline-face)))
       (with-temp-buffer
-        (let ((src (oref (oref task translator) text))
-              (suggestionp (> (length suggestion) 0)))
-          ;; suggestion
-          (when suggestionp
-            (insert (propertize "Do you mean:" 'face 'gts-google-buffer-suggestion-desc-face) " "
-                    (propertize suggestion 'face 'gts-google-buffer-suggestion-text-face) "?\n\n"))
-          ;; phonetic & translate
-          (if (or details definitions)
-              (progn
-                (insert (if suggestionp suggestion (oref (oref task translator) text)))
-                (insert (phonetic sphonetic) " ")
-                (setq tbeg (point))
-                (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
-                (setq tend (point))
-                (insert (phonetic tphonetic) "\n\n"))
-            (unless suggestionp
-              (insert src "\n\n")
-              (put-text-property (point-min) (point) 'face 'gts-google-buffer-source-face)
-              (setq ft (point)))
-            (setq tbeg (point))
-            (insert brief)
-            (setq tend (point)))
-          ;; details
-          (when details
-            (insert (headline "Details"))
-            (cl-loop for (label . items) in details
-                     unless (= 0 (length label))
-                     do (insert (format "\n%s:\n" label))
-                     do (cl-loop with index = 0
-                                 for trans in items
-                                 do (insert
-                                     (format "%2d. " (cl-incf index))
-                                     (car trans)
-                                     " (" (mapconcat #'identity (cdr trans) ", ")  ")"
-                                     "\n")))
-            (insert "\n"))
-          ;; definitions
-          (when definitions
-            (insert (headline "Definitions"))
-            (cl-loop for (label . items) in definitions
-                     unless (= 0 (length label))
-                     do (insert (format "\n%s:\n" label))
-                     do (cl-loop with index = 0
-                                 for (exp . eg) in items
-                                 do (insert (format "%2d. " (cl-incf index)) exp)
-                                 when (> (length eg) 0)
-                                 do (insert
-                                     "\n    > "
-                                     (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
-                                 do (insert "\n"))))
-          ;; at last, fill and return
-          (gts-update-parsed task (buffer-string) (list :ft ft :tbeg tbeg :tend tend)))))))
+        ;; suggestion
+        (when suggestionp
+          (insert (propertize "Do you mean:" 'face 'gts-google-buffer-suggestion-desc-face) " "
+                  (propertize suggestion 'face 'gts-google-buffer-suggestion-text-face) "?\n\n"))
+        ;; phonetic & translate
+        (if (or details definitions)
+            (progn
+              (insert (if suggestionp suggestion (oref (oref task translator) text)))
+              (insert (phonetic sphonetic) " ")
+              (setq tbeg (point))
+              (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
+              (setq tend (point))
+              (insert (phonetic tphonetic) "\n\n"))
+          (insert brief))
+        ;; details
+        (when details
+          (insert (headline "Details"))
+          (cl-loop for (label . items) in details
+                   unless (= 0 (length label))
+                   do (insert (format "\n%s:\n" label))
+                   do (cl-loop with index = 0
+                               for trans in items
+                               do (insert
+                                   (format "%2d. " (cl-incf index))
+                                   (car trans)
+                                   " (" (mapconcat #'identity (cdr trans) ", ")  ")"
+                                   "\n")))
+          (insert "\n"))
+        ;; definitions
+        (when definitions
+          (insert (headline "Definitions"))
+          (cl-loop for (label . items) in definitions
+                   unless (= 0 (length label))
+                   do (insert (format "\n%s:\n" label))
+                   do (cl-loop with index = 0
+                               for (exp . eg) in items
+                               do (insert (format "%2d. " (cl-incf index)) exp)
+                               when (> (length eg) 0)
+                               do (insert
+                                   "\n    > "
+                                   (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
+                               do (insert "\n"))))
+        ;; at last, fill and return
+        (gts-update-parsed task (buffer-string) (list :tbeg tbeg :tend tend))))))
 
 ;; summary-mode
 

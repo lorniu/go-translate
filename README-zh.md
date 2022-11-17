@@ -1,20 +1,19 @@
-# Go 翻译框架
-
-放假，带娃。忙里偷闲，将这个插件重写了。
+# Go 翻译，不止是一个翻译框架
 
 支持单引擎、多引擎。目前添加的引擎有:
-- Bing 翻译 (最快)
-- Google Translate，旧的 API (不挂代理也可访问)
-- Google Translate，新的 RPC API
-- DeepL，需要自行提供 auth_key
-- 有道词典，从网页抓取结果并显示，只适合中文翻译，目前实现比较粗糙
-- StarDict，用于离线翻译，需要安装 sdcv 和字典包
+- **Bing 翻译**，比较稳定，翻译效果尚可
+- **Google Translate**，旧的 API (不挂代理也可访问)
+- **Google Translate RPC**，新的 RPC API
+- **DeepL Translate**，需要自行提供 auth_key
+- **有道词典**，从网页抓取结果并显示，只适合中文翻译 (目前实现比较粗糙)
+- **StarDict**，用于离线翻译，需要安装 sdcv 和字典包
 
 支持多种渲染方式。目前添加的渲染方式有:
-- 通过 buffer 显示结果 (默认)
-- 将结果拷贝到 Kill-Ring
-- 通过 posframe 在当前位置弹出结果
+- 通过弹出一个独立的 buffer 显示结果
+- 在 Echo Area (minibuffer) 显示结果
 - 通过固定一个 posframe 窗口进行渲染
+- 通过 posframe 在当前位置弹出结果
+- 将结果拷贝到 Kill-Ring
 
 ## 基本使用
 
@@ -86,7 +85,7 @@
 ```
 
 槽 `picker/engines/render/splitter` 的值可以是函数，从而允许在触发翻译的时候动态生成 translator 对象。比如为 pdf-tools 的 buffer 单独设置翻译行为:
-```
+```elisp
 (setq gts-default-translator
       (gts-translator
        :picker
@@ -107,6 +106,31 @@
          (cond ((equal major-mode 'pdf-view-mode)
                 (gts-posframe-pop-render))
                (t (gts-buffer-render))))))
+```
+
+再比如，可以通过外部变量或翻译内容动态控制不同情况下的翻译策略:
+```elisp
+(defvar your-split-enable nil "自定义变量，用于控制是否开启分段翻译")
+
+(setq gts-default-translator
+      (gts-translator
+       :picker (gts-prompt-picker)
+       :splitter (lambda ()
+                   (if your-split-enable (gts-paragraph-splitter)))
+       :engines (lambda ()
+                  (with-slots (text) gts-default-translator
+                    (if your-split-enable
+                        (gts-deepl-engine :auth-key "xxx")
+                      (list
+                       (gts-bing-engine)
+                       (gts-google-engine)
+                       (if (string-match-p " " text) (gts-youdao-dict-engine) (gts-stardict-engine))))))
+       :render (gts-buffer-render)))
+
+(defun your-split-enable-toggle ()
+  "可以提供一个命令，用作分段翻译的开关"
+  (interactive)
+  (message "开启分段翻译: %s." (if (setq your-split-enable (not your-split-enable)) "是" "否")))
 ```
 
 其他:
@@ -257,7 +281,7 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 - 创建一个 `gts-engine` 类，实现其 `gts-translate/gts-tts` 方法，分别用于翻译和语音播报。后面一个可选
 - 创建一个 `gts-parser` 类，实现其 `gts-parse` 方法，用于将 engine 传来的字符串，格式化为最终渲染的字符串
 
-再比如，如果你无法忍受 `url.el` 的缓慢，你可以借助 curl/request.el 等实现并替换自己的 gts-http-client 组件。示例:
+再比如，如果你不喜欢用 `url.el` 进行网络访问，你可以借助 curl/request.el 等实现并替换自己的 gts-http-client 组件。示例:
 ```elisp
   (require 'request)
 
@@ -285,18 +309,16 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 
 这个架构，不仅适合翻译，还适合很多类似的场景:
 ```
-初始输入 - 根据输入从网络中获取内容 - 将返回的内容格式化 - 输出到指定位置
+初始输入 - 根据输入获取内容 - 将返回的内容格式化 - 输出到指定位置
 
 picker -> engine -> parser -> render
 ```
 
-抽象化，组件化。除了核心逻辑，其他都可插拔。
-
-以后有时间再细聊。
+抽象化，组件化。除了核心逻辑，其他部分都是可插拔的。
 
 ## 欢迎提供反馈跟建议
 
-要打开调试，需要将 `gts-debug-p` 设为 t。然后切换到 "` *gts-logger*`" 就能查看到相关日志。
+要打开调试，需要将 `gts-debug-p` 设为 t。然后切换到 ` *gts-logger*` 就能查看到相关日志。
 
 欢迎提供你的一些想法和建议。
 
