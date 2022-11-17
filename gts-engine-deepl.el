@@ -57,9 +57,12 @@
   (with-slots (text from to) task
     (with-slots (auth-key parser) engine
       (gts-do-request (gts-gen-url engine)
-                      :headers '(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                      :data `(("auth_key" . ,auth-key)
-                              ("text" . ,text)
+                      :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8")
+                                 ("Authorization" . ,(concat "DeepL-Auth-Key " auth-key)))
+                      :data `(("text" . ,(with-temp-buffer
+                                           (insert text) ; then remove the extra newlines
+                                           (let ((fill-column (point-max))) (fill-region (point-min) (point-max)))
+                                           (buffer-string)))
                               ("source_lang" . ,(gts-get-lang engine from))
                               ("target_lang" . ,(gts-get-lang engine to)))
                       :done (lambda ()
@@ -80,12 +83,13 @@
          (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
          tbeg tend)
     (with-temp-buffer
-      (insert (propertize (oref task text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
+      (insert (propertize (oref (oref task translator) text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
       (setq tbeg (point))
       (insert (decode-coding-string result 'utf-8))
+      (fill-region tbeg (point))
+      (goto-char (point-max))
       (setq tend (point))
-      (insert "\n")
-      (gts-update-parsed task (buffer-string) (list :tbeg tbeg :tend tend)))))
+      (gts-update-parsed task (buffer-string) (list :tbeg tbeg :tend tend :ft tbeg)))))
 
 
 (provide 'gts-engine-deepl)
