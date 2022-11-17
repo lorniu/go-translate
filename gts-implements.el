@@ -288,32 +288,35 @@ including PATH and other DESC."
              (buf (get-buffer buffer)))
     (with-current-buffer buf
       (with-slots (err parsed meta engine translator) task
-        (erase-buffer)
+        ;; error
         (if err
-            (progn ;; error display
+            (progn
               (goto-char (point-max))
-              (insert (propertize (format "\n%s" err) 'face 'gts-render-buffer-error-face)))
-          ;; content
-          (if (stringp parsed)
-              (let ((tbeg (plist-get meta :tbeg))
-                    (tend (plist-get meta :tend)))
-                (insert parsed)
-                ;; try set mark in beginning of the translate result,
-                ;; and set currsor position in end of the translate result,
-                ;; so you can quick select the translate result with C-x C-x.
-                (when (and tbeg tend (stringp parsed)
-                           (not (gts-childframe-of-buffer buf))) ; when not childframe
-                  (push-mark tbeg 'nomsg)
-                  (goto-char tend)
-                  (set-window-point (get-buffer-window buf t) tend)))
-            (cl-loop with ft = (plist-get meta :ft) ; cut off the source if necessary
-                     for idx from 0
-                     for src in (gts-get translator 'sptext)
-                     for tar in parsed
-                     concat (concat (propertize src 'face 'gts-render-buffer-source-face) "\n\n"
-                                    (if (and ft (= idx 0)) (cl-subseq tar (1- ft)) tar) "\n\n")
-                     into res
-                     finally (insert res))))
+              (insert (propertize (format "\n\n%s" err) 'face 'gts-render-buffer-error-face)))
+          (erase-buffer)
+          (cond
+           ;; content (non-split)
+           ((stringp parsed)
+            (let ((tbeg (plist-get meta :tbeg))
+                  (tend (plist-get meta :tend)))
+              (unless tbeg
+                (insert (propertize (oref translator text) 'face 'gts-render-buffer-source-face) "\n\n"))
+              (unless tbeg (setq tbeg (point)))
+              (insert parsed)
+              (unless tend (setq tend (point)))
+              ;; try set mark in beginning of the translate result,
+              ;; and set currsor position in end of the translate result,
+              ;; so you can quick select the translate result with C-x C-x.
+              (when (not (gts-childframe-of-buffer buf)) ; when not childframe
+                (push-mark tend 'nomsg)
+                (goto-char tbeg)
+                (set-window-point (get-buffer-window buf t) tbeg))))
+           ;; content (split)
+           (t (cl-loop for idx from 0
+                       for src in (gts-get translator 'sptext)
+                       for tar in parsed
+                       concat (concat (propertize src 'face 'gts-render-buffer-source-face) "\n\n" tar "\n\n") into res
+                       finally (insert res)))))
         ;; update states
         (set-buffer-modified-p nil)
         (gts-buffer-change-header-line-state 'done)
@@ -346,12 +349,7 @@ including PATH and other DESC."
                                     (concat header (propertize (format "\n%s\n\n" err) 'face 'gts-render-buffer-error-face)))
                                    ((string-empty-p result)
                                     (concat header "\nLoading...\n\n"))
-                                   (t (let ((ft (plist-get meta :ft)))
-                                        (concat header "\n"
-                                                (if ft
-                                                    (cl-subseq result (1- ft))
-                                                  result) ; hide source text in me output
-                                                "\n\n"))))))
+                                   (t (concat header "\n" (string-trim result) "\n\n")))))
                     (put-text-property 0 (length content) 'task task content)
                     (insert content)))))
             ;; states

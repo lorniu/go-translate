@@ -11,6 +11,9 @@
 
 (require 'gts-implements)
 
+
+;;; Components
+
 (defclass gts-deepl-parser (gts-parser) ())
 
 (defclass gts-deepl-engine (gts-engine)
@@ -27,19 +30,53 @@
     (user-error "You should provide a auth-key when instance gts-deepl-engine")))
 
 
+;;; Utils
+
+(defcustom gts-deepl-fill-enable t
+  "Controller wheather try to improve the input and output.
+Default behavior is removing excess linebreaks in input for better
+translation effect, and filling the output for better reading experience.
+You can override the behaviors by :around the method `gts-deepl-fill-input'
+or `gts-deepl-fill-output'."
+  :type 'boolean
+  :group 'go-translate)
+
+(cl-defmethod gts-deepl-fill-input (text)
+  "Improve the input TEXT for better translation effect.
+Mainly remove excess linebreaks. I want to skip unfill on comments and codes,
+but don't know how to implement easily. To make it better later, maybe."
+  (if gts-deepl-fill-enable
+      (with-temp-buffer
+        (insert text)
+        (let ((fill-column (point-max)))
+          (fill-region (point-min) (point-max)))
+        (buffer-string))
+    text))
+
+(cl-defmethod gts-deepl-fill-output (text)
+  "Improve the output TEXT for better reading experience.
+Mainly fill the text to suitable length."
+  (if gts-deepl-fill-enable
+      (with-temp-buffer
+        (insert text)
+        (fill-region (point-min) (point-max))
+        (buffer-string))
+    text))
+
+
 ;;; Engine
 
 (defvar gts-deepl-langs-mapping '(("en" . "EN")
                                   ("zh" . "ZH")
-                                  ("de" . "DE") ;; German
-                                  ("fr" . "FR") ;; French
-                                  ("it" . "IT") ;; Italian
-                                  ("ja" . "JA") ;; Japanese
-                                  ("es" . "ES") ;; Spanish
-                                  ("nl" . "NL") ;; Dutch
-                                  ("pl" . "PL") ;; Polish
-                                  ("pt" . "PT") ;; Portuguese (all Portuguese varieties mixed)
-                                  ("ru" . "RU") ;; Russian
+                                  ("de" . "DE") ; German
+                                  ("fr" . "FR") ; French
+                                  ("it" . "IT") ; Italian
+                                  ("ja" . "JA") ; Japanese
+                                  ("es" . "ES") ; Spanish
+                                  ("nl" . "NL") ; Dutch
+                                  ("pl" . "PL") ; Polish
+                                  ("pt" . "PT") ; Portuguese (all Portuguese varieties mixed)
+                                  ("ru" . "RU") ; Russian
                                   ))
 
 (cl-defmethod gts-get-lang ((_ gts-deepl-engine) lang)
@@ -57,39 +94,32 @@
   (with-slots (text from to) task
     (with-slots (auth-key parser) engine
       (gts-do-request (gts-gen-url engine)
-                      :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8")
-                                 ("Authorization" . ,(concat "DeepL-Auth-Key " auth-key)))
-                      :data `(("text" . ,(with-temp-buffer
-                                           (insert text) ; then remove the extra newlines
-                                           (let ((fill-column (point-max))) (fill-region (point-min) (point-max)))
-                                           (buffer-string)))
-                              ("source_lang" . ,(gts-get-lang engine from))
-                              ("target_lang" . ,(gts-get-lang engine to)))
+                      :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
+                                 ("Authorization"  . ,(concat "DeepL-Auth-Key " auth-key)))
+                      :data    `(("text"           . ,(gts-deepl-fill-input text))
+                                 ("source_lang"    . ,(gts-get-lang engine from))
+                                 ("target_lang"    . ,(gts-get-lang engine to)))
                       :done (lambda ()
                               (gts-update-raw task (buffer-string))
                               (gts-parse parser task)
                               (funcall rendercb))
                       :fail (lambda (err)
                               (gts-render-fail task
-                                (cond ((ignore-errors (= (caddar err) 403))
-                                       "[403] http error, make sure your auth_key is correct")
-                                      (t err))))))))
+                                (if (ignore-errors (= (caddar err) 403))
+                                    "[403] http error, make sure your auth_key is correct"
+                                  err)))))))
 
 
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-deepl-parser) task)
   (let* ((json (json-read-from-string (oref task raw)))
-         (result (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
-         tbeg tend)
-    (with-temp-buffer
-      (insert (propertize (oref (oref task translator) text) 'face 'gts-google-buffer-brief-result-face) "\n\n")
-      (setq tbeg (point))
-      (insert (decode-coding-string result 'utf-8))
-      (fill-region tbeg (point))
-      (goto-char (point-max))
-      (setq tend (point))
-      (gts-update-parsed task (buffer-string) (list :tbeg tbeg :tend tend :ft tbeg)))))
+         (str (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
+         (filter (lambda (parsed)
+                   (cl-loop for p in (gts-ensure-list parsed)
+                            collect (gts-deepl-fill-output p) into ps
+                            finally (return (if (cdr ps) ps (car ps)))))))
+    (gts-update-parsed task (decode-coding-string str 'utf-8) nil filter)))
 
 
 (provide 'gts-engine-deepl)

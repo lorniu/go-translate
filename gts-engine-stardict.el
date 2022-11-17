@@ -48,7 +48,7 @@
                    (apply #'call-process gts-stardict-program nil t nil
                           (list "--non-interactive" "--color" text)) ;--json-output
                    (if (string-equal (buffer-substring 1 16) "Nothing similar")
-                       "No result found, sorry :("
+                       "No translation result found, sorry :("
                      (ansi-color-apply (buffer-string))))))
     (gts-update-raw task result)
     (gts-parse parser task)

@@ -97,7 +97,7 @@
    (raw        :initform nil :documentation "raw result responsed by the http-client")
    (parsed     :initform nil :initarg :parsed :documentation "result parsed by parser, string or list")
    (err        :initform nil :initarg :err    :documentation "error info")
-   (meta       :initform nil :initarg :meta   :documentation "extra info passed from parser to render. tbeg/tend/ft")
+   (meta       :initform nil :initarg :meta   :documentation "extra info passed from parser to render. tbeg/tend")
 
    (engine     :initarg :engine     :initform nil)
    (render     :initarg :render     :initform nil)
@@ -497,14 +497,15 @@ when this is set to t."
     (ignore-errors (kill-process gts-tts-playing-process))
     (setq gts-tts-playing-process nil)))
 
-(defun gts-do-tts (text _lang handler)
-  "TTS TEXT in LANG with possible tts service.
-If HANDLER speak failed, then try using locally TTS
-if `gts-tts-try-speak-locally' is set."
+(defun gts-do-tts (text lang &optional engine)
+  "Speak TEXT in LANG with possible tts service by ENGINE.
+If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
   (condition-case err
-      (if gts-tts-speaker
-          (funcall handler)
-        (user-error "No mpv/mplayer found"))
+      (if engine
+          (if gts-tts-speaker
+              (gts-tts engine text lang)
+            (user-error "No mpv/mplayer found"))
+        (user-error "No engine TTS service provided"))
     (error (if gts-tts-try-speak-locally
                (cond ((executable-find "powershell")
                       (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
@@ -520,18 +521,6 @@ if `gts-tts-try-speak-locally' is set."
 (defvar gts-text-delimiter "34587612321123")
 
 (defvar gts-current-command nil "The command invoked by `gts-translate'.")
-
-(defun gts-render-fail (task err)
-  (declare (indent 1))
-  (gts-do-log 'translator (format "error? %s" err))
-  (if task
-      (with-slots (translator render) task
-        (let ((engines (gts-get translator 'engines)))
-          (gts-update-raw task nil err)
-          (if (cdr engines)
-              (gts-me-out render task)
-            (gts-out render task))))
-    (signal 'error err)))
 
 (cl-defmethod initialize-instance :after ((this gts-translator) &rest _)
   (unless (gts-ensure-plain (oref this render))
@@ -571,17 +560,15 @@ if `gts-tts-try-speak-locally' is set."
     (oset this plan-cnt (length engines))
     (oset this version (time-to-seconds))
     ;; tasks
-    (let* ((splitted (if splitter (gts-split splitter text)))
-           (rtext (if splitted
-                      (string-join splitted (concat "\n" gts-text-delimiter "\n"))
-                    text)))
+    (let ((splitted (if splitter (gts-split splitter text))))
       (oset this sptext splitted)
-      (dolist (engine engines)
-        (let ((task (gts-task :translator this
-                              :engine engine
-                              :render render
-                              :text rtext :from (car path) :to (cdr path))))
-          (gts-add-task this task)))
+      (cl-loop for engine in engines
+               for task = (gts-task :translator this
+                                    :engine engine
+                                    :render render
+                                    :from (car path) :to (cdr path)
+                                    :text (if splitted (string-join splitted (concat "\n" gts-text-delimiter "\n")) text))
+               do (gts-add-task this task))
       (gts-do-log 'text (format "splitted? %s!" (if splitted "Yes" "No"))))))
 
 (cl-defmethod gts-add-task ((this gts-translator) task)
@@ -602,8 +589,10 @@ if `gts-tts-try-speak-locally' is set."
     (cl-remove-if-not
      (lambda (task) (or (oref task err) (oref task raw))) task-queue)))
 
-(cl-defmethod gts-update-raw (task resp &optional error)
-  "Update non-parsed RESP result to TASK, update ERROR if not null."
+(defun gts-update-raw (task resp &optional error)
+  "Update non-parsed RESP result to TASK.
+If ERROR is not nil, then update task with failure."
+  (declare (indent 1))
   (with-slots (id raw err translator) task
     (with-slots (task-queue plan-cnt state) translator
       (setf raw resp)
@@ -612,21 +601,35 @@ if `gts-tts-try-speak-locally' is set."
         (setf state 3))
       (gts-do-log 'translator (format "%s: **responsed** %s" id (or error "success!"))))))
 
-(cl-defmethod gts-update-parsed ((task gts-task) result &optional metadata)
-  "Update TASK with parsed RESULT, update METADATA if exists."
+(defun gts-update-parsed (task result &optional metadata filter)
+  "Update TASK with parsed RESULT, update METADATA if exists.
+FILTER the parsed result if necessary, it's a function take parsed result as argument."
+  (declare (indent 1))
   (with-slots (id raw parsed err meta translator) task
     (if raw
         (condition-case er
-            (progn
-              (setf parsed
-                    (if (or (listp result) (not (gts-get translator 'sptext)))
-                        result
-                      (gts-do-log 'translator
-                        (format "%s: result contains delimiter, so split to list" id))
-                      (split-string result gts-text-delimiter nil "[ \t\n\r]+")))
+            (let ((r (if (or (listp result) (not (gts-get translator 'sptext)))
+                         result
+                       (gts-do-log 'translator
+                         (format "%s: result contains delimiter, so split to list" id))
+                       (split-string result gts-text-delimiter nil "[ \t\n\r]+"))))
+              (setf parsed (if filter (funcall filter r) r))
               (if metadata (setf meta metadata)))
           (error (setf err er)))
       (gts-update-raw task t "Mybe Null Response"))))
+
+(defun gts-render-fail (task error)
+  "Directly render the ERROR message and finish the TASK."
+  (declare (indent 1))
+  (gts-do-log 'translator (format "error? %s" error))
+  (if task
+      (with-slots (translator render) task
+        (let ((engines (gts-get translator 'engines)))
+          (gts-update-raw task nil error)
+          (if (cdr engines)
+              (gts-me-out render task)
+            (gts-out render task))))
+    (signal 'error error)))
 
 (cl-defmethod gts-translate ((this gts-translator) &optional text path)
   "Fire a translation for THIS translator instance.

@@ -143,16 +143,11 @@
     (decode-coding-region (point-min) (point-max) 'utf-8)
     (gts-do-log 'bing (string-trim (buffer-string)))
     (goto-char (point-min))
-    (let* ((json (json-read))
-           (result (ignore-errors
-                     (cdr (assoc 'text
-                                 (aref
-                                  (cdr (assoc 'translations (aref json 0)))
-                                  0))))))
-      (if result
-          (gts-update-parsed task result (list :tbeg 1 :tend (+ 1 (length result))))
-        (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
-        (gts-update-raw task nil (buffer-string))))))
+    (if-let* ((json (json-read))
+              (result (ignore-errors (cdr (assoc 'text (aref (cdr (assoc 'translations (aref json 0))) 0))))))
+        (gts-update-parsed task result)
+      (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
+      (gts-update-raw task nil (buffer-string)))))
 
 
 (provide 'gts-engine-bing)
