@@ -149,8 +149,7 @@ will force opening in right side window."
   :type 'function
   :group 'go-translate)
 
-(defvar-local gts-buffer-source-text nil)
-(defvar-local gts-buffer-version nil)
+(defvar-local gts-buffer-translator nil)
 (defvar-local gts-buffer-keybinding-messages nil)
 (defvar-local gts-buffer-local-map nil)
 
@@ -219,21 +218,20 @@ including PATH and other DESC."
   (with-current-buffer (get-buffer-create buffer)
     (let ((inhibit-read-only t)
           (engines (gts-get translator 'engines)))
-      (with-slots (text path version) translator
+      (with-slots (text path) translator
         ;; setup
         (deactivate-mark)
         (visual-line-mode -1)
         (font-lock-mode 1)
         (setq-local cursor-type 'hbar)
         (setq-local cursor-in-non-selected-windows nil)
-        (setq-local gts-buffer-version version)
+        (setq-local gts-buffer-translator translator)
         ;; headline
         (gts-buffer-init-header-line path (unless (cdr engines) (oref (car engines) tag)))
         ;; source text
         (erase-buffer)
         (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
         (insert text)
-        (setq-local gts-buffer-source-text text)
         ;; keybinds.
         ;;  q for quit and kill the window.
         ;;  x for switch sl and tl.
@@ -332,7 +330,7 @@ including PATH and other DESC."
     (with-slots (from to translator) task
       (with-slots (text task-queue version) translator
         (with-current-buffer buf
-          (when (equal gts-buffer-version version)
+          (when (equal (oref gts-buffer-translator version) version)
             (erase-buffer)
             (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
             ;; content
