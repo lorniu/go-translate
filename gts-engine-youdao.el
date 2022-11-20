@@ -50,7 +50,7 @@
           (require 'eww)
           (insert "Content-type: text/html; charset=utf-8\n\n" raw)
           (eww-render nil (plist-get meta :url) nil buf))
-        (gts-update-parsed task (buffer-string))))))
+        (gts-update-parsed task (buffer-string) meta)))))
 
 
 (provide 'gts-engine-youdao)
