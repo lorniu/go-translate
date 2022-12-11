@@ -484,7 +484,7 @@ when this is set to t."
   "Speak the current buffer's data."
   (gts-tts-try-interrupt-playing-process)
   (let ((proc (make-process :name (format "gts-tts-process-%s" (+ 1000 (random 1000)))
-                            :command (list gts-tts-speaker "-")
+                            :command (append (split-string gts-tts-speaker) (list "-"))
                             :buffer nil
                             :noquery t
                             :connection-type 'pipe)))
