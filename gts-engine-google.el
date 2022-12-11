@@ -175,10 +175,11 @@ Code from `google-translate', maybe improve it someday."
     (reverse result)))
 
 (cl-defmethod gts-tts ((engine gts-google-engine) text lang)
-  (let ((urls (gts-tts-gen-urls engine text lang)))
+  (let ((urls (gts-tts-gen-urls engine text lang))
+        (speaker (split-string gts-tts-speaker)))
     (with-temp-message "Speaking..."
       (gts-tts-try-interrupt-playing-process)
-      (apply #'call-process gts-tts-speaker nil nil nil urls))))
+      (apply #'call-process (car speaker) nil nil nil (append (cdr speaker) urls)))))
 
 
 ;;; Parser
