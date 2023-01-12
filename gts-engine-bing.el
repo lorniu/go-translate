@@ -57,7 +57,7 @@
                         (let (key token ig tld)
                           (re-search-forward "curUrl=.*/\\([a-z]+\\.bing.com\\)")
                           (setq tld (match-string 1))
-                          (re-search-forward "\"ig\":\"\\([^\"]+\\).*params_RichTranslateHelper = \\[\\([0-9]+\\),\"\\([^\"]+\\)")
+                          (re-search-forward "\"ig\":\"\\([^\"]+\\).*params_AbusePreventionHelper = \\[\\([0-9]+\\),\"\\([^\"]+\\)")
                           (setq ig (match-string 1) key (match-string 2) token (match-string 3))
                           (oset engine ig ig)
                           (oset engine key key)
