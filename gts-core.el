@@ -517,6 +517,9 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
 (defvar gts-text-delimiter "34587612321123")
 
 (defvar gts-current-command nil "The command invoked by `gts-translate'.")
+(defvar gts-current-picker nil "Picker used in current translate.")
+(defvar gts-current-engines nil "Engines used in current translate.")
+(defvar gts-current-render nil "Render used in current translate.")
 
 (cl-defmethod initialize-instance :after ((this gts-translator) &rest _)
   (unless (gts-ensure-plain (oref this render))
@@ -530,10 +533,11 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
            for value =
            (cl-flet ((ensure (v) (or v (user-error "No %s found in current translator" slot))))
              (pcase slot
-               ((or 'picker 'render) (ensure (gts-ensure-plain (slot-value this slot))))
-               ('splitter            (gts-ensure-plain (slot-value this slot)))
-               ('engines             (ensure (gts-ensure-list (gts-ensure-plain (slot-value this slot)))))
-               (_                    (slot-value this slot))))
+               ('splitter   (gts-ensure-plain (slot-value this slot)))
+               ('picker     (ensure (gts-ensure-plain (or gts-current-picker (slot-value this slot)))))
+               ('engines    (ensure (gts-ensure-list (gts-ensure-plain (or gts-current-engines (slot-value this slot))))))
+               ('render     (ensure (gts-ensure-plain (or gts-current-render (slot-value this slot)))))
+               (_           (slot-value this slot))))
            collect value into values
            finally (return (if (cadr slots) (apply #'cl-values values) (car values)))))
 
@@ -631,8 +635,11 @@ as argument."
 (cl-defmethod gts-translate ((this gts-translator) &optional text path)
   "Fire a translation for THIS translator instance.
 When TEXT and PATH is nil then pick them via `gts-pick'."
-  ;; record this, so can fixup issue in posframe-pop etc. Weird?
+  ;; dynamic
   (setq gts-current-command this-command)
+  (setq gts-current-picker (oref this picker))
+  (setq gts-current-engines (oref this engines))
+  (setq gts-current-render (oref this render))
   ;; initialize
   (gts-init this text path)
   (cl-multiple-value-bind (engines render tasks text path)
