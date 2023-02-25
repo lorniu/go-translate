@@ -597,7 +597,6 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
     (define-key map "\C-n" #'gts-prompt-picker-next-path)
     (define-key map "\C-p" (lambda () (interactive) (gts-prompt-picker-next-path t)))
     (define-key map "\C-l" #'delete-minibuffer-contents)
-    (define-key map [C-return] (lambda () (interactive) (exit-minibuffer)))
     map)
   "Minibuffer keymap used when prompt user input.")
 
@@ -606,12 +605,11 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 If BACKWARDP is t, then pick the previous one."
   (interactive "P")
   (let ((p (gts-next-path gts-picker-current-picker
-                          gts-picker-current-text
+                          (minibuffer-contents)
                           gts-picker-current-path
                           backwardp)))
     (setq gts-picker-current-path p)
-    (gts-picker-prompt-pick (minibuffer-contents) p)
-    (exit-minibuffer)))
+    (gts-picker-prompt-pick (minibuffer-contents) p)))
 
 (defun gts-picker-prompt-pick (&optional text path)
   (setq gts-picker-current-path path)
@@ -619,18 +617,17 @@ If BACKWARDP is t, then pick the previous one."
          (minibuffer-allow-text-properties t)
          (prompt (concat (concat "[" (car path) " > " (cdr path) "] ") "Text: "))
          (text (read-from-minibuffer prompt text gts-prompt-for-translate-keymap)))
-    (setq gts-picker-current-text text)
-    (when (zerop (length (string-trim text)))
-      (user-error "Text should not be null"))
-    (with-minibuffer-selected-window
-      (exit-minibuffer))))
+    (throw 'gts-minibuffer `(,text . ,path))))
 
 (cl-defmethod gts-pick ((picker gts-prompt-picker))
   (setq gts-picker-current-picker picker)
-  (let* ((text (gts-text (oref picker texter)))
-         (path (gts-path picker text)))
-    (gts-picker-prompt-pick text path)
-    (cl-values gts-picker-current-text gts-picker-current-path)))
+  (pcase-let* ((text (gts-text (oref picker texter)))
+               (path (gts-path picker text))
+               (`(,current-text . ,current-path)
+                (catch 'gts-minibuffer (gts-picker-prompt-pick text path))))
+    (when (zerop (length (string-trim current-text)))
+      (user-error "Text should not be null"))
+    (cl-values current-text current-path)))
 
 
 ;;; [Splitter] split text by paragraph
