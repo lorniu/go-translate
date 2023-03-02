@@ -589,7 +589,7 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 (defclass gts-prompt-picker (gts-picker)
   ((texter :initarg :texter :initform (gts-current-or-selection-texter))))
 
-(defvar gts-prompt-for-translate-keymap
+(defvar gts-prompt-picker-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
     (define-key map "\C-g" #'top-level)
@@ -607,14 +607,14 @@ If BACKWARDP is t, then pick the previous one."
          (path (gts-next-path gts-picker-current-picker
                               text gts-picker-current-path backwardp)))
     (setq gts-picker-current-path path)
-    (gts-picker-prompt-pick text path)))
+    (gts-prompt-picker-pick text path)))
 
-(defun gts-picker-prompt-pick (&optional text path)
+(defun gts-prompt-picker-pick (&optional text path)
   (setq gts-picker-current-path path)
   (let* ((enable-recursive-minibuffers t)
          (minibuffer-allow-text-properties t)
          (prompt (concat (concat "[" (car path) " > " (cdr path) "] ") "Text: "))
-         (text (read-from-minibuffer prompt text gts-prompt-for-translate-keymap)))
+         (text (read-from-minibuffer prompt text gts-prompt-picker-keymap)))
     (throw 'gts-minibuffer `(,text . ,path))))
 
 (cl-defmethod gts-pick ((picker gts-prompt-picker))
@@ -622,7 +622,7 @@ If BACKWARDP is t, then pick the previous one."
   (pcase-let* ((text (gts-text (oref picker texter)))
                (path (gts-path picker text))
                (`(,current-text . ,current-path)
-                (catch 'gts-minibuffer (gts-picker-prompt-pick text path))))
+                (catch 'gts-minibuffer (gts-prompt-picker-pick text path))))
     (when (zerop (length (string-trim current-text)))
       (user-error "Text should not be null"))
     (cl-values current-text current-path)))
