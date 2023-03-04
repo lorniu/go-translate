@@ -48,7 +48,7 @@ but don't know how to implement easily. To make it better later, maybe."
   (if gts-deepl-fill-enable
       (with-temp-buffer
         (insert text)
-        (let ((fill-column (point-max)))
+        (let ((fill-column (* 2 (point-max))))
           (fill-region (point-min) (point-max)))
         (buffer-string))
     text))
