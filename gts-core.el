@@ -302,8 +302,9 @@ The rules are provided by `gts-picker-lang-match-alist'."
              when (and matcher (funcall matcher text))
              collect path)))
 
-(cl-defmethod gts-paths ((picker gts-picker))
-  "All paths can be picked by PICKER."
+(cl-defmethod gts-paths ((picker gts-picker) &optional keep-order)
+  "All paths can be picked by PICKER.
+When KEEP-ORDER is not nil then do not try to push last path to the first place."
   (when (or (null gts-translate-list) (not (consp (car gts-translate-list))))
     (user-error "Please make sure you set the avaiable `gts-translate-list'. eg:\n
  (setq gts-translate-list '((\"en\" \"zh\") (\"en\" \"ja\"))\n\n"))
@@ -313,7 +314,8 @@ The rules are provided by `gts-picker-lang-match-alist'."
                   (cl-pushnew (cons lang1 lang2) paths :test #'equal)
                   (unless (oref picker single) (cl-pushnew (cons lang2 lang1) paths :test #'equal))))
     (setq paths (nreverse paths))
-    (if (and gts-picker-last-path (member gts-picker-last-path paths))
+    (if (and (not keep-order)
+             gts-picker-last-path (member gts-picker-last-path paths))
         (cons gts-picker-last-path (remove gts-picker-last-path paths))
       paths)))
 
@@ -329,7 +331,7 @@ Return the first path matching TEXT. If no path matches, return the non-nil
         (car paths))))
 
 (cl-defmethod gts-next-path ((picker gts-picker) text path &optional backwardp)
-  (let (candidates idx (paths (gts-paths picker)))
+  (let (candidates idx (paths (gts-paths picker 'keep-order)))
     (cl-loop for path in (append (gts-picker-filter-paths paths text) paths)
              do (cl-pushnew path candidates :test 'equal))
     (setq candidates (reverse candidates))
