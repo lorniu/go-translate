@@ -542,6 +542,25 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
       (message "Translate result already in the kill ring."))))
 
 
+;;; [Render] Alert Render
+
+(require 'alert nil t)
+(declare-function alert "ext:alert.el" t t)
+
+(defvar gts-alert-args '(:timeout 10))
+
+(defclass gts-alert-render (gts-render) ())
+
+(cl-defmethod gts-out ((_ gts-alert-render) task)
+  (with-slots (text err parsed) task
+    (if err
+        (user-error "%s" err)
+      (apply #'alert
+             (if (listp parsed) (string-join parsed "\n\n") parsed)
+             :title (if (string-match-p "\n" text) "*Go-Translate*" text)
+             gts-alert-args))))
+
+
 ;;; [Texter] take current-at-point-or-selection as source text
 
 (defclass gts-current-or-selection-texter (gts-texter) ())
