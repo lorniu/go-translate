@@ -40,20 +40,24 @@
   :type 'string
   :group 'go-translate)
 
+(defcustom gts-stardict-args '("-n" "-c" "-0" "-1")
+  "Arguments passed to command `sdcv'."
+  :type 'list
+  :group 'go-translate)
+
 (cl-defmethod gts-translate ((engine gts-stardict-engine) task rendercb)
   (let* ((text (oref task text))
          (parser (oref engine parser))
          (result (with-temp-buffer
                    (require 'ansi-color)
                    (apply #'call-process gts-stardict-program nil t nil
-                          (list "--non-interactive" "--color" text)) ;--json-output
+                          (append gts-stardict-args (list text))) ;--json-output
                    (if (string-equal (buffer-substring 1 16) "Nothing similar")
                        "No translation result found, sorry :("
                      (ansi-color-apply (buffer-string))))))
     (gts-update-raw task result)
     (gts-parse parser task)
     (funcall rendercb)))
-
 
 (provide 'gts-engine-stardict)
 
