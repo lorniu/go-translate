@@ -263,7 +263,9 @@ gts-picker 使用 gts-texter 获取初始输入，默认的 texter 会获取当�
 ;; 重写一个方法
 (cl-defmethod gts-out ((_ your-render) task)
   (deactivate-mark)
-  (insert (oref task result)))
+  (with-slots (err parsed) task
+    (if err (user-error "%s" err))
+    (insert (if (listp parsed) (string-join parsed "\n\n") parsed))))
 ```
 
 然后，使用就可以了:

@@ -268,7 +268,9 @@ Define class and override methods:
 ;; A method
 (cl-defmethod gts-out ((_ your-render) task)
   (deactivate-mark)
-  (insert (oref task result)))
+  (with-slots (err parsed) task
+    (if err (user-error "%s" err))
+    (insert (if (listp parsed) (string-join parsed "\n\n") parsed))))
 ```
 
 Use them in your translator:
