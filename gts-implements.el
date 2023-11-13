@@ -367,7 +367,11 @@ including PATH and other DESC."
   (gts-render-buffer-prepare gts-buffer-name translator)
   ;; display
   (let ((split-width-threshold (or gts-split-width-threshold split-width-threshold)))
-    (display-buffer gts-buffer-name gts-buffer-window-config)))
+    (progn
+      (display-buffer gts-buffer-name gts-buffer-window-config)
+      (with-current-buffer gts-buffer-name
+	(turn-on-visual-line-mode)))
+    ))
 
 (cl-defmethod gts-out ((_ gts-buffer-render) task)
   ;; render & display
