@@ -153,15 +153,18 @@ will force opening in right side window."
 (defvar-local gts-buffer-keybinding-messages nil)
 (defvar-local gts-buffer-local-map nil)
 
+(defvar gts-buffer-evil-leading-key "SPC" "Leading key for keybinds in evil mode.")
+
 (cl-defmacro gts-buffer-set-key ((key &optional desc) form)
   "Helper for define KEY in buffer."
   (declare (indent 1))
-  `(progn (define-key gts-buffer-local-map
-                      (kbd ,key)
-                      ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form)))
-          (when ,desc
-            (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
-            (push (cons ,key ,desc) gts-buffer-keybinding-messages))))
+  `(let ((fn ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form))))
+     (if (bound-and-true-p evil-mode)
+         (evil-define-key 'normal gts-buffer-local-map (kbd (concat ,gts-buffer-evil-leading-key " " ,key)) fn)
+       (define-key gts-buffer-local-map (kbd ,key) fn))
+     (when ,desc
+       (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
+       (push (cons ,key ,desc) gts-buffer-keybinding-messages))))
 
 (defun gts-buffer-init-header-line (path &optional desc)
   "Setup header line format.
@@ -174,7 +177,9 @@ including PATH and other DESC."
          (if desc (concat " ― " (propertize desc 'face 'gts-render-buffer-header-line-desc-face)) "")
          " → "
          "[" (propertize (cdr path) 'face 'gts-render-buffer-header-line-lang-face) "]"
-         "   (" (propertize "h" 'face 'font-lock-type-face) " for help)"
+         "   ("
+         (if (bound-and-true-p evil-mode) (concat (propertize gts-buffer-evil-leading-key 'face 'font-lock-type-face) " as leading key, "))
+         (propertize "h" 'face 'font-lock-type-face) " for help)"
          "          "
          "Loading...")))
 
