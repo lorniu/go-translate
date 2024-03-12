@@ -331,15 +331,15 @@ including PATH and other DESC."
   "For multiple engines translation."
   (when-let ((inhibit-read-only t)
              (buf (get-buffer buffer)))
-    (with-slots (from to translator) task
-      (with-slots (text task-queue version) translator
+    (with-slots (translator) task
+      (with-slots (text tasks version) translator
         (with-current-buffer buf
           (when (equal (oref gts-buffer-translator version) version)
             (erase-buffer)
             (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
             ;; content
             (save-excursion
-              (dolist (task task-queue)
+              (dolist (task tasks)
                 (with-slots (err parsed meta engine) task
                   (let* ((result (if (or err (stringp parsed)) parsed
                                    (string-join parsed "\n\n")))
@@ -415,11 +415,11 @@ Manually close the frame with `q'.")
 (defvar gts-posframe-pop-render-timeout 30)
 (defvar gts-posframe-pop-render-poshandler nil)
 
-(defun gts-posframe-init-header-line (from to)
+(defun gts-posframe-init-header-line (sl tl)
   (setq header-line-format
-        (list "[" (propertize from 'face 'gts-render-buffer-header-line-lang-face) "]"
+        (list "[" (propertize sl 'face 'gts-render-buffer-header-line-lang-face) "]"
               " → "
-              "[" (propertize to 'face 'gts-render-buffer-header-line-lang-face) "]")))
+              "[" (propertize tl 'face 'gts-render-buffer-header-line-lang-face) "]")))
 
 (defun gts-posframe-render-auto-close-handler ()
   "Close the pop-up posframe window."
@@ -605,7 +605,7 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
       (user-error "Make sure there is any word at point, or selection exists"))
     (let ((path (gts-path picker text)))
       (setq gts-picker-current-path path)
-      (cl-values text path))))
+      (list text path))))
 
 
 ;;; [Picker] prompt, and flexible
@@ -649,7 +649,7 @@ If BACKWARDP is t, then pick the previous one."
                 (catch 'gts-minibuffer (gts-prompt-picker-pick text path))))
     (when (zerop (length (string-trim current-text)))
       (user-error "Text should not be null"))
-    (cl-values current-text current-path)))
+    (list current-text current-path)))
 
 
 ;;; [Splitter] split text by paragraph
