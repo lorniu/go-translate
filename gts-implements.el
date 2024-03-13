@@ -160,7 +160,7 @@ will force opening in right side window."
   (declare (indent 1))
   `(let ((fn ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form))))
      (if (bound-and-true-p evil-mode)
-         (evil-define-key 'normal gts-buffer-local-map (kbd (concat ,gts-buffer-evil-leading-key " " ,key)) fn)
+         (evil-define-key* 'normal gts-buffer-local-map (kbd ,(concat gts-buffer-evil-leading-key " " key)) fn)
        (define-key gts-buffer-local-map (kbd ,key) fn))
      (when ,desc
        (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
