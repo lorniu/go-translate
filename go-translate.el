@@ -74,7 +74,7 @@
 
                   ;;(gts-kill-ring-render)
 
-                  :splitter nil
+                  ;;:splitter nil
                   ;; (gts-paragraph-splitter)
                   ))
 

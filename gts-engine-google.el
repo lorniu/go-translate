@@ -34,8 +34,8 @@
 
 (defvar gts-google-request-headers '(("Connection" . "Keep-Alive")))
 
-(cl-defmethod gts-gen-url ((engine gts-google-engine) text from to)
-  "Generate the url with TEXT, FROM and TO. Return a (url text from to) list."
+(cl-defmethod gts-gen-url ((engine gts-google-engine) text sl tl)
+  "Generate the url with TEXT, SL and TL. Return a (url text sl tl) list."
   (format "%s%s?%s"
           (oref engine base-url)
           (oref engine sub-url)
@@ -59,9 +59,9 @@
                        ("srcrom" . "1")
                        ("ssel"   . "0")
                        ("tsel"   . "0")
-                       ("hl"     . ,to)
-                       ("sl"     . ,from)
-                       ("tl"     . ,to)
+                       ("hl"     . ,tl)
+                       ("sl"     . ,sl)
+                       ("tl"     . ,tl)
                        ("q"      . ,text)
                        ("tk"     . ,(gts-google-tkk (oref engine token) text)))
                      "&")))
@@ -93,8 +93,8 @@
 (cl-defmethod gts-translate ((engine gts-google-engine) task rendercb)
   (gts-with-token engine
     (lambda ()
-      (with-slots (text from to) task
-        (gts-do-request (gts-gen-url engine text from to)
+      (with-slots (text sl tl) task
+        (gts-do-request (gts-gen-url engine text sl tl)
                         :headers gts-google-request-headers
                         :done (lambda ()
                                 (gts-update-raw task (buffer-string))

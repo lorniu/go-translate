@@ -72,12 +72,12 @@
 (cl-defmethod gts-translate ((engine gts-bing-engine) task rendercb)
   (gts-with-token engine
     (lambda ()
-      (with-slots (text from to raw) task
+      (with-slots (text sl tl raw) task
         (with-slots (tld-url sub-url token key ig parser) engine
           (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
                           :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                          :data `(("fromLang" . ,(gts-get-lang engine from))
-                                  ("to"       . ,(gts-get-lang engine to))
+                          :data `(("fromLang" . ,(gts-get-lang engine sl))
+                                  ("to"       . ,(gts-get-lang engine tl))
                                   ("text"     . ,text)
                                   ("key"      . ,key)
                                   ("token"    . ,token))

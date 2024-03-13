@@ -27,10 +27,10 @@
    (parser  :initform (gts-youdao-dict-eww-parser))))
 
 (cl-defmethod gts-translate ((engine gts-youdao-dict-engine) task rendercb)
-  (with-slots (text from to meta) task
+  (with-slots (text sl tl meta) task
     (with-slots (url parser) engine
-      (let* ((lang (cond ((string-equal from "zh") to)
-                         ((string-equal to "zh") from)
+      (let* ((lang (cond ((string-equal sl "zh") tl)
+                         ((string-equal tl "zh") sl)
                          (t (user-error "只支持中文跟其他语言之间的翻译"))))
              (url (format url (url-hexify-string text) (url-hexify-string lang))))
         (setf meta (list :url url))

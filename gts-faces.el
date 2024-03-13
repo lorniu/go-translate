@@ -27,7 +27,7 @@
   :group 'go-translate-faces)
 
 (defface gts-render-buffer-header-line-lang-face '((t :inherit font-lock-keyword-face))
-  "Used in the buffer's header-line-format, from/to."
+  "Used in the buffer's header-line-format, sl/tl."
   :group 'go-translate-faces)
 
 (defface gts-render-buffer-header-line-desc-face '((t :inherit font-lock-variable-name-face))

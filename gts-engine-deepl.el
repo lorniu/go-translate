@@ -91,14 +91,14 @@ Mainly fill the text to suitable length."
     (format "%s%s" (if pro pro-url free-url) sub-url)))
 
 (cl-defmethod gts-translate ((engine gts-deepl-engine) task rendercb)
-  (with-slots (text from to) task
+  (with-slots (text sl tl) task
     (with-slots (auth-key parser) engine
       (gts-do-request (gts-gen-url engine)
                       :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
                                  ("Authorization"  . ,(concat "DeepL-Auth-Key " auth-key)))
                       :data    `(("text"           . ,(gts-deepl-fill-input text))
-                                 ("source_lang"    . ,(gts-get-lang engine from))
-                                 ("target_lang"    . ,(gts-get-lang engine to)))
+                                 ("source_lang"    . ,(gts-get-lang engine sl))
+                                 ("target_lang"    . ,(gts-get-lang engine tl)))
                       :done (lambda ()
                               (gts-update-raw task (buffer-string))
                               (gts-parse parser task)
