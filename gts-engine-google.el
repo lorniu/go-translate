@@ -34,7 +34,7 @@
 
 (defvar gts-google-request-headers '(("Connection" . "Keep-Alive")))
 
-(cl-defmethod gts-gen-url ((engine gts-google-engine) text sl tl)
+(defun gts-google-gen-url (engine text sl tl)
   "Generate the url with TEXT, SL and TL. Return a (url text sl tl) list."
   (format "%s%s?%s"
           (oref engine base-url)
@@ -66,7 +66,7 @@
                        ("tk"     . ,(gts-google-tkk (oref engine token) text)))
                      "&")))
 
-(cl-defmethod gts-token-available-p ((engine gts-google-engine))
+(defun gts-google-token-available-p (engine)
   (with-slots (token token-time token-expired-time) engine
     (and token
          (or (eq token-time t)
@@ -74,9 +74,10 @@
                   (<= (float-time (time-subtract (current-time) token-time))
                       token-expired-time))))))
 
-(cl-defmethod gts-with-token ((engine gts-google-engine) done fail)
+(defun gts-google-with-token (engine done fail)
+  (declare (indent 1))
   (with-slots (token token-time base-url) engine
-    (if (gts-token-available-p engine)
+    (if (gts-google-token-available-p engine)
         (funcall done)
       (gts-do-request base-url
                       :headers gts-google-request-headers
@@ -91,10 +92,10 @@
                       :fail fail))))
 
 (cl-defmethod gts-translate ((engine gts-google-engine) task next)
-  (gts-with-token engine
+  (gts-google-with-token engine
     (lambda ()
       (with-slots (text sl tl) task
-        (gts-do-request (gts-gen-url engine text sl tl)
+        (gts-do-request (gts-google-gen-url engine text sl tl)
                         :headers gts-google-request-headers
                         :done (lambda () (funcall next task))
                         :fail (lambda (err) (gts-fail task err)))))
@@ -104,31 +105,7 @@
 
 ;; tts
 
-(cl-defmethod gts-tts-gen-urls ((engine gts-google-engine) text lang)
-  "Generate the tts urls for TEXT to LANGUAGE."
-  (cl-loop with texts = (gts-tts-text-splitter engine text)
-           for total = (length texts)
-           for index from 0
-           for piece in texts
-           collect
-           (let ((params `(("ie"      . "UTF-8")
-                           ("client"  . "gtx")
-                           ("prev"    . "input")
-                           ("q"       . ,text)
-                           ("tl"      . ,lang)
-                           ("total"   . ,(number-to-string total))
-                           ("idx"     . ,(number-to-string index))
-                           ("textlen" . ,(number-to-string (length piece)))
-                           ("tk"      . ,(gts-google-tkk (oref engine token) piece)))))
-             (format "%s/translate_tts?%s"
-                     (oref engine base-url)
-                     (mapconcat (lambda (p)
-                                  (format "%s=%s"
-                                          (url-hexify-string (car p))
-                                          (url-hexify-string (cdr p))))
-                                params "&")))))
-
-(cl-defmethod gts-tts-text-splitter ((_ gts-google-engine) text)
+(defun gts-google-tts-split-text (text)
   "Split TEXT by maxlen at applicable point for translating.
 Code from `google-translate', maybe improve it someday."
   (let (result (maxlen 200))
@@ -170,8 +147,32 @@ Code from `google-translate', maybe improve it someday."
 		        (setq pos limit)))))))
     (reverse result)))
 
+(defun gts-google-tts-gen-urls (engine text lang)
+  "Generate the tts urls for TEXT to LANGUAGE."
+  (cl-loop with texts = (gts-google-tts-split-text engine text)
+           for total = (length texts)
+           for index from 0
+           for piece in texts
+           collect
+           (let ((params `(("ie"      . "UTF-8")
+                           ("client"  . "gtx")
+                           ("prev"    . "input")
+                           ("q"       . ,text)
+                           ("tl"      . ,lang)
+                           ("total"   . ,(number-to-string total))
+                           ("idx"     . ,(number-to-string index))
+                           ("textlen" . ,(number-to-string (length piece)))
+                           ("tk"      . ,(gts-google-tkk (oref engine token) piece)))))
+             (format "%s/translate_tts?%s"
+                     (oref engine base-url)
+                     (mapconcat (lambda (p)
+                                  (format "%s=%s"
+                                          (url-hexify-string (car p))
+                                          (url-hexify-string (cdr p))))
+                                params "&")))))
+
 (cl-defmethod gts-tts ((engine gts-google-engine) text lang)
-  (let ((urls (gts-tts-gen-urls engine text lang))
+  (let ((urls (gts-google-tts-gen-urls engine text lang))
         (speaker (split-string gts-tts-speaker)))
     (with-temp-message "Speaking..."
       (gts-tts-try-interrupt-playing-process)
@@ -413,7 +414,6 @@ It will use the tkk from Google translate page."
             (car (split-string (number-to-string
                                 (gts-google-token--logxor a b))
                                "\\.")))))
-
 
 (provide 'gts-engine-google)
 

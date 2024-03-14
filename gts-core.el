@@ -376,10 +376,6 @@ The NEXT should contain the parse and render logic."
                              (unless (oref tsk err)
                                (gts-cache-set gts-default-cacher tsk (buffer-string))))))))
 
-(cl-defgeneric gts-with-token (engine done fail)
-  (:documentation "Get token for ENGINE, if success then DONE is called.")
-  (declare (indent 1)))
-
 (cl-defgeneric gts-tts (engine text lang)
   "TTS, speak TEXT with LANG."
   (:method ((e gts-engine) &rest _)
@@ -553,10 +549,8 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
     (with-slots (tasks total state) translator
       (when (= state 0)
         (setf tasks (append tasks (list task)))
-        (gts-do-log 'translator
-          (format "[%d/%d] add task %s: (%s/%s)"
-                  (length tasks) total id
-                  (eieio-object-class-name engine) (eieio-object-class-name render)))
+        (gts-do-log (format "%d/%d" (length tasks) total id)
+          (format "add task %s: (%s/%s)" id (eieio-object-class-name engine) (eieio-object-class-name render)))
         (when (= (length tasks) total)
           (gts-do-log 'translator "state: 1")
           (setf state 1))))))

@@ -41,7 +41,8 @@ you can customize it according to your country region."
 
 (defvar gts-google-rpc-request-headers '(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8")))
 
-(cl-defmethod gts-with-token ((engine gts-google-rpc-engine) done fail)
+(defun gts-google-rpc-with-token (engine done fail)
+  (declare (indent 1))
   (with-slots (sub-url rpc-sid rpc-bl) engine
     (gts-do-request gts-google-rpc-base-url
                     :done
@@ -67,7 +68,7 @@ you can customize it according to your country region."
                     :fail fail)))
 
 (cl-defmethod gts-translate ((engine gts-google-rpc-engine) task next)
-  (gts-with-token engine
+  (gts-google-rpc-with-token engine
     (lambda (url-tpl)
       (with-slots (text sl tl) task
         (with-slots (rpc-translate) engine
@@ -90,7 +91,7 @@ you can customize it according to your country region."
       (gts-fail task (format "Error occurred when request for token.\n\n%s" err)))))
 
 (cl-defmethod gts-tts ((engine gts-google-rpc-engine) text lang)
-  (gts-with-token engine
+  (gts-google-rpc-with-token engine
     (lambda (url-tpl)
       (with-slots (rpc-tts) engine
         (gts-do-request (funcall url-tpl rpc-tts "en-US")

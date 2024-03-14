@@ -38,18 +38,19 @@
 
 (defvar gts-bing-token-maybe-invalid nil)
 
-(cl-defmethod gts-get-lang ((_ gts-bing-engine) lang)
+(defun gts-bing-get-lang (lang)
   (or (cdr-safe (assoc lang gts-bing-extra-langs-mapping)) lang))
 
-(cl-defmethod gts-token-available-p ((engine gts-bing-engine))
+(defun gts-bing-token-available-p (engine)
   (with-slots (token key ig last-time expired-time) engine
     (and token key ig last-time
          (not gts-bing-token-maybe-invalid)
          (< (- (time-to-seconds) last-time) expired-time))))
 
-(cl-defmethod gts-with-token ((engine gts-bing-engine) done fail)
+(defun gts-bing-with-token (engine done fail)
+  (declare (indent 1))
   (with-slots (token key ig base-url) engine
-    (if (gts-token-available-p engine)
+    (if (gts-bing-token-available-p engine)
         (funcall done)
       (gts-do-request (concat base-url "/translator")
                       :done
@@ -70,14 +71,14 @@
                       :fail fail))))
 
 (cl-defmethod gts-translate ((engine gts-bing-engine) task next)
-  (gts-with-token engine
+  (gts-bing-with-token engine
     (lambda ()
       (with-slots (text sl tl) task
         (with-slots (tld-url sub-url token key ig) engine
           (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
                           :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                          :data `(("fromLang" . ,(gts-get-lang engine sl))
-                                  ("to"       . ,(gts-get-lang engine tl))
+                          :data `(("fromLang" . ,(gts-bing-get-lang sl))
+                                  ("to"       . ,(gts-bing-get-lang tl))
                                   ("text"     . ,text)
                                   ("key"      . ,key)
                                   ("token"    . ,token))
@@ -98,7 +99,7 @@
                                      ("fr" . ("fr-CA" . "fr-CA-SylvieNeural"))
                                      ("de" . ("de-DE" . "de-DE-KatjaNeural"))))
 
-(cl-defmethod gts-tts-payload ((engine gts-bing-engine) lang text)
+(defun gts-bing-tts-payload (engine lang text)
   (with-slots (tts-tpl) engine
     (let (l n (mt (assoc lang gts-bing-tts-langs-mapping)))
       (if mt (setq l (cadr mt) n (cddr mt))
@@ -106,7 +107,7 @@
       (format tts-tpl l l n (encode-coding-string text 'utf-8)))))
 
 (cl-defmethod gts-tts ((engine gts-bing-engine) text lang)
-  (gts-with-token engine
+  (gts-bing-with-token engine
     (lambda ()
       (with-slots (tld-url sub-url token key ig parser ttsk-url tts-url tts-tpl) engine
         (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.2" tld-url ttsk-url ig)
@@ -118,7 +119,7 @@
                                        (region (cdr (assoc 'region json))))
                                   (gts-do-log 'bing-tts (format "token: %s\nregion: %s" token region))
                                   (gts-do-request (format tts-url region)
-                                                  :data (gts-tts-payload engine lang text)
+                                                  :data (gts-bing-tts-payload engine lang text)
                                                   :headers `(("content-type" . "application/ssml+xml")
                                                              ("authorization" . ,(format "Bearer %s" token))
                                                              ("x-microsoft-outputformat" . "audio-16khz-32kbitrate-mono-mp3"))

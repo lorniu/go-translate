@@ -79,25 +79,25 @@ Mainly fill the text to suitable length."
                                   ("ru" . "RU") ; Russian
                                   ))
 
-(cl-defmethod gts-get-lang ((_ gts-deepl-engine) lang)
+(defun gts-deepl-get-lang (lang)
   (let ((mapping (assoc lang gts-deepl-langs-mapping)))
     (if mapping (cdr mapping)
       (user-error
        "Language %s is not supported by DeepL.\nSupported list: %s"
        lang (mapconcat #'car gts-deepl-langs-mapping ", ")))))
 
-(cl-defmethod gts-gen-url ((engine gts-deepl-engine))
+(defun gts-deepl-gen-url (engine)
   (with-slots (free-url pro-url sub-url pro) engine
     (format "%s%s" (if pro pro-url free-url) sub-url)))
 
 (cl-defmethod gts-translate ((engine gts-deepl-engine) task next)
   (with-slots (text sl tl) task
-    (gts-do-request (gts-gen-url engine)
+    (gts-do-request (gts-deepl-gen-url engine)
                     :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
                                ("Authorization"  . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
                     :data    `(("text"           . ,(gts-deepl-fill-input text))
-                               ("source_lang"    . ,(gts-get-lang engine sl))
-                               ("target_lang"    . ,(gts-get-lang engine tl)))
+                               ("source_lang"    . ,(gts-deepl-get-lang sl))
+                               ("target_lang"    . ,(gts-deepl-get-lang tl)))
                     :done (lambda () (funcall next task))
                     :fail (lambda (err)
                             (gts-fail task
