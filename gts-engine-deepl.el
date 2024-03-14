@@ -109,7 +109,7 @@ Mainly fill the text to suitable length."
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-deepl-parser) task)
-  (let* ((json (json-read))
+  (let* ((json (json-read-from-string (buffer-string)))
          (str (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
          (filter (lambda (parsed)
                    (cl-loop for p in (gts-ensure-list parsed)

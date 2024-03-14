@@ -38,15 +38,15 @@
                       :fail (lambda (err) (gts-fail task err))))))
 
 (cl-defmethod gts-parse ((_ gts-youdao-dict-eww-parser) task)
-  (with-slots (meta) task
-    (let ((resp (buffer-string)))
-      (with-temp-buffer
-        (let ((buf (current-buffer)))
-          (with-temp-buffer
-            (require 'eww)
-            (insert "Content-type: text/html; charset=utf-8\n\n" resp)
-            (eww-render nil (plist-get meta :url) nil buf))
-          (cl-values (buffer-string) meta))))))
+  (let ((meta (oref task meta))
+        (resp (buffer-string)))
+    (with-temp-buffer
+      (let ((buf (current-buffer)))
+        (with-temp-buffer
+          (require 'eww)
+          (insert "Content-type: text/html; charset=utf-8\n\n" resp)
+          (eww-render nil (plist-get meta :url) nil buf))
+        (cl-values (buffer-string) meta)))))
 
 (provide 'gts-engine-youdao)
 
