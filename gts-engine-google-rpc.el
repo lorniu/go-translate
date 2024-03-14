@@ -66,11 +66,11 @@ you can customize it according to your country region."
                         (funcall done url-tpl)))
                     :fail fail)))
 
-(cl-defmethod gts-translate ((engine gts-google-rpc-engine) task rendercb)
+(cl-defmethod gts-translate ((engine gts-google-rpc-engine) task next)
   (gts-with-token engine
     (lambda (url-tpl)
       (with-slots (text sl tl) task
-        (with-slots (rpc-translate parser) engine
+        (with-slots (rpc-translate) engine
           (gts-do-request (funcall url-tpl rpc-translate to)
                           :headers gts-google-rpc-request-headers
                           :data (format
@@ -84,15 +84,10 @@ you can customize it according to your country region."
                                     (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
                                     (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
                                     (json-encode outer))))
-                          :done (lambda ()
-                                  (gts-update-raw task (buffer-string))
-                                  (gts-parse parser task)
-                                  (funcall rendercb))
-                          :fail (lambda (err)
-                                  (gts-render-fail task err))))))
+                          :done (lambda () (funcall next task))
+                          :fail (lambda (err) (gts-fail task err))))))
     (lambda (err)
-      (gts-render-fail task
-        (format "Error occurred when request for token.\n\n%s" err)))))
+      (gts-fail task (format "Error occurred when request for token.\n\n%s" err)))))
 
 (cl-defmethod gts-tts ((engine gts-google-rpc-engine) text lang)
   (gts-with-token engine

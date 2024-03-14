@@ -90,37 +90,32 @@ Mainly fill the text to suitable length."
   (with-slots (free-url pro-url sub-url pro) engine
     (format "%s%s" (if pro pro-url free-url) sub-url)))
 
-(cl-defmethod gts-translate ((engine gts-deepl-engine) task rendercb)
+(cl-defmethod gts-translate ((engine gts-deepl-engine) task next)
   (with-slots (text sl tl) task
-    (with-slots (auth-key parser) engine
-      (gts-do-request (gts-gen-url engine)
-                      :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
-                                 ("Authorization"  . ,(concat "DeepL-Auth-Key " auth-key)))
-                      :data    `(("text"           . ,(gts-deepl-fill-input text))
-                                 ("source_lang"    . ,(gts-get-lang engine sl))
-                                 ("target_lang"    . ,(gts-get-lang engine tl)))
-                      :done (lambda ()
-                              (gts-update-raw task (buffer-string))
-                              (gts-parse parser task)
-                              (funcall rendercb))
-                      :fail (lambda (err)
-                              (gts-render-fail task
-                                (if (ignore-errors (= (caddar err) 403))
-                                    "[403] http error, make sure your auth_key is correct"
-                                  err)))))))
+    (gts-do-request (gts-gen-url engine)
+                    :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
+                               ("Authorization"  . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
+                    :data    `(("text"           . ,(gts-deepl-fill-input text))
+                               ("source_lang"    . ,(gts-get-lang engine sl))
+                               ("target_lang"    . ,(gts-get-lang engine tl)))
+                    :done (lambda () (funcall next task))
+                    :fail (lambda (err)
+                            (gts-fail task
+                              (if (ignore-errors (= (caddar err) 403))
+                                  "[403] http error, make sure your auth_key is correct"
+                                err))))))
 
 
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-deepl-parser) task)
-  (let* ((json (json-read-from-string (oref task raw)))
+  (let* ((json (json-read))
          (str (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
          (filter (lambda (parsed)
                    (cl-loop for p in (gts-ensure-list parsed)
                             collect (gts-deepl-fill-output p) into ps
                             finally (return (if (cdr ps) ps (car ps)))))))
-    (gts-update-parsed task (decode-coding-string str 'utf-8) nil filter)))
-
+    (cl-values (decode-coding-string str 'utf-8) nil filter)))
 
 (provide 'gts-engine-deepl)
 

@@ -90,20 +90,16 @@
                                 (funcall done)))
                       :fail fail))))
 
-(cl-defmethod gts-translate ((engine gts-google-engine) task rendercb)
+(cl-defmethod gts-translate ((engine gts-google-engine) task next)
   (gts-with-token engine
     (lambda ()
       (with-slots (text sl tl) task
         (gts-do-request (gts-gen-url engine text sl tl)
                         :headers gts-google-request-headers
-                        :done (lambda ()
-                                (gts-update-raw task (buffer-string))
-                                (gts-parse (oref engine parser) task)
-                                (funcall rendercb))
-                        :fail (lambda (err)
-                                (gts-render-fail task err)))))
+                        :done (lambda () (funcall next task))
+                        :fail (lambda (err) (gts-fail task err)))))
     (lambda (err)
-      (gts-render-fail task
+      (gts-fail task
         (format "Error when fetching Token-Key, check your network and proxy, or retry later\n\n%s" err)))))
 
 ;; tts
@@ -187,7 +183,7 @@ Code from `google-translate', maybe improve it someday."
 ;; detail-mode, use as default
 
 (cl-defmethod gts-parse ((parser gts-google-parser) task)
-  (let* ((json        (gts-resp-to-json parser (oref task raw)))
+  (let* ((json        (gts-resp-to-json parser (buffer-string)))
          (brief       (gts-result--brief parser json))
          (sphonetic   (gts-result--sphonetic parser json))
          (tphonetic   (gts-result--tphonetic parser json))
@@ -245,14 +241,14 @@ Code from `google-translate', maybe improve it someday."
                                    (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
                                do (insert "\n"))))
         ;; at last, fill and return
-        (gts-update-parsed task (buffer-string) (list :tbeg tbeg :tend tend))))))
+        (cl-values (buffer-string) (list :tbeg tbeg :tend tend))))))
 
 ;; summary-mode
 
 (cl-defmethod gts-parse ((parser gts-google-summary-parser) task)
-  (let* ((json (gts-resp-to-json parser (oref task raw)))
+  (let* ((json (gts-resp-to-json parser (buffer-string)))
          (result (string-trim (gts-result--brief parser json))))
-    (gts-update-parsed task result (list :tbeg 1 :tend (+ 1 (length result))))))
+    (cl-values result (list :tbeg 1 :tend (+ 1 (length result))))))
 
 ;; Extract results from response
 

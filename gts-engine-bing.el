@@ -69,11 +69,11 @@
                           (funcall done)))
                       :fail fail))))
 
-(cl-defmethod gts-translate ((engine gts-bing-engine) task rendercb)
+(cl-defmethod gts-translate ((engine gts-bing-engine) task next)
   (gts-with-token engine
     (lambda ()
-      (with-slots (text sl tl raw) task
-        (with-slots (tld-url sub-url token key ig parser) engine
+      (with-slots (text sl tl) task
+        (with-slots (tld-url sub-url token key ig) engine
           (gts-do-request (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
                           :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
                           :data `(("fromLang" . ,(gts-get-lang engine sl))
@@ -81,18 +81,14 @@
                                   ("text"     . ,text)
                                   ("key"      . ,key)
                                   ("token"    . ,token))
-                          :done (lambda ()
-                                  (gts-update-raw task (buffer-string))
-                                  (gts-parse parser task)
-                                  (funcall rendercb))
+                          :done (lambda () (funcall next task))
                           :fail (lambda (err)
-                                  (gts-render-fail task
+                                  (gts-fail task
                                     (cond ((ignore-errors (= (caddar err) 429))
                                            "[429] Too many requests! Please retry later")
                                           (t err))))))))
     (lambda (err)
-      (gts-render-fail task
-        (format "Error occurred when request for token.\n\n%s" err)))))
+      (gts-fail task (format "Error occurred when request for token.\n\n%s" err)))))
 
 
 ;;; TTS
@@ -126,8 +122,7 @@
                                                   :headers `(("content-type" . "application/ssml+xml")
                                                              ("authorization" . ,(format "Bearer %s" token))
                                                              ("x-microsoft-outputformat" . "audio-16khz-32kbitrate-mono-mp3"))
-                                                  :done (lambda ()
-                                                          (gts-tts-speak-buffer-data))
+                                                  :done (lambda () (gts-tts-speak-buffer-data))
                                                   :fail (lambda (_)
                                                           (user-error "[BING-TTS] error when play sound")))))
                         :fail (lambda (err) (user-error "%s" err)))))
@@ -137,18 +132,15 @@
 ;;; Parser
 
 (cl-defmethod gts-parse ((_ gts-bing-parser) task)
-  (with-temp-buffer
-    (set-buffer-multibyte t)
-    (insert (oref task raw))
-    (decode-coding-region (point-min) (point-max) 'utf-8)
-    (gts-do-log 'bing (string-trim (buffer-string)))
-    (goto-char (point-min))
-    (if-let* ((json (json-read))
-              (result (ignore-errors (cdr (assoc 'text (aref (cdr (assoc 'translations (aref json 0))) 0))))))
-        (gts-update-parsed task result)
-      (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
-      (gts-update-raw task nil (buffer-string)))))
-
+  (set-buffer-multibyte t)
+  (decode-coding-region (point-min) (point-max) 'utf-8)
+  (gts-do-log 'bing (string-trim (buffer-string)))
+  (goto-char (point-min))
+  (if-let* ((json (json-read))
+            (result (ignore-errors (cdr (assoc 'text (aref (cdr (assoc 'translations (aref json 0))) 0))))))
+      (cl-values result)
+    (setq gts-bing-token-maybe-invalid t) ; refresh token when error occurred
+    (error (buffer-string))))
 
 (provide 'gts-engine-bing)
 

@@ -289,7 +289,7 @@ including PATH and other DESC."
   (when-let ((inhibit-read-only t)
              (buf (get-buffer buffer)))
     (with-current-buffer buf
-      (with-slots (err parsed meta engine translator) task
+      (with-slots (res err meta engine translator) task
         ;; error
         (if err
             (progn
@@ -298,13 +298,13 @@ including PATH and other DESC."
           (erase-buffer)
           (cond
            ;; content (non-split)
-           ((stringp parsed)
+           ((stringp res)
             (let ((tbeg (plist-get meta :tbeg))
                   (tend (plist-get meta :tend)))
               (unless tbeg
                 (insert (propertize (oref translator text) 'face 'gts-render-buffer-source-face) "\n\n"))
               (unless tbeg (setq tbeg (point)))
-              (insert parsed)
+              (insert res)
               (unless tend (setq tend (point)))
               ;; try set mark in beginning of the translate result,
               ;; and set currsor position in end of the translate result,
@@ -315,10 +315,10 @@ including PATH and other DESC."
                 (set-window-point (get-buffer-window buf t) tbeg))))
            ;; content (split)
            (t (cl-loop for idx from 0
-                       for src in (gts-get translator 'sptext)
-                       for tar in parsed
-                       concat (concat (propertize src 'face 'gts-render-buffer-source-face) "\n\n" tar "\n\n") into res
-                       finally (insert res)))))
+                       for src in text
+                       for tar in res
+                       concat (concat (propertize src 'face 'gts-render-buffer-source-face) "\n\n" tar "\n\n") into parsed
+                       finally (insert parsed)))))
         ;; update states
         (set-buffer-modified-p nil)
         (gts-buffer-change-header-line-state 'done)
@@ -340,9 +340,10 @@ including PATH and other DESC."
             ;; content
             (save-excursion
               (dolist (task tasks)
-                (with-slots (err parsed meta engine) task
-                  (let* ((result (if (or err (stringp parsed)) parsed
-                                   (string-join parsed "\n\n")))
+                (with-slots (res err meta engine) task
+                  (let* ((result (if (or err (stringp res))
+                                     res
+                                   (string-join res "\n\n")))
                          (header (funcall gts-buffer-render-task-header-function
                                           (oref engine tag)
                                           (oref (oref engine parser) tag)))
@@ -540,10 +541,10 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 (cl-defmethod gts-out ((_ gts-kill-ring-render) task)
   (deactivate-mark)
-  (with-slots (err parsed) task
+  (with-slots (err res) task
     (if err
         (user-error "%s" err)
-      (kill-new (if (listp parsed) (string-join parsed "\n\n") parsed))
+      (kill-new (if (listp res) (string-join res "\n\n") res))
       (message "Translate result already in the kill ring."))))
 
 
@@ -557,11 +558,11 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 (defclass gts-alert-render (gts-render) ())
 
 (cl-defmethod gts-out ((_ gts-alert-render) task)
-  (with-slots (text err parsed) task
+  (with-slots (text err res) task
     (if err
         (user-error "%s" err)
       (apply #'alert
-             (if (listp parsed) (string-join parsed "\n\n") parsed)
+             (if (listp res) (string-join res "\n\n") res)
              :title (if (string-match-p "\n" text) "*Go-Translate*" text)
              gts-alert-args))))
 

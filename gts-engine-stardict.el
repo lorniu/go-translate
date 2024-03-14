@@ -45,19 +45,19 @@
   :type 'list
   :group 'go-translate)
 
-(cl-defmethod gts-translate ((engine gts-stardict-engine) task rendercb)
-  (let* ((text (oref task text))
-         (parser (oref engine parser))
-         (result (with-temp-buffer
-                   (require 'ansi-color)
-                   (apply #'call-process gts-stardict-program nil t nil
-                          (append gts-stardict-args (list text))) ;--json-output
-                   (if (string-equal (buffer-substring 1 16) "Nothing similar")
-                       "No translation result found, sorry :("
-                     (ansi-color-apply (buffer-string))))))
-    (gts-update-raw task result)
-    (gts-parse parser task)
-    (funcall rendercb)))
+(cl-defmethod gts-translate ((engine gts-stardict-engine) task next)
+  (with-temp-buffer
+    (require 'ansi-color)
+    (let* ((text (oref task text))
+           (parser (oref engine parser)))
+      (apply #'call-process gts-stardict-program nil t nil
+             (append gts-stardict-args (list text))) ;--json-output
+      (if (string-equal (buffer-substring 1 16) "Nothing similar")
+          (progn
+            (delete-region (point-min) (point-max))
+            (insert "No translation result found, sorry :("))
+        (ansi-color-apply-on-region (point-min) (point-max)))
+      (funcall next task))))
 
 (provide 'gts-engine-stardict)
 

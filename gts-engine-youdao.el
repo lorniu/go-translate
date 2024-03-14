@@ -26,32 +26,27 @@
    (url     :initform "https://dict.youdao.com/result?word=%s&lang=%s")
    (parser  :initform (gts-youdao-dict-eww-parser))))
 
-(cl-defmethod gts-translate ((engine gts-youdao-dict-engine) task rendercb)
+(cl-defmethod gts-translate ((engine gts-youdao-dict-engine) task next)
   (with-slots (text sl tl meta) task
-    (with-slots (url parser) engine
-      (let* ((lang (cond ((string-equal sl "zh") tl)
-                         ((string-equal tl "zh") sl)
-                         (t (user-error "只支持中文跟其他语言之间的翻译"))))
-             (url (format url (url-hexify-string text) (url-hexify-string lang))))
-        (setf meta (list :url url))
-        (gts-do-request url
-                        :done (lambda ()
-                                (gts-update-raw task (buffer-string)) ; html format response
-                                (gts-parse parser task)
-                                (funcall rendercb))
-                        :fail (lambda (err)
-                                (gts-render-fail task err)))))))
+    (let* ((lang (cond ((string-equal sl "zh") tl)
+                       ((string-equal tl "zh") sl)
+                       (t (user-error "只支持中文跟其他语言之间的翻译"))))
+           (url (format (oref engine url) (url-hexify-string text) (url-hexify-string lang))))
+      (setf meta (list :url url))
+      (gts-do-request url
+                      :done (lambda () (funcall next task)) ; html format response
+                      :fail (lambda (err) (gts-fail task err))))))
 
 (cl-defmethod gts-parse ((_ gts-youdao-dict-eww-parser) task)
-  (with-slots (raw meta) task
-    (with-temp-buffer
-      (let ((buf (current-buffer)))
-        (with-temp-buffer
-          (require 'eww)
-          (insert "Content-type: text/html; charset=utf-8\n\n" raw)
-          (eww-render nil (plist-get meta :url) nil buf))
-        (gts-update-parsed task (buffer-string) meta)))))
-
+  (with-slots (meta) task
+    (let ((resp (buffer-string)))
+      (with-temp-buffer
+        (let ((buf (current-buffer)))
+          (with-temp-buffer
+            (require 'eww)
+            (insert "Content-type: text/html; charset=utf-8\n\n" resp)
+            (eww-render nil (plist-get meta :url) nil buf))
+          (cl-values (buffer-string) meta))))))
 
 (provide 'gts-engine-youdao)
 
