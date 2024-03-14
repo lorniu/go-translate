@@ -332,41 +332,40 @@ including PATH and other DESC."
   (when-let ((inhibit-read-only t)
              (buf (get-buffer buffer)))
     (with-slots (translator) task
-      (with-slots (text tasks version) translator
+      (with-slots (text tasks) translator
         (with-current-buffer buf
-          (when (equal (oref gts-buffer-translator version) version)
-            (erase-buffer)
-            (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
-            ;; content
-            (save-excursion
-              (dolist (task tasks)
-                (with-slots (res err meta engine) task
-                  (let* ((result (if (or err (stringp res))
-                                     res
-                                   (string-join res "\n\n")))
-                         (header (funcall gts-buffer-render-task-header-function
-                                          (oref engine tag)
-                                          (oref (oref engine parser) tag)))
-                         (content (cond
-                                   (err
-                                    (concat header (propertize (format "\n%s\n\n" err) 'face 'gts-render-buffer-error-face)))
-                                   ((string-empty-p result)
-                                    (concat header "\nLoading...\n\n"))
-                                   (t (concat header "\n" (string-trim result) "\n\n")))))
-                    (put-text-property 0 (length content) 'task task content)
-                    (insert content)))))
-            ;; states
-            (set-buffer-modified-p nil)
-            ;; all tasks finished
-            (when (= (oref translator state) 3)
-              ;; cursor
-              (unless (gts-childframe-of-buffer buf)
-                (set-window-point (get-buffer-window buf t) (save-excursion (forward-line 2) (point))))
-              ;; state
-              (gts-buffer-change-header-line-state 'done))
-            ;; execute the hook if exists
-            (run-hooks 'gts-after-buffer-multiple-render-hook)))
-        buf))))
+          (erase-buffer)
+          (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
+          ;; content
+          (save-excursion
+            (dolist (task tasks)
+              (with-slots (res err meta engine) task
+                (let* ((result (if (or err (stringp res))
+                                   res
+                                 (string-join res "\n\n")))
+                       (header (funcall gts-buffer-render-task-header-function
+                                        (oref engine tag)
+                                        (oref (oref engine parser) tag)))
+                       (content (cond
+                                 (err
+                                  (concat header (propertize (format "\n%s\n\n" err) 'face 'gts-render-buffer-error-face)))
+                                 ((string-empty-p result)
+                                  (concat header "\nLoading...\n\n"))
+                                 (t (concat header "\n" (string-trim result) "\n\n")))))
+                  (put-text-property 0 (length content) 'task task content)
+                  (insert content)))))
+          ;; states
+          (set-buffer-modified-p nil)
+          ;; all tasks finished
+          (when (= (oref translator state) 3)
+            ;; cursor
+            (unless (gts-childframe-of-buffer buf)
+              (set-window-point (get-buffer-window buf t) (save-excursion (forward-line 2) (point))))
+            ;; state
+            (gts-buffer-change-header-line-state 'done))
+          ;; execute the hook if exists
+          (run-hooks 'gts-after-buffer-multiple-render-hook)
+          buf)))))
 
 (cl-defmethod gts-pre ((_ gts-buffer-render) translator)
   ;; init and setup
@@ -381,7 +380,7 @@ including PATH and other DESC."
     (gts-buffer-ensure-a-blank-line-at-beginning buf)
     (gts-buffer-display-or-focus-buffer buf)))
 
-(cl-defmethod gts-me-out ((_ gts-buffer-render) task)
+(cl-defmethod gts-multi-out ((_ gts-buffer-render) task)
   ;; render & display
   (when-let ((buf (gts-render-buffer-multi-engines gts-buffer-name task)))
     (when (= (oref (oref task translator) state) 3)
@@ -530,7 +529,7 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
   (when-let ((buf (gts-render-buffer gts-posframe-pin-render-buffer task)))
     (gts-buffer-ensure-a-blank-line-at-beginning buf)))
 
-(cl-defmethod gts-me-out ((_ gts-posframe-pin-render) task)
+(cl-defmethod gts-multi-out ((_ gts-posframe-pin-render) task)
   ;; render & refresh
   (gts-render-buffer-multi-engines gts-posframe-pin-render-buffer task))
 
