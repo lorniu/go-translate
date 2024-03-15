@@ -369,12 +369,12 @@ The NEXT should contain the parse and render logic."
       ;; request from engine
       (gts-do-log 'next (format "%s: %s prepare to translate" id engine-name))
       (cl-call-next-method engine task
-                           (lambda (tsk)
+                           (lambda (task)
                              (gts-do-log 'next (format "%s: %s finished!" id engine-name))
-                             (funcall next tsk)
+                             (funcall next task)
                              ;; refresh cache
-                             (unless (oref tsk err)
-                               (gts-cache-set gts-default-cacher tsk (buffer-string))))))))
+                             (unless (oref task err)
+                               (gts-cache-set gts-default-cacher task (buffer-string))))))))
 
 (cl-defgeneric gts-tts (engine text lang)
   "TTS, speak TEXT with LANG."
@@ -563,35 +563,36 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
 (defun gts-fail (task error)
   "Render ERROR message and finish the TASK."
   (declare (indent 1))
-  (with-slots (translator render err version) task
+  (with-slots (translator render err version id) task
     (when (equal version (oref translator version))
       (setf err error)
-      (gts-do-log 'next (format "%s: !!!FAIL!!!\n %s" (oref task id) error))
       (if (cdr (gts-get translator 'engines))
           (gts-multi-out render task)
-        (gts-out render task)))))
+        (gts-out render task)))
+    (gts-do-log 'next (format "%s: ----- error -----\n %s" id error))))
 
 (defun gts-next (task)
   (with-slots (res meta engine translator version id) task
-    (when (equal version (oref translator version))
-      (condition-case err
-          (cl-multiple-value-bind (render engines tasks total state)
-              (gts-get translator 'render 'engines 'tasks 'total 'state)
-            ;; parse
-            (cl-multiple-value-bind (result info filter)
-                (progn (goto-char (point-min))
-                       (gts-parse (oref engine parser) task))
-              (if info (setf meta (append info meta)))
-              (if filter (setq result (funcall filter result)))
-              (setf res result)
-              ;; state
-              (when (and (= state 2) (= total (length (gts-done-tasks translator))))
-                (setf state 3))
-              ;; render
-              (if (cdr engines)
-                  (gts-multi-out render task)
-                (gts-out render task))))
-        (gts-fail task err)))))
+    (if (equal version (oref translator version))
+        (condition-case err
+            (cl-multiple-value-bind (render engines tasks total state)
+                (gts-get translator 'render 'engines 'tasks 'total 'state)
+              ;; parse
+              (cl-multiple-value-bind (result info filter)
+                  (progn (goto-char (point-min))
+                         (gts-parse (oref engine parser) task))
+                (if info (setf meta (append info meta)))
+                (if filter (setq result (funcall filter result)))
+                (setf res result)
+                ;; state
+                (when (and (= state 2) (= total (length (gts-done-tasks translator))))
+                  (setf state 3))
+                ;; render
+                (if (cdr engines)
+                    (gts-multi-out render task)
+                  (gts-out render task))))
+          (gts-fail task err))
+      (gts-do-log 'next (format "%s: ----- expired -----" id)))))
 
 (cl-defmethod gts-translate ((this gts-translator) &optional text path)
   "Fire a translation for THIS translator instance.
@@ -611,7 +612,7 @@ When TEXT and PATH is nil then pick them via `gts-pick'."
         (tls (gts-ensure-list (cdr path)))
         (buf (current-buffer))
         (ver (time-to-seconds)))
-    (gts-do-log 'translator (format "\n\nnew translate %s\n%s" path text))
+    (gts-do-log 'translator (format "\n\n%s\n%s\n%s" ver path text))
     (cl-multiple-value-bind (engines render) (gts-get this 'engines 'render)
       ;; init translator
       (oset this state 0)
