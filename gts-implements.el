@@ -329,8 +329,7 @@ including PATH and other DESC."
 
 (defun gts-render-buffer-multi-engines (buffer task)
   "For multiple engines translation."
-  (when-let ((inhibit-read-only t)
-             (buf (get-buffer buffer)))
+  (when-let ((inhibit-read-only t) (buf (get-buffer buffer)))
     (with-slots (translator) task
       (with-slots (text tasks) translator
         (with-current-buffer buf
@@ -356,7 +355,7 @@ including PATH and other DESC."
                   (insert content)))))
           ;; states
           (set-buffer-modified-p nil)
-          ;; all tasks finished
+          ;; all task parsed
           (when (= (oref translator state) 3)
             ;; cursor
             (unless (gts-childframe-of-buffer buf)
@@ -650,16 +649,6 @@ If BACKWARDP is t, then pick the previous one."
     (when (zerop (length (string-trim current-text)))
       (user-error "Text should not be null"))
     (list current-text current-path)))
-
-
-;;; [Splitter] split text by paragraph
-
-(defclass gts-paragraph-splitter (gts-splitter) ())
-
-(cl-defmethod gts-split ((_ gts-paragraph-splitter) text)
-  (setq text (split-string text "\n\n" t))
-  (if (and (listp text) (cadr text)) text))
-
 
 (provide 'gts-implements)
 

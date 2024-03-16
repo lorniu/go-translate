@@ -135,7 +135,6 @@
 (cl-defmethod gts-parse ((_ gts-bing-parser) task)
   (set-buffer-multibyte t)
   (decode-coding-region (point-min) (point-max) 'utf-8)
-  (gts-do-log 'bing (string-trim (buffer-string)))
   (goto-char (point-min))
   (if-let* ((json (json-read))
             (result (ignore-errors (cdr (assoc 'text (aref (cdr (assoc 'translations (aref json 0))) 0))))))
