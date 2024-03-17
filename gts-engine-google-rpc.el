@@ -71,7 +71,7 @@ you can customize it according to your country region."
     (lambda (url-tpl)
       (with-slots (text sl tl) task
         (with-slots (rpc-translate) engine
-          (gts-request :url (funcall url-tpl rpc-translate to)
+          (gts-request :url (funcall url-tpl rpc-translate tl)
                        :headers gts-google-rpc-request-headers
                        :data (format
                               "f.req=%s&"

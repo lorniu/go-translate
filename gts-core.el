@@ -112,20 +112,25 @@ Make word live longer time than sentence."
              (error "Make sure `gts-default-cacher' is properly configured. eg:\n
  (setq gts-default-cacher (gts-memory-cacher))"))))
 
-(cl-defmethod gts-cache-key ((_ gts-cacher) task)
+(defun gts-cache-key (task)
+  "Generate a key for caching TASK."
   (with-slots (text sl tl engine) task
     (sha1 (format "%s-%s-%s-%s"
                   text sl tl
                   (eieio-object-class-name engine)))))
 
-(cl-defmethod gts-clear-expired ((cacher gts-cacher))
-  (with-slots (caches expired) cacher
-    (cl-delete-if (lambda (c) (> (time-to-seconds) (cddr c))) caches)))
+(defun gts-cache-clear-expired (cacher)
+  "Clear CACHER items that are expired."
+  (when cacher
+    (with-slots (caches expired) cacher
+      (cl-delete-if (lambda (c) (> (time-to-seconds) (cddr c))) caches))))
 
-(cl-defmethod gts-clear-all ((cacher gts-cacher))
-  (oset cacher caches nil))
+(defun gts-cache-clear-all (cacher)
+  "Clear all items of CACHER."
+  (when cacher
+    (oset cacher caches nil)))
 
-;; cache in memory
+;; cacher implement by caching in memory
 
 (defclass gts-memory-cacher (gts-cacher) ()
   "Cache in the memory.")
@@ -133,7 +138,7 @@ Make word live longer time than sentence."
 (cl-defmethod gts-cache-get ((cacher gts-memory-cacher) task)
   (when gts-cache-enable
     (with-slots (caches expired) cacher
-      (let ((key (gts-cache-key cacher task)))
+      (let ((key (gts-cache-key task)))
         (when-let ((cache (assoc key caches)))
           (when (> (cddr cache) (time-to-seconds))
             (gts-log 'memory-cacher (format "%s: get from cache %s (%s)" (oref task id) key (length caches)))
@@ -142,7 +147,7 @@ Make word live longer time than sentence."
 (cl-defmethod gts-cache-set ((cacher gts-memory-cacher) task result)
   (when gts-cache-enable
     (with-slots (caches expired) cacher
-      (let* ((key (gts-cache-key cacher task))
+      (let* ((key (gts-cache-key task))
              (cache (assoc key caches))
              (text (oref task text))
              (etime
@@ -157,7 +162,7 @@ Make word live longer time than sentence."
               (gts-log 'memory-cacher (format "%s: update cache %s (%s)" (oref task id) key (length caches))))
           (oset cacher caches (cons (cons key (cons result etime)) caches))
           (gts-log 'memory-cacher (format "%s: add to cache %s (%s)" (oref task id) key (length caches))))
-        (gts-clear-expired cacher)))))
+        (gts-cache-clear-expired cacher)))))
 
 (setq gts-default-cacher (gts-memory-cacher)) ; use this as default
 
@@ -187,7 +192,7 @@ When success execute CALLBACK, or execute ERRORBACK."
                               :url url
                               :headers headers
                               :data data
-                              :done (lambda ()
+                              :done (lambda (&rest _)
                                       (gts-log tag (format "✓ %s" url))
                                       (condition-case err
                                           (funcall done)
@@ -229,9 +234,8 @@ Execute DONE when success, or FAIL when failed."
                                            ((or (null url-http-end-of-headers) (= 1 (point-max)))
                                             "Nothing responsed from server"))))
                                 (funcall fail err)
-                              (when done
-                                (delete-region (point-min) url-http-end-of-headers)
-                                (funcall done)))
+                              (delete-region (point-min) url-http-end-of-headers)
+                              (funcall done))
                           (kill-buffer)))
                   nil t)))
 
@@ -267,7 +271,7 @@ Execute DONE when success, or FAIL when failed."
    (meta       :initform nil  :initarg :meta :documentation "Other info passing in task. e.g: tbeg/tend")
    (version    :initform nil  :initarg :version)
 
-   (res        :initform nil  :documentation "Result of the transalte")
+   (res        :initform nil  :initarg :res  :documentation "Result of the transalte")
    (err        :initform nil  :initarg :err  :documentation "Error info")
 
    (engine     :initarg :engine     :initform nil)
@@ -468,10 +472,8 @@ Default dispatch to gts-pre when first pre-render.")
   (:method :after ((_ gts-render) translator)
            (gts-update-state translator))
   (:method ((render gts-render) translator)
-           (with-slots (tasks state) translator
-             (when (= state 1)
-               (gts-pre render translator)
-               (setf state 2)))))
+           (with-slots (state) translator
+             (if (= state 1) (gts-pre render translator)))))
 
 (cl-defgeneric gts-multi-out (render task)
   (:documentation "Render TASK with RENDER.
@@ -485,7 +487,7 @@ Default dispatch to gts-out with all results concated.")
            (let ((translator (oref task translator)) results)
              ;; show only when all tasks finished.
              (when (= (oref translator state) 3)
-               (dolist (task (oref translator task))
+               (dolist (task (oref translator tasks))
                  (with-slots (err res engine) task
                    (when (and (not err) (listp res))
                      (setq res (string-join res "\f")))
@@ -499,8 +501,9 @@ Default dispatch to gts-out with all results concated.")
                                                (concat (propertize (format "%-7s" (car r)) 'face 'gts-pop-posframe-me-header-face)
                                                        (format " %s" (cdr r)))))
                                            results
-                                           (if newlinep "\n\n" "\n"))))
-                 (gts-out render (gts-task :res concated :translator translator)))))))
+                                           (if newlinep "\n\n" "\n")))
+                      (text (oref translator text)))
+                 (gts-out render (gts-task :text text :res concated :translator translator)))))))
 
 
 ;;; TTS

@@ -16,6 +16,28 @@
 (require 'gts-faces)
 
 
+;;; [Http Client] request with curl instead of `url.el'
+;; implements via package `plz', you should install it before use this
+
+(defclass gts-plz-http-client (gts-http-client) ())
+
+(declare-function plz "ext:plz.el" t t)
+
+(cl-defmethod gts-request :before ((_ gts-plz-http-client) &rest _)
+  (unless (and (require 'plz nil t) (executable-find plz-curl-program))
+    (error "You should have `plz.el' and `curl' installed before using `gts-plz-http-client'")))
+
+(cl-defmethod gts-request ((_ gts-plz-http-client) &key url done fail data headers)
+  (plz (if data 'post 'get) url
+    :headers (cons `("User-Agent" . ,gts-user-agent) headers)
+    :body data
+    :as 'buffer
+    :then (lambda (_) (unwind-protect (funcall done) (kill-buffer)))
+    :else (lambda (err) (funcall fail (or (cdr (plz-error-curl-error err))
+                                          (plz-error-message err)
+                                          (plz-error-response err))))))
+
+
 ;;; [Render] buffer render
 
 (defclass gts-buffer-render (gts-render) ())
@@ -162,7 +184,7 @@ including PATH and other DESC."
               (cond (url (browse-url url) (message "Opening %s... Done!" url))
                     (t (message "Don't know how to open externally for this."))))))
         (gts-buffer-set-key ("C" "Clean Cache")
-          (gts-clear-all gts-default-cacher))
+          (gts-cache-clear-all gts-default-cacher))
         (gts-buffer-set-key ("t" "Toggle-Follow")
           (let ((state (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled")))
             (message "Now, buffer following %s." state)))
@@ -304,13 +326,6 @@ including PATH and other DESC."
 The frame will disappear when do do anything but focus in it.
 Manually close the frame with `q'.")
 
-(require 'posframe nil t)
-(declare-function posframe-show "ext:posframe.el" t t)
-(declare-function posframe-delete "ext:posframe.el" t t)
-(declare-function posframe-hide "ext:posframe.el" t t)
-(declare-function posframe-refresh "ext:posframe.el" t t)
-(declare-function posframe-poshandler-frame-top-right-corner "ext:posframe.el" t t)
-
 (defcustom gts-posframe-pop-render-buffer " *GTS-Pop-Posframe*"
   "Buffer name of Pop Posframe."
   :type 'string
@@ -318,6 +333,12 @@ Manually close the frame with `q'.")
 
 (defvar gts-posframe-pop-render-timeout 30)
 (defvar gts-posframe-pop-render-poshandler nil)
+
+(declare-function posframe-show "ext:posframe.el" t t)
+(declare-function posframe-delete "ext:posframe.el" t t)
+(declare-function posframe-hide "ext:posframe.el" t t)
+(declare-function posframe-refresh "ext:posframe.el" t t)
+(declare-function posframe-poshandler-frame-top-right-corner "ext:posframe.el" t t)
 
 (defun gts-posframe-init-header-line (sl tl)
   (setq header-line-format
@@ -334,6 +355,10 @@ Manually close the frame with `q'.")
                    (string= (buffer-name) gts-posframe-pop-render-buffer)))
     (ignore-errors (posframe-delete gts-posframe-pop-render-buffer))
     (remove-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
+
+(cl-defmethod gts-pre :before ((_ gts-posframe-pop-render) _)
+  (unless (require 'posframe nil t)
+    (user-error "To use `gts-posframe-render', you should install and load package `posframe' first")))
 
 (cl-defmethod gts-pre ((render gts-posframe-pop-render) translator)
   (with-slots (width height forecolor backcolor padding) render
@@ -363,10 +388,6 @@ Manually close the frame with `q'.")
   (when-let ((buf (gts-render-buffer gts-posframe-pop-render-buffer task)))
     (posframe-refresh buf)
     (add-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
-
-(cl-defmethod initialize-instance :after ((_ gts-posframe-pop-render) &rest _)
-  (unless (featurep 'posframe)
-    (user-error "To use `gts-posframe-render', you should install and load package `posframe' first")))
 
 
 ;;; [Render] Child-Frame Render (Pin Mode)
@@ -453,17 +474,19 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 ;;; [Render] Alert Render
 
-(require 'alert nil t)
-(declare-function alert "ext:alert.el" t t)
+(defclass gts-alert-render (gts-render) ())
 
 (defvar gts-alert-args '(:timeout 10))
 
-(defclass gts-alert-render (gts-render) ())
+(declare-function alert "ext:alert.el" t t)
+
+(cl-defmethod gts-pre :before ((_ gts-alert-render) _)
+  (unless (require 'alert nil t)
+    (user-error "To use `gts-alert-render', you should install and load package `alert' first")))
 
 (cl-defmethod gts-out ((_ gts-alert-render) task)
   (with-slots (text err res) task
-    (if err
-        (user-error "%s" err)
+    (if err (user-error "%s" err)
       (apply #'alert
              (if (listp res) (string-join res "\n\n") res)
              :title (if (string-match-p "\n" text) "*Go-Translate*" text)
@@ -474,6 +497,9 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 (defclass gts-current-or-selection-texter (gts-texter) ())
 
+(declare-function pdf-view-active-region-p "ext:pdf-view.el" t t)
+(declare-function pdf-view-active-region-text "ext:pdf-view.el" t t)
+
 (cl-defmethod gts-text ((_ gts-current-or-selection-texter))
   (cond ((eq major-mode 'pdf-view-mode)
          (if (pdf-view-active-region-p)
@@ -482,12 +508,8 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
          (string-trim (buffer-substring-no-properties (region-beginning) (region-end))))
         (t (current-word t t))))
 
-;; silence!
-(declare-function pdf-view-active-region-p "ext:pdf-view.el" t t)
-(declare-function pdf-view-active-region-text "ext:pdf-view.el" t t)
-
 
-;;; [Texter] take whole-buffer for as source text
+;;; [Texter] take whole-buffer as source text
 
 (defclass gts-whole-buffer-texter (gts-texter) ())
 
