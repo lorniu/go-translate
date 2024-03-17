@@ -44,49 +44,48 @@ you can customize it according to your country region."
 (defun gts-google-rpc-with-token (engine done fail)
   (declare (indent 1))
   (with-slots (sub-url rpc-sid rpc-bl) engine
-    (gts-do-request gts-google-rpc-base-url
-                    :done
-                    (lambda ()
-                      (let* ((f-sid (progn
-                                      (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-sid))
-                                      (match-string 1)))
-                             (bl (progn (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-bl))
-                                        (match-string 1)))
-                             (url-tpl (lambda (rpcid lang)
-                                        (format "%s%s?%s" gts-google-rpc-base-url sub-url
-                                                (gts-format-params
-                                                 `(("rpcids"       . ,rpcid)
-                                                   ("f.sid"        . ,f-sid)
-                                                   ("bl"           . ,bl)
-                                                   ("hl"           . ,lang)
-                                                   ("soc-app"      . 1)
-                                                   ("soc-platform" . 1)
-                                                   ("soc-device"   . 1)
-                                                   ("_reqid"       . ,(+ 1000 (random 9000)))
-                                                   ("rt"           . "c")))))))
-                        (funcall done url-tpl)))
-                    :fail fail)))
+    (gts-request :url gts-google-rpc-base-url
+                 :done (lambda ()
+                         (let* ((f-sid (progn
+                                         (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-sid))
+                                         (match-string 1)))
+                                (bl (progn (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-bl))
+                                           (match-string 1)))
+                                (url-tpl (lambda (rpcid lang)
+                                           (format "%s%s?%s" gts-google-rpc-base-url sub-url
+                                                   (gts-format-params
+                                                    `(("rpcids"       . ,rpcid)
+                                                      ("f.sid"        . ,f-sid)
+                                                      ("bl"           . ,bl)
+                                                      ("hl"           . ,lang)
+                                                      ("soc-app"      . 1)
+                                                      ("soc-platform" . 1)
+                                                      ("soc-device"   . 1)
+                                                      ("_reqid"       . ,(+ 1000 (random 9000)))
+                                                      ("rt"           . "c")))))))
+                           (funcall done url-tpl)))
+                 :fail fail)))
 
 (cl-defmethod gts-translate ((engine gts-google-rpc-engine) task next)
   (gts-google-rpc-with-token engine
     (lambda (url-tpl)
       (with-slots (text sl tl) task
         (with-slots (rpc-translate) engine
-          (gts-do-request (funcall url-tpl rpc-translate to)
-                          :headers gts-google-rpc-request-headers
-                          :data (format
-                                 "f.req=%s&"
-                                 (url-hexify-string
-                                  (let ((outer [[[rpcid inner nil "generic"]]])
-                                        (inner [[text sl tl t][nil]]))
-                                    (setf (aref (aref inner 0) 0) text)
-                                    (setf (aref (aref inner 0) 1) sl)
-                                    (setf (aref (aref inner 0) 2) tl)
-                                    (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
-                                    (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
-                                    (json-encode outer))))
-                          :done (lambda () (funcall next task))
-                          :fail (lambda (err) (gts-fail task err))))))
+          (gts-request :url (funcall url-tpl rpc-translate to)
+                       :headers gts-google-rpc-request-headers
+                       :data (format
+                              "f.req=%s&"
+                              (url-hexify-string
+                               (let ((outer [[[rpcid inner nil "generic"]]])
+                                     (inner [[text sl tl t][nil]]))
+                                 (setf (aref (aref inner 0) 0) text)
+                                 (setf (aref (aref inner 0) 1) sl)
+                                 (setf (aref (aref inner 0) 2) tl)
+                                 (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
+                                 (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
+                                 (json-encode outer))))
+                       :done (lambda () (funcall next task))
+                       :fail (lambda (err) (gts-fail task err))))))
     (lambda (err)
       (gts-fail task (format "Error occurred when request for token.\n\n%s" err)))))
 
@@ -94,32 +93,32 @@ you can customize it according to your country region."
   (gts-google-rpc-with-token engine
     (lambda (url-tpl)
       (with-slots (rpc-tts) engine
-        (gts-do-request (funcall url-tpl rpc-tts "en-US")
-                        :headers gts-google-rpc-request-headers
-                        :data (format
-                               "f.req=%s&"
-                               (url-hexify-string
-                                (let ((outer [[[rpcid inner nil "generic"]]])
-                                      (inner [text lang nil nil]))
-                                  (setf (aref inner 0) text)
-                                  (setf (aref inner 1) lang)
-                                  (setf (aref (aref (aref outer 0) 0) 0) rpc-tts)
-                                  (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
-                                  (json-encode outer))))
-                        :done (lambda ()
-                                (let (beg end json code)
-                                  (re-search-forward "^[0-9]+$")
-                                  (setq beg (point))
-                                  (re-search-forward "^\\([0-9]+\\)$")
-                                  (setq end (- (point) (length (match-string 1))))
-                                  (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
-                                  (when (string= (gts-aref-for json 0 0) "wrb.fr")
-                                    (setq code (aref (json-read-from-string (gts-aref-for json 0 2)) 0))
-                                    (erase-buffer)
-                                    (insert code)
-                                    (base64-decode-region (point-min) (point-max))
-                                    (gts-tts-speak-buffer-data))))
-                        :fail (lambda (err) (user-error "Error when TTS. %s" err)))))
+        (gts-request :url (funcall url-tpl rpc-tts "en-US")
+                     :headers gts-google-rpc-request-headers
+                     :data (format
+                            "f.req=%s&"
+                            (url-hexify-string
+                             (let ((outer [[[rpcid inner nil "generic"]]])
+                                   (inner [text lang nil nil]))
+                               (setf (aref inner 0) text)
+                               (setf (aref inner 1) lang)
+                               (setf (aref (aref (aref outer 0) 0) 0) rpc-tts)
+                               (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
+                               (json-encode outer))))
+                     :done (lambda ()
+                             (let (beg end json code)
+                               (re-search-forward "^[0-9]+$")
+                               (setq beg (point))
+                               (re-search-forward "^\\([0-9]+\\)$")
+                               (setq end (- (point) (length (match-string 1))))
+                               (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
+                               (when (string= (gts-aref-for json 0 0) "wrb.fr")
+                                 (setq code (aref (json-read-from-string (gts-aref-for json 0 2)) 0))
+                                 (erase-buffer)
+                                 (insert code)
+                                 (base64-decode-region (point-min) (point-max))
+                                 (gts-tts-speak-buffer-data))))
+                     :fail (lambda (err) (user-error "Error when TTS. %s" err)))))
     (lambda (_) (user-error "Error occurred when request for token"))))
 
 

@@ -33,9 +33,9 @@
                        (t (user-error "只支持中文跟其他语言之间的翻译"))))
            (url (format (oref engine url) (url-hexify-string text) (url-hexify-string lang))))
       (setf meta (list :url url))
-      (gts-do-request url
-                      :done (lambda () (funcall next task)) ; html format response
-                      :fail (lambda (err) (gts-fail task err))))))
+      (gts-request :url url
+                   :done (lambda () (funcall next task)) ; html format response
+                   :fail (lambda (err) (gts-fail task err))))))
 
 (cl-defmethod gts-parse ((_ gts-youdao-dict-eww-parser) task)
   (let ((meta (oref task meta))

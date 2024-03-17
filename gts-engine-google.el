@@ -79,26 +79,26 @@
   (with-slots (token token-time base-url) engine
     (if (gts-google-token-available-p engine)
         (funcall done)
-      (gts-do-request base-url
-                      :headers gts-google-request-headers
-                      :done (lambda ()
-                              (let ((tk (progn
-                                          (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
-                                          (cons (string-to-number (match-string 1))
-                                                (string-to-number (match-string 2))))))
-                                (setf token tk)
-                                (setf token-time (current-time))
-                                (funcall done)))
-                      :fail fail))))
+      (gts-request :url base-url
+                   :headers gts-google-request-headers
+                   :done (lambda ()
+                           (let ((tk (progn
+                                       (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                                       (cons (string-to-number (match-string 1))
+                                             (string-to-number (match-string 2))))))
+                             (setf token tk)
+                             (setf token-time (current-time))
+                             (funcall done)))
+                   :fail fail))))
 
 (cl-defmethod gts-translate ((engine gts-google-engine) task next)
   (gts-google-with-token engine
     (lambda ()
       (with-slots (text sl tl) task
-        (gts-do-request (gts-google-gen-url engine text sl tl)
-                        :headers gts-google-request-headers
-                        :done (lambda () (funcall next task))
-                        :fail (lambda (err) (gts-fail task err)))))
+        (gts-request :url (gts-google-gen-url engine text sl tl)
+                     :headers gts-google-request-headers
+                     :done (lambda () (funcall next task))
+                     :fail (lambda (err) (gts-fail task err)))))
     (lambda (err)
       (gts-fail task
         (format "Error when fetching Token-Key, check your network and proxy, or retry later\n\n%s" err)))))

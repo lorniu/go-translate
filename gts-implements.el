@@ -16,101 +16,6 @@
 (require 'gts-faces)
 
 
-;;; [Logger] Log all to a standalone buffer
-
-(defclass gts-buffer-logger (gts-logger)
-  ((buffer :initarg buf :initform nil))) ; dont set :initarg to buffer, it will make an error on emacsv27.
-
-(defvar gts-logger-buffer-name " *gts-logger*")
-
-(cl-defmethod gts-log ((logger gts-buffer-logger) tag msg)
-  (with-current-buffer (get-buffer-create (or (oref logger buffer) gts-logger-buffer-name))
-    (goto-char (point-max))
-    (if (or (= (length msg) 0) (string= msg "\n"))
-        (insert "")
-      (insert
-       (propertize (cl-subseq (format "%-.1f" (time-to-seconds)) 6) 'face 'gts-logger-buffer-timestamp-face)
-       " "
-       (propertize (concat "[" tag "] ") 'face 'gts-logger-buffer-tag-face))
-      (insert msg))
-    (insert "\n")))
-
-(setq gts-default-logger (gts-buffer-logger))
-
-
-;;; [Cacher] Cache in the memory
-
-(defclass gts-memory-cacher (gts-cacher) ()
-  "Cache in the memory.")
-
-(cl-defmethod gts-cache-get ((cacher gts-memory-cacher) task)
-  (when gts-cache-enable
-    (with-slots (caches expired) cacher
-      (let ((key (gts-cache-key cacher task)))
-        (when-let ((cache (assoc key caches)))
-          (when (> (cddr cache) (time-to-seconds))
-            (gts-do-log 'memory-cacher (format "%s: get from cache %s (%s)" (oref task id) key (length caches)))
-            (cadr cache)))))))
-
-(cl-defmethod gts-cache-set ((cacher gts-memory-cacher) task result)
-  (when gts-cache-enable
-    (with-slots (caches expired) cacher
-      (let* ((key (gts-cache-key cacher task))
-             (cache (assoc key caches))
-             (text (oref task text))
-             (etime
-              ;; sentence with shorter expired time, but word with longer.
-              (if (string-match-p "[[:space:]\n]" text)
-                  (+ (time-to-seconds) gts-cache-expired-factor)
-                (+ (time-to-seconds) (* 100 gts-cache-expired-factor)))))
-        (if cache
-            (progn
-              (setf (cadr cache) result)
-              (setf (cddr cache) etime)
-              (gts-do-log 'memory-cacher (format "%s: update cache %s (%s)" (oref task id) key (length caches))))
-          (oset cacher caches (cons (cons key (cons result etime)) caches))
-          (gts-do-log 'memory-cacher (format "%s: add to cache %s (%s)" (oref task id) key (length caches))))
-        (gts-clear-expired cacher)))))
-
-(setq gts-default-cacher (gts-memory-cacher))
-
-
-;;; [Http Client] implement with builtin `url.el'.
-;; This will be used as the default http client.
-
-(defclass gts-url-http-client (gts-http-client) ())
-
-(defcustom gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
-  "The user agent used when send a request."
-  :type 'string
-  :group 'go-translate)
-
-(defvar url-http-end-of-headers)
-
-(cl-defmethod gts-request ((_ gts-url-http-client) url &key done fail data headers)
-  "Request URL with DATA and HEADERS asynchronous.
-Execute DONE when success, or FAIL when failed."
-  (cl-assert (and url done fail))
-  (let ((url-debug gts-debug-p)
-        (url-user-agent gts-user-agent)
-        (url-request-extra-headers headers)
-        (url-request-method (if data "POST" "GET"))
-        (url-request-data data))
-    (url-retrieve url (lambda (status)
-                        (unwind-protect
-                            (if-let ((err (cond
-                                           ((eq (car status) :error) (cadr status))
-                                           ((null url-http-end-of-headers) "Nothing responsed from server"))))
-                                (funcall fail err)
-                              (when done
-                                (delete-region (point-min) url-http-end-of-headers)
-                                (funcall done)))
-                          (kill-buffer)))
-                  nil t)))
-
-(setq gts-default-http-client (gts-url-http-client)) ; use this as default
-
-
 ;;; [Render] buffer render
 
 (defclass gts-buffer-render (gts-render) ())

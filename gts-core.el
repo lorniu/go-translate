@@ -18,7 +18,10 @@
   :group 'external
   :prefix 'gts-)
 
-(defvar gts-debug-p nil)
+(defcustom gts-debug-p nil
+  "Weather enable debuging."
+  :type 'boolean
+  :group 'go-translate)
 
 
 ;;; Utils
@@ -46,6 +49,193 @@
 (defun gts-ensure-plain (o)
   "Return O or the result of its execution."
   (if (functionp o) (funcall o) o))
+
+
+;;; Logging
+
+(defvar gts-log-buffer-name " *gts-logger*"
+  "Log buffer for translation")
+
+(defun gts-log (tag &rest messages)
+  "Log MESSAGES to `gts-log-buffer-name'.
+TAG is a label for message being logged."
+  (declare (indent 1))
+  (when gts-debug-p
+    (cl-flet ((log (tag msg)
+                (with-current-buffer (get-buffer-create gts-log-buffer-name)
+                  (goto-char (point-max))
+                  (if (or (= (length msg) 0) (string= msg "\n"))
+                      (insert "")
+                    (insert
+                     (propertize (cl-subseq (format "%-.1f" (time-to-seconds)) 6) 'face 'gts-logger-buffer-timestamp-face)
+                     " "
+                     (propertize (concat "[" tag "] ") 'face 'gts-logger-buffer-tag-face))
+                    (insert msg))
+                  (insert "\n"))))
+      (cl-loop with ms = nil
+               for message in messages
+               if message do (cl-loop for m in (split-string message "\n") do (push m ms))
+               finally (cl-loop for m in (nreverse ms) do (log (format "%s" tag) m))))))
+
+
+;;; Caching
+
+(defcustom gts-cache-enable t
+  "Weather enable caching the translate result."
+  :type 'boolean
+  :group 'go-translate)
+
+(defcustom gts-cache-expired-factor (* 30 60)
+  "Cache alive time based on this.
+Make word live longer time than sentence."
+  :type 'integer
+  :group 'go-translate)
+
+(defvar gts-default-cacher nil)
+
+(defclass gts-cacher ()
+  ((caches  :initform nil)) ; (key . (str . timestamp))
+  "Used to cache the translate results."
+  :abstract t)
+
+(cl-defgeneric gts-cache-get (cacher task)
+  "Get item for TASK from CACHER."
+  (:method (&rest _)
+           (when gts-cache-enable
+             (error "Make sure `gts-default-cacher' is properly configured. eg:\n
+ (setq gts-default-cacher (gts-memory-cacher))"))))
+
+(cl-defgeneric gts-cache-set (cacher task result)
+  "Add RESULT fro TASK to CACHER."
+  (:method (&rest _)
+           (when gts-cache-enable
+             (error "Make sure `gts-default-cacher' is properly configured. eg:\n
+ (setq gts-default-cacher (gts-memory-cacher))"))))
+
+(cl-defmethod gts-cache-key ((_ gts-cacher) task)
+  (with-slots (text sl tl engine) task
+    (sha1 (format "%s-%s-%s-%s"
+                  text sl tl
+                  (eieio-object-class-name engine)))))
+
+(cl-defmethod gts-clear-expired ((cacher gts-cacher))
+  (with-slots (caches expired) cacher
+    (cl-delete-if (lambda (c) (> (time-to-seconds) (cddr c))) caches)))
+
+(cl-defmethod gts-clear-all ((cacher gts-cacher))
+  (oset cacher caches nil))
+
+;; cache in memory
+
+(defclass gts-memory-cacher (gts-cacher) ()
+  "Cache in the memory.")
+
+(cl-defmethod gts-cache-get ((cacher gts-memory-cacher) task)
+  (when gts-cache-enable
+    (with-slots (caches expired) cacher
+      (let ((key (gts-cache-key cacher task)))
+        (when-let ((cache (assoc key caches)))
+          (when (> (cddr cache) (time-to-seconds))
+            (gts-log 'memory-cacher (format "%s: get from cache %s (%s)" (oref task id) key (length caches)))
+            (cadr cache)))))))
+
+(cl-defmethod gts-cache-set ((cacher gts-memory-cacher) task result)
+  (when gts-cache-enable
+    (with-slots (caches expired) cacher
+      (let* ((key (gts-cache-key cacher task))
+             (cache (assoc key caches))
+             (text (oref task text))
+             (etime
+              ;; sentence with shorter expired time, but word with longer.
+              (if (string-match-p "[[:space:]\n]" text)
+                  (+ (time-to-seconds) gts-cache-expired-factor)
+                (+ (time-to-seconds) (* 100 gts-cache-expired-factor)))))
+        (if cache
+            (progn
+              (setf (cadr cache) result)
+              (setf (cddr cache) etime)
+              (gts-log 'memory-cacher (format "%s: update cache %s (%s)" (oref task id) key (length caches))))
+          (oset cacher caches (cons (cons key (cons result etime)) caches))
+          (gts-log 'memory-cacher (format "%s: add to cache %s (%s)" (oref task id) key (length caches))))
+        (gts-clear-expired cacher)))))
+
+(setq gts-default-cacher (gts-memory-cacher)) ; use this as default
+
+
+;;; Http Client
+
+(defvar gts-default-http-client nil)
+
+(defclass gts-http-client () ()
+  "Used to send a request."
+  :abstract t)
+
+(cl-defgeneric gts-request (http-client &key url done fail data headers)
+  "Use HTTP-CLIENT to request a URL with DATA.
+When success execute CALLBACK, or execute ERRORBACK."
+  (:method (&key url done fail data headers)
+           (if (and gts-default-http-client
+                    (eieio-object-p gts-default-http-client)
+                    (object-of-class-p gts-default-http-client 'gts-http-client))
+               (let ((tag (format "%s" (eieio-object-class-name gts-default-http-client)))
+                     (data (gts-format-params data)))
+                 (gts-log tag
+                   (format "> %s" url)
+                   (if headers (format "> HEADER: %s" headers))
+                   (if data (format "> DATA:   %s" data)))
+                 (gts-request gts-default-http-client
+                              :url url
+                              :headers headers
+                              :data data
+                              :done (lambda ()
+                                      (gts-log tag (format "✓ %s" url))
+                                      (condition-case err
+                                          (funcall done)
+                                        (error
+                                         (gts-log tag (format "Request success but fail in callback! (%s) %s" url err))
+                                         (funcall fail err))))
+                              :fail (lambda (status)
+                                      (gts-log tag (format "Request fail! (%s) %s" url status))
+                                      (funcall fail status))))
+             (funcall fail "Make sure `gts-default-http-client' is available. eg:\n
+ (setq gts-default-http-client (gts-url-http-client))\n\n\n"))))
+
+;; http client implemented using `url.el'
+
+(defclass gts-url-http-client (gts-http-client) ())
+
+(defcustom gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
+  "The user agent used when send a request."
+  :type 'string
+  :group 'go-translate)
+
+(defvar url-http-end-of-headers)
+
+(cl-defmethod gts-request ((_ gts-url-http-client) &key url done fail data headers)
+  "Request URL with DATA and HEADERS asynchronous.
+Execute DONE when success, or FAIL when failed."
+  (cl-assert (and url done fail))
+  (let ((inhibit-message t)
+        (message-log-max nil)
+        (url-debug gts-debug-p)
+        (url-user-agent gts-user-agent)
+        (url-request-extra-headers headers)
+        (url-request-method (if data "POST" "GET"))
+        (url-request-data data))
+    (url-retrieve url (lambda (status)
+                        (unwind-protect
+                            (if-let ((err (cond
+                                           ((eq (car status) :error) (cadr status))
+                                           ((or (null url-http-end-of-headers) (= 1 (point-max)))
+                                            "Nothing responsed from server"))))
+                                (funcall fail err)
+                              (when done
+                                (delete-region (point-min) url-http-end-of-headers)
+                                (funcall done)))
+                          (kill-buffer)))
+                  nil t)))
+
+(setq gts-default-http-client (gts-url-http-client)) ; use this as default
 
 
 ;;; Components
@@ -84,7 +274,6 @@
    (render     :initarg :render     :initform nil)
    (translator :initarg :translator :initform nil)))
 
-
 (defclass gts-picker ()
   ((single   :initarg :single :initform nil)
    (texter   :initarg :texter))
@@ -97,7 +286,6 @@
 Current word under cursor? Selection region? Whole line? Whole buffer? Others?
 You can implements your rules.")
 
-
 (defclass gts-engine ()
   ((tag       :initarg :tag    :documentation "Used to display as name")
    (parser    :initarg :parser :documentation "Used to parse the response result"))
@@ -106,118 +294,7 @@ You can implements your rules.")
 (defclass gts-parser ()
   ((tag  :initarg :tag :initform nil)))
 
-
-(defclass gts-render ()
-  ())
-
-
-;;; Logger
-
-(defclass gts-logger () ()
-  "Used to log the messages."
-  :abstract t)
-
-(cl-defgeneric gts-log (logger tag message)
-  "Used to record the messages.")
-
-(defvar gts-default-logger nil "The default logger.")
-
-(defmacro gts-do-log (tag &rest messages)
-  (declare (indent 1))
-  `(when gts-debug-p
-     (if gts-default-logger
-         (cl-loop with ms = nil
-                  for message in (list ,@messages)
-                  if message do (cl-loop for m in (split-string message "\n") do (push m ms))
-                  finally (cl-loop
-                           for m in (nreverse ms)
-                           do (gts-log gts-default-logger (format "%s" ,tag) m)))
-       (error "Make sure `gts-default-logger' is available. eg:\n
- (setq gts-default-logger (gts-buffer-logger))\n\n\n"))))
-
-
-;;; Cacher
-
-(defclass gts-cacher ()
-  ((caches  :initform nil)) ; (key . (str . timestamp))
-  "Used to cache the translate results."
-  :abstract t)
-
-(defcustom gts-cache-enable t
-  "Enable the cacher if this is t."
-  :type 'boolean
-  :group 'go-translate)
-
-(defcustom gts-cache-expired-factor (* 30 60)
-  "Cache alive time based on this.
-Make word live longer time than sentence."
-  :type 'integer
-  :group 'go-translate)
-
-(defvar gts-default-cacher nil "The default cacher.")
-
-(cl-defgeneric gts-cache-get (cacher task)
-  "Get item for TASK from CACHER.")
-
-(cl-defgeneric gts-cache-set (cacher task result)
-  "Add RESULT fro TASK to CACHER.")
-
-(cl-defmethod gts-cache-key ((_ gts-cacher) task)
-  (with-slots (text sl tl engine) task
-    (sha1 (format "%s-%s-%s-%s"
-                  text sl tl
-                  (eieio-object-class-name engine)))))
-
-(cl-defmethod gts-clear-expired ((cacher gts-cacher))
-  (with-slots (caches expired) cacher
-    (cl-delete-if (lambda (c) (> (time-to-seconds) (cddr c))) caches)))
-
-(cl-defmethod gts-clear-all ((cacher gts-cacher))
-  (oset cacher caches nil))
-
-
-;;; Http Client
-
-(defclass gts-http-client () ()
-  "Used to send a request."
-  :abstract t)
-
-(defvar gts-default-http-client nil
-  "The default http client used to send a request.")
-
-(cl-defgeneric gts-request (http-client url &key done fail data headers)
-  "Use HTTP-CLIENT to request a URL with DATA.
-When success execute CALLBACK, or execute ERRORBACK."
-  (:method (&rest _) (user-error "Method `gts-request' is not implement")))
-
-(cl-defun gts-do-request (url &key done fail data headers)
-  "Helper for `gts-request'.
-DONE is a callback based on the responsed result buffer.
-FAIL is the callback for any error occured in request or parse."
-  (if (and gts-default-http-client
-           (eieio-object-p gts-default-http-client)
-           (object-of-class-p gts-default-http-client 'gts-http-client))
-      (let ((tag (format "%s" (eieio-object-class-name gts-default-http-client)))
-            (data (gts-format-params data)))
-        (gts-do-log tag
-          (format "Start! (%s)" url)
-          (if headers (format "    HEADER: %s" headers))
-          (if data (format "    DATA:   %s" data)))
-        (gts-request gts-default-http-client url
-                     :headers headers
-                     :data data
-                     :done (lambda ()
-                             (gts-do-log tag (format "DONE! (%s)" url))
-                             (condition-case err
-                                 (funcall done)
-                               (error
-                                (gts-do-log tag (format "Request success but fail in callback! (%s) %s" url err))
-                                (funcall fail err))))
-                     :fail (lambda (status)
-                             (gts-do-log tag (format "Request fail! (%s) %s" url status))
-                             (funcall fail status))))
-    (funcall fail "Make sure `gts-default-http-client' is available. eg:\n
- (setq gts-default-http-client (gts-url-http-client))\n\n\n")))
+(defclass gts-render () ())
 
 
 ;;; Picker/Texter
@@ -335,13 +412,13 @@ The NEXT should contain the parse and render logic."
         ;; try cache
         (with-temp-buffer
           (insert cache)
-          (gts-do-log 'render (format "%s: get result from cache!" id))
+          (gts-log 'render (format "%s: get result from cache!" id))
           (funcall next task))
       ;; request from engine
-      (gts-do-log 'next (format "%s: %s prepare to translate" id engine-name))
+      (gts-log 'next (format "%s: %s prepare to translate" id engine-name))
       (cl-call-next-method engine task
                            (lambda (task)
-                             (gts-do-log 'next (format "%s: %s translate success!" id engine-name))
+                             (gts-log 'next (format "%s: %s translate success!" id engine-name))
                              (unless (oref task err)
                                (gts-cache-set gts-default-cacher task (buffer-string)))
                              (funcall next task))))))
@@ -354,9 +431,9 @@ The NEXT should contain the parse and render logic."
 (cl-defgeneric gts-parse (parser task)
   (:documentation "Parse the raw result and update the parsed result into TASK.")
   (:method :before ((_ gts-parser) task)
-           (gts-do-log 'next (format "%s: prepare to parse" (oref task id))))
+           (gts-log 'next (format "%s: prepare to parse" (oref task id))))
   (:method :after ((parser gts-parser) task)
-           (gts-do-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name parser))))
+           (gts-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name parser))))
   (:method ((_ gts-parser) task)
            ;; do nothing
            (cl-values (buffer-string))))
@@ -365,18 +442,16 @@ The NEXT should contain the parse and render logic."
 ;;; Render
 
 (cl-defgeneric gts-pre (render translator)
-  (:documentation "Pre-render before request success.
-Do some preparation for the gts-out.")
-  (:method :after ((_ gts-render) translator)
-           (gts-update-state translator))
+  (:documentation "Pre-render before request success.")
+  (:method :after ((_ gts-render) translator) (gts-update-state translator))
   (:method ((_o gts-render) (_t gts-translator)) ()))
 
 (cl-defgeneric gts-out (render task)
   (:documentation "Render the TASK, default output to *Messages*.")
   (:method :before ((render gts-render) task)
-           (gts-do-log 'next (format "%s: prepare to render" (oref task id))))
+           (gts-log 'next (format "%s: prepare to render" (oref task id))))
   (:method :after ((render gts-render) task)
-           (gts-do-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name render))))
+           (gts-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name render))))
   (:method ((_ gts-render) task)
            (with-slots (err res) task
              (when (and (not err) (listp res))
@@ -403,9 +478,9 @@ Default dispatch to gts-pre when first pre-render.")
 It used only when multiple engines exists.
 Default dispatch to gts-out with all results concated.")
   (:method :before ((render gts-render) task)
-           (gts-do-log 'next (format "%s: prepare to render" (oref task id))))
+           (gts-log 'next (format "%s: prepare to render" (oref task id))))
   (:method :after ((render gts-render) task)
-           (gts-do-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name render))))
+           (gts-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name render))))
   (:method ((render gts-render) task)
            (let ((translator (oref task translator)) results)
              ;; show only when all tasks finished.
@@ -518,7 +593,7 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
     (with-slots (tasks total state) translator
       (when (= state 0)
         (setf tasks (append tasks (list task)))
-        (gts-do-log (format "%d/%d" (length tasks) total id)
+        (gts-log (format "%d/%d" (length tasks) total id)
           (format "add task %s: (%s/%s)" id (eieio-object-class-name engine) (eieio-object-class-name render)))
         (gts-update-state translator)))))
 
@@ -532,29 +607,29 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
     (pcase state
       (0
        (when (= (length (gts-get translator 'tasks)) total)
-         (gts-do-log 'translator "<1> all tasks added")
+         (gts-log 'translator "<1> all tasks added")
          (setf state 1)))
       (1
-       (gts-do-log 'translator
+       (gts-log 'translator
          (format "<2> %s prepared" (eieio-object-class-name (gts-get translator 'render))))
        (setf state 2))
       (2
        (when (= total (length (gts-done-tasks translator)))
-         (gts-do-log 'translator "<3> all result parsed")
+         (gts-log 'translator "<3> all result parsed")
          (setf state 3)))
       (_ (setf state 0)))))
 
 (defun gts-fail (task error)
-  "Render ERROR message and finish the TASK."
+  "Render ERROR message and ternimate the TASK."
   (declare (indent 1))
   (with-slots (translator render err version id) task
     (when (equal version (oref translator version))
-      (setf err error)
+      (setf err (if (listp error) (cadr error) error))
       (gts-update-state translator)
       (if (cdr (gts-get translator 'engines))
           (gts-multi-out render task)
         (gts-out render task)))
-    (gts-do-log 'next (format "%s: ----- error -----\n %s" id error))))
+    (gts-log 'next (format "%s: ----- error -----\n %s" id error))))
 
 (defun gts-next (task)
   (with-slots (res meta engine translator version id) task
@@ -576,7 +651,7 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
                     (gts-multi-out render task)
                   (gts-out render task)))
             (gts-fail task err))
-        (gts-do-log 'next (format "%s: ----- expired -----" id))))))
+        (gts-log 'next (format "%s: ----- expired -----" id))))))
 
 (cl-defmethod gts-translate ((this gts-translator) &optional text path)
   "Fire a translation for THIS translator instance.
@@ -596,7 +671,7 @@ When TEXT and PATH is nil then pick them via `gts-pick'."
         (tls (gts-ensure-list (cdr path)))
         (buf (current-buffer))
         (ver (time-to-seconds)))
-    (gts-do-log 'translator (format "\n\n%s\n%s\n%s" ver path text))
+    (gts-log 'translator (format "\n\n%s\n%s\n%s" ver path text))
     (cl-multiple-value-bind (engines render) (gts-get this 'engines 'render)
       ;; init translator
       (oset this state 0)

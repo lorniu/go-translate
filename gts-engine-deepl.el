@@ -92,18 +92,18 @@ Mainly fill the text to suitable length."
 
 (cl-defmethod gts-translate ((engine gts-deepl-engine) task next)
   (with-slots (text sl tl) task
-    (gts-do-request (gts-deepl-gen-url engine)
-                    :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
-                               ("Authorization"  . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
-                    :data    `(("text"           . ,(gts-deepl-fill-input text))
-                               ("source_lang"    . ,(gts-deepl-get-lang sl))
-                               ("target_lang"    . ,(gts-deepl-get-lang tl)))
-                    :done (lambda () (funcall next task))
-                    :fail (lambda (err)
-                            (gts-fail task
-                              (if (ignore-errors (= (caddar err) 403))
-                                  "[403] http error, make sure your auth_key is correct"
-                                err))))))
+    (gts-request :url (gts-deepl-gen-url engine)
+                 :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
+                            ("Authorization"  . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
+                 :data    `(("text"           . ,(gts-deepl-fill-input text))
+                            ("source_lang"    . ,(gts-deepl-get-lang sl))
+                            ("target_lang"    . ,(gts-deepl-get-lang tl)))
+                 :done (lambda () (funcall next task))
+                 :fail (lambda (err)
+                         (gts-fail task
+                           (if (ignore-errors (= (caddar err) 403))
+                               "[403] http error, make sure your auth_key is correct"
+                             err))))))
 
 
 ;;; Parser

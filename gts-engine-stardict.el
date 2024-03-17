@@ -55,7 +55,7 @@
       (if (string-equal (buffer-substring 1 16) "Nothing similar")
           (progn
             (delete-region (point-min) (point-max))
-            (insert (propertize "No translation result found, sorry :(" 'face 'font-lock-warning-face)))
+            (insert "No translation result found, sorry :("))
         (ansi-color-apply-on-region (point-min) (point-max)))
       (funcall next task))))
 
