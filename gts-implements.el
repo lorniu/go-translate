@@ -1,4 +1,4 @@
-;;; gts-implements.el --- Component implements -*- lexical-binding: t -*-
+;;; gts-implements.el --- Extra components -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
@@ -31,8 +31,8 @@
   (plz (if data 'post 'get) url
     :headers (cons `("User-Agent" . ,gts-user-agent) headers)
     :body data
-    :as 'buffer
-    :then (lambda (_) (unwind-protect (funcall done) (kill-buffer)))
+    :as 'string
+    :then (lambda (str) (with-temp-buffer (insert str) (funcall done)))
     :else (lambda (err) (funcall fail (or (cdr (plz-error-curl-error err))
                                           (plz-error-message err)
                                           (plz-error-response err))))))
@@ -149,7 +149,7 @@ including PATH and other DESC."
 (defun gts-render-buffer-prepare (buffer translator)
   (with-current-buffer (get-buffer-create buffer)
     (let ((inhibit-read-only t)
-          (engines (gts-get translator 'engines)))
+          (engines (gts-with-slots (engines) translator)))
       (with-slots (text path) translator
         ;; setup
         (deactivate-mark)
@@ -169,9 +169,9 @@ including PATH and other DESC."
         (gts-buffer-set-key ("x" "Reverse Path")
           (gts-translate translator text (cons (cdr path) (car path))))
         (gts-buffer-set-key ("M-p" "Prev Path")
-          (gts-translate translator text (gts-next-path (gts-get translator 'picker) text path t)))
+          (gts-translate translator text (gts-next-path (gts-with-slots (picker) translator) text path t)))
         (gts-buffer-set-key ("M-n" "Next Path")
-          (gts-translate translator text (gts-next-path (gts-get translator 'picker) text path)))
+          (gts-translate translator text (gts-next-path (gts-with-slots (picker) translator) text path)))
         (gts-buffer-set-key ("g" "Refresh")
           (gts-translate translator text path))
         (gts-buffer-set-key ("y" "TTS")
@@ -576,6 +576,18 @@ If BACKWARDP is t, then pick the previous one."
     (when (zerop (length (string-trim current-text)))
       (user-error "Text should not be null"))
     (list current-text current-path)))
+
+
+
+(defclass gts-fix-picker (gts-picker)
+  ((text :initarg :text)
+   (tl :initarg :tl)
+   (sl :initarg :sl)))
+
+(cl-defmethod gts-pick ((picker gts-fix-picker))
+  (setq gts-picker-current-picker picker)
+  (with-slots (text tl sl) picker
+    (list text tl sl)))
 
 (provide 'gts-implements)
 
