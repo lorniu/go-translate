@@ -72,12 +72,12 @@
 (cl-defmethod gts-translate ((engine gts-bing-engine) task next)
   (gts-bing-with-token engine
     (lambda ()
-      (with-slots (text sl tl) task
+      (with-slots (text src trg) task
         (with-slots (tld-url sub-url token key ig) engine
           (gts-request :url (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
                        :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                       :data `(("fromLang" . ,(gts-bing-get-lang sl))
-                               ("to"       . ,(gts-bing-get-lang tl))
+                       :data `(("fromLang" . ,(gts-bing-get-lang src))
+                               ("to"       . ,(gts-bing-get-lang trg))
                                ("text"     . ,text)
                                ("key"      . ,key)
                                ("token"    . ,token))
@@ -131,7 +131,7 @@
 
 ;;; Parser
 
-(cl-defmethod gts-parse ((_ gts-bing-parser) task)
+(cl-defmethod gts-parse ((_ gts-bing-parser) _task)
   (set-buffer-multibyte t)
   (decode-coding-region (point-min) (point-max) 'utf-8)
   (goto-char (point-min))

@@ -42,14 +42,13 @@
 
 (defcustom gts-stardict-args '("-n" "-c" "-0" "-1")
   "Arguments passed to command `sdcv'."
-  :type 'list
+  :type '(list string)
   :group 'go-translate)
 
-(cl-defmethod gts-translate ((engine gts-stardict-engine) task next)
+(cl-defmethod gts-translate ((_ gts-stardict-engine) task next)
   (with-temp-buffer
     (require 'ansi-color)
-    (let* ((text (oref task text))
-           (parser (oref engine parser)))
+    (let ((text (oref task text)))
       (apply #'call-process gts-stardict-program nil t nil
              (append gts-stardict-args (list text))) ;--json-output
       (if (string-equal (buffer-substring 1 16) "Nothing similar")

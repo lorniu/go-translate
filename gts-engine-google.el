@@ -34,7 +34,7 @@
 
 (defvar gts-google-request-headers '(("Connection" . "Keep-Alive")))
 
-(defun gts-google-gen-url (engine text sl tl)
+(defun gts-google-gen-url (engine text src trg)
   "Generate the url with TEXT, SL and TL. Return a (url text sl tl) list."
   (format "%s%s?%s"
           (oref engine base-url)
@@ -59,10 +59,10 @@
                        ("srcrom" . "1")
                        ("ssel"   . "0")
                        ("tsel"   . "0")
-                       ("hl"     . ,tl)
-                       ("sl"     . ,sl)
-                       ("tl"     . ,tl)
                        ("q"      . ,text)
+                       ("sl"     . ,src)
+                       ("tl"     . ,trg)
+                       ("hl"     . ,trg)
                        ("tk"     . ,(gts-google-tkk (oref engine token) text)))
                      "&")))
 
@@ -94,8 +94,8 @@
 (cl-defmethod gts-translate ((engine gts-google-engine) task next)
   (gts-google-with-token engine
     (lambda ()
-      (with-slots (text sl tl) task
-        (gts-request :url (gts-google-gen-url engine text sl tl)
+      (with-slots (text src trg) task
+        (gts-request :url (gts-google-gen-url engine text src trg)
                      :headers gts-google-request-headers
                      :done (lambda () (funcall next task))
                      :fail (lambda (err) (gts-fail task err)))))
@@ -149,7 +149,7 @@ Code from `google-translate', maybe improve it someday."
 
 (defun gts-google-tts-gen-urls (engine text lang)
   "Generate the tts urls for TEXT to LANGUAGE."
-  (cl-loop with texts = (gts-google-tts-split-text engine text)
+  (cl-loop with texts = (gts-google-tts-split-text text)
            for total = (length texts)
            for index from 0
            for piece in texts
@@ -206,7 +206,7 @@ Code from `google-translate', maybe improve it someday."
         ;; phonetic & translate
         (if (or details definitions)
             (progn
-              (insert (if suggestionp suggestion (oref (oref task translator) text)))
+              (insert (if suggestionp suggestion (oref task text)))
               (insert (phonetic sphonetic) " ")
               (setq tbeg (point))
               (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))

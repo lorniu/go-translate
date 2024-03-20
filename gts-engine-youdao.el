@@ -27,9 +27,9 @@
    (parser  :initform (gts-youdao-dict-eww-parser))))
 
 (cl-defmethod gts-translate ((engine gts-youdao-dict-engine) task next)
-  (with-slots (text sl tl meta) task
-    (let* ((lang (cond ((string-equal sl "zh") tl)
-                       ((string-equal tl "zh") sl)
+  (with-slots (text src trg meta) task
+    (let* ((lang (cond ((string-equal src "zh") trg)
+                       ((string-equal trg "zh") src)
                        (t (user-error "只支持中文跟其他语言之间的翻译"))))
            (url (format (oref engine url) (url-hexify-string text) (url-hexify-string lang))))
       (setf meta (list :url url))

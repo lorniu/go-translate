@@ -69,18 +69,18 @@ you can customize it according to your country region."
 (cl-defmethod gts-translate ((engine gts-google-rpc-engine) task next)
   (gts-google-rpc-with-token engine
     (lambda (url-tpl)
-      (with-slots (text sl tl) task
+      (with-slots (text src trg) task
         (with-slots (rpc-translate) engine
-          (gts-request :url (funcall url-tpl rpc-translate tl)
+          (gts-request :url (funcall url-tpl rpc-translate trg)
                        :headers gts-google-rpc-request-headers
                        :data (format
                               "f.req=%s&"
                               (url-hexify-string
                                (let ((outer [[[rpcid inner nil "generic"]]])
-                                     (inner [[text sl tl t][nil]]))
+                                     (inner [[text src trg t][nil]]))
                                  (setf (aref (aref inner 0) 0) text)
-                                 (setf (aref (aref inner 0) 1) sl)
-                                 (setf (aref (aref inner 0) 2) tl)
+                                 (setf (aref (aref inner 0) 1) src)
+                                 (setf (aref (aref inner 0) 2) trg)
                                  (setf (aref (aref (aref outer 0) 0) 0) rpc-translate)
                                  (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
                                  (json-encode outer))))

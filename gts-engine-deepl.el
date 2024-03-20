@@ -79,6 +79,9 @@ Mainly fill the text to suitable length."
                                   ("ru" . "RU") ; Russian
                                   ))
 
+(defvar gts-deepl-extra-params '(("split_sentences" . "1")
+                                 ("preserve_formatting" . "1")))
+
 (defun gts-deepl-get-lang (lang)
   (let ((mapping (assoc lang gts-deepl-langs-mapping)))
     (if mapping (cdr mapping)
@@ -91,13 +94,15 @@ Mainly fill the text to suitable length."
     (format "%s%s" (if pro pro-url free-url) sub-url)))
 
 (cl-defmethod gts-translate ((engine gts-deepl-engine) task next)
-  (with-slots (text sl tl) task
+  (with-slots (text src trg) task
+    (setq src (gts-deepl-get-lang src))
     (gts-request :url (gts-deepl-gen-url engine)
-                 :headers `(("Content-Type"   . "application/x-www-form-urlencoded;charset=UTF-8")
-                            ("Authorization"  . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
-                 :data    `(("text"           . ,(gts-deepl-fill-input text))
-                            ("source_lang"    . ,(gts-deepl-get-lang sl))
-                            ("target_lang"    . ,(gts-deepl-get-lang tl)))
+                 :headers `(("Content-Type"    . "application/x-www-form-urlencoded;charset=UTF-8")
+                            ("Authorization"   . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
+                 :data    `(("text"            . ,(gts-deepl-fill-input text))
+                            ("target_lang"     . ,(gts-deepl-get-lang trg))
+                            ,(if src `("source_lang" . ,src))
+                            ,@gts-deepl-extra-params)
                  :done (lambda () (funcall next task))
                  :fail (lambda (err)
                          (gts-fail task
