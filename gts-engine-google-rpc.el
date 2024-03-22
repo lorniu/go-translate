@@ -99,11 +99,12 @@ you can customize it according to your country region."
                             "f.req=%s&"
                             (url-hexify-string
                              (let ((outer [[[rpcid inner nil "generic"]]])
-                                   (inner [text lang nil nil]))
+                                   (inner [text lang "undefined" [1]]))
                                (setf (aref inner 0) text)
                                (setf (aref inner 1) lang)
                                (setf (aref (aref (aref outer 0) 0) 0) rpc-tts)
                                (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
+                               (setq aaa (json-encode outer))
                                (json-encode outer))))
                      :done (lambda ()
                              (let (beg end json code)
@@ -112,13 +113,14 @@ you can customize it according to your country region."
                                (re-search-forward "^\\([0-9]+\\)$")
                                (setq end (- (point) (length (match-string 1))))
                                (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
-                               (when (string= (gts-aref-for json 0 0) "wrb.fr")
-                                 (setq code (aref (json-read-from-string (gts-aref-for json 0 2)) 0))
-                                 (erase-buffer)
-                                 (insert code)
-                                 (base64-decode-region (point-min) (point-max))
-                                 (gts-tts-speak-buffer-data))))
-                     :fail (lambda (err) (user-error "Error when TTS. %s" err)))))
+                               (if-let (data (and (string= (gts-aref-for json 0 0) "wrb.fr") (gts-aref-for json 0 2)))
+                                   (progn (setq code (aref (json-read-from-string data) 0))
+                                          (erase-buffer)
+                                          (insert code)
+                                          (base64-decode-region (point-min) (point-max))
+                                          (gts-tts-speak-buffer-data))
+                                 (message "No tts data responsed."))))
+                     :fail (lambda (err) (user-error "[GoogleRPC-TTS] Error: %s" err)))))
     (lambda (_) (user-error "Error occurred when request for token"))))
 
 

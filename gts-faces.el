@@ -26,24 +26,35 @@
   "Used in the logger buffer timestamp keyword."
   :group 'go-translate-faces)
 
-(defface gts-render-buffer-header-line-lang-face '((t :inherit font-lock-keyword-face))
+(defface gts-render-prefix-face '((t :foreground "grey"))
+  "Used in the buffer's block prefix."
+  :group 'go-translate-faces)
+
+
+;;; Buffer Render
+
+(defface gts-buffer-render-header-lang-face '((t :inherit font-lock-keyword-face))
   "Used in the buffer's header-line-format, sl/tl."
   :group 'go-translate-faces)
 
-(defface gts-render-buffer-header-line-desc-face '((t :inherit font-lock-variable-name-face))
+(defface gts-buffer-render-header-desc-face '((t :inherit font-lock-variable-name-face))
   "Used in the buffer's header-line-format, description."
   :group 'go-translate-faces)
 
-(defface gts-render-buffer-error-face '((t :inherit font-lock-warning-face))
-  "Used in the buffer's error text."
-  :group 'go-translate-faces)
-
-(defface gts-render-buffer-source-face '((t :inherit font-lock-string-face))
+(defface gts-buffer-render-source-face '((t :inherit font-lock-string-face))
   "Used in the buffer's source."
   :group 'go-translate-faces)
 
-(defface gts-render-buffer-me-header-backgroud-face '((t :background "slategray" :foreground "white" :extend t))
-  "Used in the buffer's multiple engine separator."
+(defface gts-buffer-render-inline-prefix-face '((t :inherit font-lock-keyword-face))
+  "Used in the buffer's inline prefix."
+  :group 'go-translate-faces)
+
+(defface gts-buffer-render-error-face '((t :inherit font-lock-warning-face))
+  "Used in the buffer's error text."
+  :group 'go-translate-faces)
+
+(defface gts-buffer-render-loading-face '((t :inherit font-lock-comment-face))
+  "Used in the buffer's loading messaget."
   :group 'go-translate-faces)
 
 
@@ -109,15 +120,6 @@
   "Used in the posframe pip buffer fringe color."
   :type 'string
   :group 'go-translate-faces)
-
-(defface gts-pop-posframe-me-header-face '((t :foreground "grey"))
-  "Used in the posframe pop buffer engine header."
-  :group 'go-translate-faces)
-
-(defface gts-pop-posframe-me-header-2-face '((t (:foreground "#666666" :underline t :extend t)))
-  "Used in the posframe pop buffer engine header."
-  :group 'go-translate-faces)
-
 
 (provide 'gts-faces)
 

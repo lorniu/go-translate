@@ -12,6 +12,7 @@
 (require 'cl-lib)
 (require 'url)
 (require 'json)
+(require 'text-property-search)
 (require 'gts-core)
 (require 'gts-faces)
 
@@ -77,86 +78,79 @@ will force opening in right side window."
   :type 'list
   :group 'go-translate)
 
-(defcustom gts-buffer-render-task-header-function #'gts-buffer-render-task-header
-  "Function used to render the task header when in multiple engines's query."
-  :type 'function
-  :group 'go-translate)
-
 (defvar-local gts-buffer-translator nil)
 (defvar-local gts-buffer-keybinding-messages nil)
 (defvar-local gts-buffer-local-map nil)
 
 (defvar gts-buffer-evil-leading-key "SPC" "Leading key for keybinds in evil mode.")
 
-(cl-defmacro gts-buffer-set-key ((key &optional desc) form)
+(cl-defmacro gts-buffer-key ((key &optional desc test) &rest form)
   "Helper for define KEY in buffer."
   (declare (indent 1))
-  `(let ((fn ,(if (equal 'function (car form)) `,form `(lambda () (interactive) ,form))))
-     (if (bound-and-true-p evil-mode)
-         (evil-define-key* 'normal gts-buffer-local-map (kbd ,(concat gts-buffer-evil-leading-key " " key)) fn)
-       (define-key gts-buffer-local-map (kbd ,key) fn))
-     (when ,desc
-       (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
-       (push (cons ,key ,desc) gts-buffer-keybinding-messages))))
+  `(when ,(or test `,test t)
+     (let ((fn ,(if (equal 'function (caar form)) `,(car form) `(lambda () (interactive) ,@form))))
+       (if (bound-and-true-p evil-mode)
+           (evil-define-key* 'normal gts-buffer-local-map (kbd ,(concat gts-buffer-evil-leading-key " " key)) fn)
+         (define-key gts-buffer-local-map (kbd ,key) fn))
+       (when ,desc
+         (cl-delete ,key gts-buffer-keybinding-messages :key #'car :test #'string=)
+         (push (cons ,key ,desc) gts-buffer-keybinding-messages)))))
 
-(defun gts-buffer-init-header-line (path &optional desc)
-  "Setup header line format.
-It will show the basic information of the translation,
-including PATH and other DESC."
-  (setq header-line-format
-        (list
-         " "
-         "[" (propertize (car path) 'face 'gts-render-buffer-header-line-lang-face) "]"
-         (if desc (concat " ― " (propertize desc 'face 'gts-render-buffer-header-line-desc-face)) "")
-         " → "
-         "[" (propertize (cdr path) 'face 'gts-render-buffer-header-line-lang-face) "]"
-         "   ("
-         (if (bound-and-true-p evil-mode) (concat (propertize gts-buffer-evil-leading-key 'face 'font-lock-type-face) " as leading key, "))
-         (propertize "h" 'face 'font-lock-type-face) " for help)"
-         "          "
-         "Loading...")))
+(defun gts-buffer-bind-local-keys ()
+  (gts-buffer-key ("x" "Reverse")
+    (gts-with-slots (text src trgs) gts-buffer-translator
+      (gts-translate gts-buffer-translator text (car trgs) src)))
+  (gts-buffer-key ("M-p" "Prev Path")
+    (gts-with-slots (text src trgs picker) gts-buffer-translator
+      (gts-translate gts-buffer-translator text (gts-next-path picker text (cons src trgs) t))))
+  (gts-buffer-key ("M-n" "Next Path")
+    (gts-with-slots (text src trgs picker) gts-buffer-translator
+      (gts-translate gts-buffer-translator text (gts-next-path picker text (cons src trgs)))))
+  (gts-buffer-key ("g" "Refresh")
+    (gts-with-slots (text src trgs) gts-buffer-translator
+      (gts-translate gts-buffer-translator text src trgs)))
+  (gts-buffer-key ("y" "TTS")
+    (gts-with-slots (text src) gts-buffer-translator
+      (if-let ((task (get-text-property (point) 'task)))
+          (gts-do-tts text src (oref task engine))
+        (message "[TTS] No engine found at point"))))
+  (gts-buffer-key ("O" "Open Externally")
+    (when-let ((task (get-text-property (point) 'task)))
+      (let* ((meta (oref task meta)) (url (plist-get meta :url)))
+        (cond (url (browse-url url) (message "Opening %s... Done!" url))
+              (t (message "Don't know how to open externally for this."))))))
+  (gts-buffer-key ("C" "Clean Cache")
+    (gts-cache-clear-all gts-default-cacher)
+    (message "Cache cleaned."))
+  (gts-buffer-key ("t" "Toggle-Follow")
+    (setq gts-buffer-follow-p (not gts-buffer-follow-p))
+    (message "Now, buffer following %s." (if gts-buffer-follow-p "allowed" "disabled")))
+  (gts-buffer-key ("q" "Quit")
+    #'kill-buffer-and-window)
+  (gts-buffer-key ("C-g")
+    (unwind-protect
+        (gts-tts-try-interrupt-playing-process)
+      (keyboard-quit)))
+  (gts-buffer-key ("h")
+    (message
+     (mapconcat
+      (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))
+      (reverse gts-buffer-keybinding-messages) " ")))
+  (gts-buffer-key ("C-x C-q")
+    (read-only-mode -1)
+    (use-local-map nil)
+    (local-set-key (kbd "C-x C-q")
+                   (lambda ()
+                     (interactive)
+                     (read-only-mode 1)
+                     (use-local-map gts-buffer-local-map))))
+  (gts-buffer-key ("p") #'previous-line)
+  (gts-buffer-key ("n") #'next-line))
 
-(defun gts-buffer-change-header-line-state (type)
-  "Update header line according TYPE."
-  (cl-case type
-    (done
-     (when (string-equal (car (last header-line-format)) "Loading...")
-       (setq header-line-format (butlast header-line-format))))))
-
-(defun gts-buffer-display-or-focus-buffer (buffer)
-  "Only display the BUFFER, or display and focus."
-  (with-current-buffer buffer
-    (if gts-buffer-follow-p (pop-to-buffer buffer)
-      (display-buffer buffer))))
-
-(defun gts-buffer-ensure-a-blank-line-at-beginning (buffer)
-  "Ensure a blank line at beginning of BUFFER."
-  (with-current-buffer buffer
-    (let ((inhibit-read-only t))
-      (save-excursion
-        (let ((m (mark-marker)))
-          (goto-char (point-min))
-          (unless (equal (char-after) ?\n)
-            (insert "\n"))
-          (when (ignore-errors (= (marker-position m) 1))
-            (set-marker m (point))))
-        (set-buffer-modified-p nil)))))
-
-(defun gts-childframe-of-buffer (&optional buffer)
-  "Get the childframe of BUFFER if it exists, or return nil."
-  (let ((cf (window-frame (get-buffer-window buffer t))))
-    (when (frame-parameter cf 'parent-frame) cf)))
-
-(defun gts-buffer-render-task-header (engine-tag parser-tag)
-  (concat (propertize
-           (format "%s %s\n" engine-tag (if parser-tag (format "(%s) " parser-tag) ""))
-           'face 'gts-render-buffer-me-header-backgroud-face)))
-
-(defun gts-render-buffer-prepare-1 (buffer translator)
+(defun gts-buffer-init (buffer translator)
   (with-current-buffer (get-buffer-create buffer)
-    (let ((inhibit-read-only t)
-          (engines (gts-with-slots (engines) translator)))
-      (with-slots (text src trg) translator
+    (let ((inhibit-read-only t))
+      (gts-with-slots (text src trgs render tasks engines) translator
         ;; setup
         (deactivate-mark)
         (visual-line-mode -1)
@@ -165,242 +159,137 @@ including PATH and other DESC."
         (setq-local cursor-in-non-selected-windows nil)
         (setq-local gts-buffer-translator translator)
         ;; headline
-        (gts-buffer-init-header-line (cons src trg) (unless (cdr engines) (oref (car engines) tag)))
-        ;; source text
+        (gts-buffer-header render translator (unless (cdr engines) (oref (car engines) tag)))
+        ;; body
         (erase-buffer)
-        (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
-        (insert text)
+        (newline)
+        (save-excursion
+          (let ((ret (gts-extract render translator)))
+            (if (cdr text)
+                (cl-loop for c in text
+                         do (insert (propertize c 'face 'gts-buffer-render-source-face) "\n\n")
+                         do (cl-loop for (res prefix _ task) in ret
+                                     for content = (propertize res 'result t)
+                                     for output = (propertize (concat prefix content "\n\n") 'task task)
+                                     do (insert output)))
+              (when (cdr ret)
+                (insert (propertize (string-join text "\n\n") 'face 'gts-buffer-render-source-face) "\n\n"))
+              (cl-loop for (res prefix _ task) in ret
+                       for content = (propertize res 'result t)
+                       for output = (propertize (concat prefix content "\n\n") 'task task)
+                       do (insert output)))))
         ;; keybinds
         (setq gts-buffer-local-map (make-sparse-keymap))
-        (gts-buffer-set-key ("x" "Reverse Path")
-          (gts-translate translator text (cons trg src)))
-        (gts-buffer-set-key ("M-p" "Prev Path")
-          (gts-translate translator text (gts-next-path (gts-with-slots (picker) translator) text (cons src trg) t)))
-        (gts-buffer-set-key ("M-n" "Next Path")
-          (gts-translate translator text (gts-next-path (gts-with-slots (picker) translator) text (cons src trg))))
-        (gts-buffer-set-key ("g" "Refresh")
-          (gts-translate translator text (cons src trg)))
-        (gts-buffer-set-key ("y" "TTS")
-          (if-let ((task (get-text-property (point) 'task)))
-              (gts-do-tts text src (oref task engine))
-            (message "[TTS] No engine found at point")))
-        (gts-buffer-set-key ("O" "Open Externally")
-          (when-let ((task (get-text-property (point) 'task)))
-            (let* ((meta (oref task meta)) (url (plist-get meta :url)))
-              (cond (url (browse-url url) (message "Opening %s... Done!" url))
-                    (t (message "Don't know how to open externally for this."))))))
-        (gts-buffer-set-key ("C" "Clean Cache")
-          (gts-cache-clear-all gts-default-cacher))
-        (gts-buffer-set-key ("t" "Toggle-Follow")
-          (let ((state (if (setq gts-buffer-follow-p (not gts-buffer-follow-p)) "allowed" "disabled")))
-            (message "Now, buffer following %s." state)))
-        (gts-buffer-set-key ("q" "Quit") #'kill-buffer-and-window)
-        (gts-buffer-set-key ("p") #'previous-line)
-        (gts-buffer-set-key ("n") #'next-line)
-        (gts-buffer-set-key ("C-g")
-          (unwind-protect (gts-tts-try-interrupt-playing-process)
-            (keyboard-quit)))
-        (gts-buffer-set-key ("h")
-          (message (mapconcat
-                    (lambda (kd) (concat (propertize (car kd) 'face 'font-lock-keyword-face) ": " (cdr kd)))
-                    (reverse gts-buffer-keybinding-messages) " ")))
-        (gts-buffer-set-key ("C-x C-q")
-          (progn (read-only-mode -1)
-                 (use-local-map nil)
-                 (local-set-key (kbd "C-x C-q")
-                                (lambda ()
-                                  (interactive)
-                                  (read-only-mode 1)
-                                  (use-local-map gts-buffer-local-map)))))
-        (read-only-mode 1)
+        (gts-buffer-bind-local-keys)
         (use-local-map gts-buffer-local-map)
-        ;; execute the hook if exists
-        (run-hooks 'gts-after-buffer-prepared-hook)))))
-
-(defun gts-render-buffer-prepare (buffer translator)
-  (with-current-buffer (get-buffer-create buffer)
-    (let ((inhibit-read-only t))
-      (gts-with-slots (text src trg engines) translator
-        ;; setup
-        (deactivate-mark)
-        (visual-line-mode -1)
-        (font-lock-mode 1)
-        (setq-local cursor-type 'hbar)
-        (setq-local cursor-in-non-selected-windows nil)
-        (setq-local gts-buffer-translator translator)
-        ;; headline
-        ;;(gts-buffer-init-header-line (cons src trg) (unless (cdr engines) (oref (car engines) tag)))
-        ;; source text
-        (erase-buffer)
-        (unless (gts-childframe-of-buffer (current-buffer)) (insert "\n")) ; except childframe
-
-        (if (cdr text)
-            (gts-render-buffer translator)
-          (insert (string-join text "\n\n")))
-
-        ;; keybinds
-
+        ;; state
         (read-only-mode 1)
-        (use-local-map gts-buffer-local-map)
+        (if-let (w (get-buffer-window nil t)) (set-window-point w  (point)))
         ;; execute the hook if exists
-        (run-hooks 'gts-after-buffer-prepared-hook)))))
+        (run-hooks 'gts-buffer-render-init-hook)))))
 
-(defun gts-render-buffer-1 (buffer task)
-  "For single engine translation."
-  (when-let ((inhibit-read-only t)
-             (buf (get-buffer buffer)))
-    (with-current-buffer buf
-      (with-slots (res err meta engine translator) task
-        ;; error
-        (if err
-            (progn
-              (goto-char (point-max))
-              (insert (propertize (format "\n\n%s" err) 'face 'gts-render-buffer-error-face)))
-          (erase-buffer)
-          (cond
-           ;; content (non-split)
-           ((stringp res)
-            (let ((tbeg (plist-get meta :tbeg))
-                  (tend (plist-get meta :tend)))
-              (unless tbeg
-                (insert (propertize (oref translator text) 'face 'gts-render-buffer-source-face) "\n\n"))
-              (unless tbeg (setq tbeg (point)))
-              (insert res)
-              (unless tend (setq tend (point)))
-              ;; try set mark in beginning of the translate result,
-              ;; and set currsor position in end of the translate result,
-              ;; so you can quick select the translate result with C-x C-x.
-              (when (not (gts-childframe-of-buffer buf)) ; when not childframe
-                (push-mark tend 'nomsg)
-                (goto-char tbeg)
-                (set-window-point (get-buffer-window buf t) tbeg))))
-           ;; content (split)
-           (t (cl-loop for idx from 0
-                       for src in text
-                       for tar in res
-                       concat (concat (propertize src 'face 'gts-render-buffer-source-face) "\n\n" tar "\n\n") into parsed
-                       finally (insert parsed)))))
-        ;; update states
-        (set-buffer-modified-p nil)
-        (gts-buffer-change-header-line-state 'done)
-        (put-text-property (point-min) (point-max) 'task task)
-        ;; execute the hook if exists
-        (run-hooks 'gts-after-buffer-render-hook))
-      buf)))
-
-(defun gts-render-buffer-multi-engines (buffer task)
-  "For multiple engines translation."
+(defun gts-buffer-output (buffer translator)
   (when-let ((inhibit-read-only t) (buf (get-buffer buffer)))
-    (with-slots (translator) task
-      (with-slots (text tasks) translator
-        (with-current-buffer buf
-          (erase-buffer)
-          (insert (propertize (format "\n%s\n\n" text) 'face 'gts-render-buffer-source-face))
-          ;; content
-          (save-excursion
-            (dolist (task tasks)
-              (with-slots (res err meta engine) task
-                (let* ((result (if (or err (stringp res))
-                                   res
-                                 (string-join res "\n\n")))
-                       (header (funcall gts-buffer-render-task-header-function
-                                        (oref engine tag)
-                                        (oref (oref engine parser) tag)))
-                       (content (cond
-                                 (err
-                                  (concat header (propertize (format "\n%s\n\n" err) 'face 'gts-render-buffer-error-face)))
-                                 ((string-empty-p result)
-                                  (concat header "\nLoading...\n\n"))
-                                 (t (concat header "\n" (string-trim result) "\n\n")))))
-                  (put-text-property 0 (length content) 'task task content)
-                  (insert content)))))
-          ;; states
-          (set-buffer-modified-p nil)
-          ;; all task parsed
-          (when (= (oref translator state) 3)
-            ;; cursor
-            (unless (gts-childframe-of-buffer buf)
-              (set-window-point (get-buffer-window buf t) (save-excursion (forward-line 2) (point))))
-            ;; state
-            (gts-buffer-change-header-line-state 'done))
-          ;; execute the hook if exists
-          (run-hooks 'gts-after-buffer-multiple-render-hook)
-          buf)))))
-
-(defun gts-render-buffer (translator)
-  (when-let ((inhibit-read-only t)
-             (buf (get-buffer gts-buffer-name)))
     (with-current-buffer buf
       (gts-with-slots (text render tasks) translator
-        (let ((ret (gts-res render translator)))
+        (let ((ret (gts-extract render translator)) bounds prop)
           (save-excursion
-            (erase-buffer)
+            (goto-char (point-min))
+            (while (setq prop (text-property-search-forward 'result t t))
+              (push (cons (set-marker (make-marker) (prop-match-beginning prop))
+                          (set-marker (make-marker) (prop-match-end prop)))
+                    bounds))
+            (setq bounds (nreverse bounds))
+            (goto-char (point-min))
             (if (cdr text)
                 (cl-loop for c in text
                          for i from 0
-                         for pt = (propertize c 'face 'font-lock-comment-face)
-                         do (insert pt "\n\n"
-                                    (cl-loop for (res prefix state trg engine) in ret
-                                             for pc = (if (consp res) (nth i res) res)
-                                             for pp = (if (or (cdr (oref translator trg))
-                                                              (cdr (oref translator engines)))
-                                                          (propertize (format "%s/%s " (oref engine tag) trg)
-                                                                      'face 'font-lock-warning-face))
-                                             concat (concat pp pc "\n\n"))))
-              ;; format
-              (insert "\n" (string-join text "\n\n") "\n\n")
-              (cl-loop for (result prefix) in ret
-                       for pp = (if (cdr ret) (propertize prefix 'face 'gts-pop-posframe-me-header-face))
-                       collect (concat pp (if (stringp result) result (car result))) into results
-                       finally (setq ret results))
-              (insert (string-join ret "\n")))))
+                         do (cl-loop for (res prefix state task) in ret
+                                     for (beg . end) = (pop bounds)
+                                     do (goto-char beg)
+                                     do (when (and state (null (get-char-property (point) 'done)))
+                                          (delete-region beg end)
+                                          (insert (propertize
+                                                   (if (consp res) (nth i res) res)
+                                                   'result t 'done t 'task task)))))
+              (cl-loop for (res prefix state task) in ret
+                       for (beg . end) in bounds
+                       do (goto-char beg)
+                       do (when (and state (null (get-char-property (point) 'done)))
+                            (delete-region beg end)
+                            (insert (propertize
+                                     (if (consp res) (car res) res)
+                                     'result t 'done t 'task task))))))))
+      ;; update states
+      (set-buffer-modified-p nil)
+      ;; execute the hook if exists
+      (run-hooks 'gts-buffer-render-output-hook))
+    buf))
 
-        ;; update states
-        (set-buffer-modified-p nil)
-        (gts-buffer-change-header-line-state 'done)
-        ;;(put-text-property (point-min) (point-max) 'task task)
-        ;; execute the hook if exists
-        (run-hooks 'gts-after-buffer-render-hook))
-      buf)))
+(cl-defmethod gts-buffer-header ((_ gts-buffer-render) translator &optional desc)
+  "Setup header line format for TRANSLATOR."
+  (gts-with-slots (src trgs) translator
+    (setq header-line-format
+          (list
+           " "
+           "[" (propertize src 'face 'gts-buffer-render-header-lang-face) "]"
+           (if desc (concat " ― " (propertize desc 'face 'gts-buffer-render-header-desc-face)) "")
+           " → "
+           "["
+           (mapconcat (lambda (s) (propertize s 'face 'gts-buffer-render-header-lang-face)) trgs ", ")
+           "]"
+           "   ("
+           (if (bound-and-true-p evil-mode) (concat (propertize gts-buffer-evil-leading-key 'face 'font-lock-type-face) " as leading key, "))
+           (propertize "h" 'face 'font-lock-type-face) " for help)"))))
 
-(cl-defmethod gts-pre ((_ gts-buffer-render) translator)
-  ;; init and setup
-  (gts-render-buffer-prepare gts-buffer-name translator)
-  ;; display
+(cl-defmethod gts-init ((_ gts-buffer-render) translator)
+  (gts-buffer-init gts-buffer-name translator)
   (let ((split-width-threshold (or gts-split-width-threshold split-width-threshold)))
     (display-buffer gts-buffer-name gts-buffer-window-config)))
 
-(cl-defmethod gts-res ((render gts-buffer-render) translator)
-  (gts-with-slots (text trg tasks) translator
-    (let (lst (trgs trg))
-      (dolist (task tasks (nreverse lst))
+(cl-defmethod gts-extract ((render gts-buffer-render) translator)
+  (let (lst)
+    (gts-with-slots (text trgs tasks engines) translator
+      (dolist (task tasks (setq lst (nreverse lst)))
         (with-slots (trg err res engine) task
           (let* ((state (if err 'err (if res 'done)))
                  (result (pcase state
-                           ('err err)
+                           ('err (propertize (format "%s" err) 'face 'gts-buffer-render-error-face))
                            ('done (gts-ensure-list res))
-                           (_ "Loading...")))
-                 (prefix (concat "[" (oref engine tag) (if (cdr trgs) (concat "::" trg)) "]" (if (cdr text) "\n" " "))))
-            (push (list result prefix state trg engine) lst)))))))
+                           (_ (propertize "Loading..." 'face 'gts-buffer-render-loading-face))))
+                 (prefix (if (cdr text) ; multi-part
+                             (if (or (cdr trgs) (cdr engines)) ; multi-task
+                                 (concat (propertize (format "%s.%s" (oref engine tag) trg)
+                                                     'face 'gts-buffer-render-inline-prefix-face)
+                                         " "))
+                           (if (or (cdr trgs) (cdr engins)) ; single-part + multi-task
+                               (concat (propertize
+                                        (concat (oref engine tag)
+                                                (if-let (ptag (oref (oref engine parser) tag)) (format "(%s)" ptag) "")
+                                                " " trg "\n")
+                                        'face 'gts-render-prefix-face)
+                                       "\n")))))
+            (push (list result prefix state task trg) lst))))
+      (if (cdr trgs)
+          (apply #'append
+                 (mapcar (lambda (trg) (cl-remove-if-not (lambda (l) (equal (nth 4 l) trg)) lst)) trgs))
+        lst))))
 
 (cl-defmethod gts-output ((_ gts-buffer-render) translator)
-  ;; render & display
-  (when-let ((buf (gts-render-buffer translator)))
-    ;;(gts-buffer-ensure-a-blank-line-at-beginning buf)
+  (when-let ((buf (gts-buffer-output gts-buffer-name translator)))
     (when (= (oref translator state) 3)
-      (gts-buffer-display-or-focus-buffer buf))))
+      (with-current-buffer buf
+        (if gts-buffer-follow-p (pop-to-buffer buf)
+          (display-buffer buf))))))
 
-(cl-defmethod gts-output-1 ((_ gts-buffer-render) translator)
-  ;; render & display
-  (when-let ((buf (gts-render-buffer-multi-engines gts-buffer-name task)))
-    (when (= (oref (oref task translator) state) 3)
-      (gts-buffer-display-or-focus-buffer buf))))
+(cl-defmethod gts-output :after ((_ gts-buffer-render) translator)
+  (when (= (oref translator state) 3) (message "")))
 
 
 ;;; [Render] Child-Frame Render (Popup Mode)
 ;; implements via package Posframe, you should install it before use this
 
-(defclass gts-posframe-pop-render (gts-render)
+(defclass gts-posframe-pop-render (gts-buffer-render)
   ((width       :initarg :width        :initform 100)
    (height      :initarg :height       :initform 15)
    (forecolor   :initarg :forecolor    :initform nil)
@@ -424,12 +313,6 @@ Manually close the frame with `q'.")
 (declare-function posframe-refresh "ext:posframe.el" t t)
 (declare-function posframe-poshandler-frame-top-right-corner "ext:posframe.el" t t)
 
-(defun gts-posframe-init-header-line (src trg)
-  (setq header-line-format
-        (list "[" (propertize src 'face 'gts-render-buffer-header-line-lang-face) "]"
-              " → "
-              "[" (propertize trg 'face 'gts-render-buffer-header-line-lang-face) "]")))
-
 (defun gts-posframe-render-auto-close-handler ()
   "Close the pop-up posframe window."
   (interactive)
@@ -440,11 +323,11 @@ Manually close the frame with `q'.")
     (ignore-errors (posframe-delete gts-posframe-pop-render-buffer))
     (remove-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
 
-(cl-defmethod gts-pre :before ((_ gts-posframe-pop-render) _)
+(cl-defmethod gts-init :before ((_ gts-posframe-pop-render) _)
   (unless (require 'posframe nil t)
     (user-error "To use `gts-posframe-render', you should install and load package `posframe' first")))
 
-(cl-defmethod gts-pre ((render gts-posframe-pop-render) translator)
+(cl-defmethod gts-init ((render gts-posframe-pop-render) translator)
   (with-slots (width height forecolor backcolor padding) render
     (let ((inhibit-read-only t)
           (buf gts-posframe-pop-render-buffer))
@@ -461,15 +344,15 @@ Manually close the frame with `q'.")
                      :position (point)
                      :poshandler gts-posframe-pop-render-poshandler)
       ;; render
-      (gts-render-buffer-prepare buf translator)
+      (gts-buffer-init buf translator)
       (posframe-refresh buf)
       ;; setup
       (with-current-buffer buf
-        (gts-buffer-set-key ("q" "Close") (posframe-delete buf))))))
+        (gts-buffer-key ("q" "Close") (posframe-delete buf))))))
 
-(cl-defmethod gts-out ((_ gts-posframe-pop-render) task)
+(cl-defmethod gts-output ((_ gts-posframe-pop-render) task)
   ;; render & refresh
-  (when-let ((buf (gts-render-buffer gts-posframe-pop-render-buffer task)))
+  (when-let ((buf (gts-buffer-output gts-posframe-pop-render-buffer task)))
     (posframe-refresh buf)
     (add-hook 'post-command-hook #'gts-posframe-render-auto-close-handler)))
 
@@ -497,7 +380,7 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 (defvar gts-posframe-pin-render-frame nil)
 (defvar gts-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)
 
-(cl-defmethod gts-pre ((render gts-posframe-pin-render) translator)
+(cl-defmethod gts-init ((render gts-posframe-pin-render) translator)
   ;; create/show frame
   (if (and (get-buffer gts-posframe-pin-render-buffer) gts-posframe-pin-render-frame)
       (make-frame-visible gts-posframe-pin-render-frame)
@@ -526,21 +409,18 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
     (when-let ((color (or (oref render fri-color) gts-pin-posframe-fringe-color)))
       (set-face-background 'fringe color  gts-posframe-pin-render-frame)))
   ;; render
-  (gts-render-buffer-prepare gts-posframe-pin-render-buffer translator)
-  (gts-buffer-ensure-a-blank-line-at-beginning gts-posframe-pin-render-buffer)
+  (gts-buffer-init gts-posframe-pin-render-buffer translator)
+  ;;(gts-buffer-ensure-a-blank-line-at-beginning gts-posframe-pin-render-buffer)
   ;; setup
   (with-current-buffer gts-posframe-pin-render-buffer
-    (gts-buffer-set-key ("q" "Hide") (posframe-hide gts-posframe-pin-render-buffer))
-    (gts-buffer-set-key ("Q" "Close") (posframe-delete gts-posframe-pin-render-buffer))))
+    (gts-buffer-key ("q" "Hide") (posframe-hide gts-posframe-pin-render-buffer))
+    (gts-buffer-key ("Q" "Close") (posframe-delete gts-posframe-pin-render-buffer))))
 
-(cl-defmethod gts-out ((_ gts-posframe-pin-render) task)
+(cl-defmethod gts-output ((_ gts-posframe-pin-render) task)
   ;; render & refresh
-  (when-let ((buf (gts-render-buffer gts-posframe-pin-render-buffer task)))
-    (gts-buffer-ensure-a-blank-line-at-beginning buf)))
-
-(cl-defmethod gts-multi-out ((_ gts-posframe-pin-render) task)
-  ;; render & refresh
-  (gts-render-buffer-multi-engines gts-posframe-pin-render-buffer task))
+  (when-let ((buf (gts-buffer-output gts-posframe-pin-render-buffer task)))
+    ;;(gts-buffer-ensure-a-blank-line-at-beginning buf)
+    ))
 
 
 ;;; [Render] kill-ring render
@@ -549,7 +429,7 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 (cl-defmethod gts-output ((render gts-kill-ring-render) translator)
   (deactivate-mark)
-  (let ((ret (gts-res render translator)))
+  (let ((ret (gts-extract render translator)))
     ;; break when error
     (when-let (r (cl-find-if (lambda (r) (eq (nth 2 r) 'err)) ret))
       (kill-new "")
@@ -568,13 +448,13 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 (declare-function alert "ext:alert.el" t t)
 
-(cl-defmethod gts-pre :before ((_ gts-alert-render) _)
+(cl-defmethod gts-init :before ((_ gts-alert-render) _)
   (unless (require 'alert nil t)
     (user-error "To use `gts-alert-render', you should install and load package `alert' first")))
 
 (cl-defmethod gts-output ((render gts-alert-render) translator)
   (when (= (oref translator state) 3)
-    (let ((ret (gts-res render translator)))
+    (let ((ret (gts-extract render translator)))
       ;; format
       (cl-loop for (result prefix) in ret
                collect (concat (if (cdr ret) prefix) result) into results
