@@ -34,17 +34,16 @@
            (url (format (oref engine url) (url-hexify-string text) (url-hexify-string lang))))
       (setf meta (list :url url))
       (gts-request :url url
-                   :done (lambda () (funcall next task)) ; html format response
+                   :done (lambda (raw) (funcall next task raw)) ; html format response
                    :fail (lambda (err) (gts-fail task err))))))
 
-(cl-defmethod gts-parse ((_ gts-youdao-dict-eww-parser) task)
-  (let ((meta (oref task meta))
-        (resp (buffer-string)))
+(cl-defmethod gts-parse ((_ gts-youdao-dict-eww-parser) task raw)
+  (let ((meta (oref task meta)))
     (with-temp-buffer
       (let ((buf (current-buffer)))
         (with-temp-buffer
           (require 'eww)
-          (insert "Content-type: text/html; charset=utf-8\n\n" resp)
+          (insert "Content-type: text/html; charset=utf-8\n\n" raw)
           (eww-render nil (plist-get meta :url) nil buf))
         (cl-values (buffer-string) meta)))))
 

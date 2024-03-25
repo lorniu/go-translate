@@ -58,7 +58,7 @@ Check and re-eval some slots for `gts-translator'."
   `(with-slots ,spec-list ,object
      (when (typep ,object 'gts-translator)
        ,@(cl-loop for slot in spec-list
-                  for err = `(user-error "No %s found in current translator" ,slot)
+                  for err = `(user-error "No %s found in current translator" ',slot)
                   when (member `,slot '(text trgs tasks))
                   collect `(setq ,slot (gts-ensure-list ,slot))
                   when (member `,slot '(picker render))
@@ -199,7 +199,8 @@ When success execute DONE, or execute FAIL."
                     (eieio-object-p gts-default-http-client)
                     (object-of-class-p gts-default-http-client 'gts-http-client))
                (let ((tag (format "%s" (eieio-object-class-name gts-default-http-client)))
-                     (data (gts-format-params data)))
+                     (data (gts-format-params data))
+                     (buf (current-buffer)))
                  (gts-log tag
                    (format "> %s" url)
                    (if headers (format "> HEADER: %s" headers))
@@ -208,11 +209,10 @@ When success execute DONE, or execute FAIL."
                               :url url
                               :headers headers
                               :data data
-                              :done (lambda (&rest _)
+                              :done (lambda (raw)
                                       (gts-log tag (format "✓ %s" url))
-                                      (goto-char (point-min))
                                       (condition-case err
-                                          (funcall done)
+                                          (with-current-buffer buf (funcall done raw))
                                         (error
                                          (gts-log tag (format "Request success but fail in callback! (%s) %s" url err))
                                          (funcall fail err))))
@@ -251,8 +251,7 @@ Execute DONE when success, or FAIL when failed."
                                            ((or (null url-http-end-of-headers) (= 1 (point-max)))
                                             "Nothing responsed from server"))))
                                 (funcall fail err)
-                              (delete-region (point-min) url-http-end-of-headers)
-                              (funcall done))
+                              (funcall done (buffer-substring-no-properties url-http-end-of-headers (point-max))))
                           (kill-buffer)))
                   nil t)))
 
@@ -297,13 +296,12 @@ Execute DONE when success, or FAIL when failed."
    (translator :initarg :translator :initform nil)))
 
 (defclass gts-picker ()
-  ((single   :initarg :single :initform nil)
-   (texter   :initarg :texter))
-  "Used to pick the translation source text and sl/tl langs."
-  :abstract t)
+  ((text    :initarg :text)
+   (langs   :initarg :langs)
+   (multip  :initarg :multip))
+  "Used to pick the translation source text and src/trg langs.")
 
-(defclass gts-texter ()
-  ()
+(defclass gts-texter () ()
   "Used to get the initial translation text.
 Current word under cursor? Selection region? Whole line? Whole buffer? Others?
 You can implements your rules.")
@@ -316,7 +314,8 @@ You can implements your rules.")
 (defclass gts-parser ()
   ((tag  :initarg :tag :initform nil)))
 
-(defclass gts-render () ())
+(defclass gts-render ()
+  ((output :initarg :output :initform nil)))
 
 (defconst gts-text-delimiter "314141592926666")
 
@@ -324,7 +323,16 @@ You can implements your rules.")
 ;;; Picker/Texter
 
 (cl-defgeneric gts-pick (picker)
-  "Get the source text and translate sl/tl path from PICKER.")
+  "Get the source text and translate src/trg path from PICKER."
+  (:method (picker)
+           (with-slots (text langs multip) picker
+             (setq langs (gts-ensure-list langs))
+             (cl-values
+              (cond ((functionp text) (funcall text))
+                    ((typep text 'gts-texter) (gts-text text))
+                    (t text))
+              (car langs)
+              (if multip (cdr langs) (cadr langs))))))
 
 (cl-defgeneric gts-path (picker text)
   "Use to get the translation path for TEXT from PICKER.")
@@ -333,6 +341,9 @@ You can implements your rules.")
   "Get the next available path.")
 
 (cl-defgeneric gts-text (texter)
+  "Get the init translation source text via TEXTER.")
+
+(cl-defgeneric gts-preprocessing (texter)
   "Get the init translation source text via TEXTER.")
 
 (defvar gts-picker-last-path nil)
@@ -348,7 +359,7 @@ Or multiple:
 
  (setq gts-translate-list \\='((\"en\" \"zh\") (\"en\" \"fr\")))
 
-The picker will give the translate sl/tl pair according this."
+The picker will give the translate src/trg pair according this."
   :type 'alist
   :group 'go-translate)
 
@@ -422,13 +433,13 @@ Return the first path matching TEXT. If no path matches, return the non-nil
 
 ;;; Parser
 
-(cl-defgeneric gts-parse (parser task)
-  (:documentation "Parse the raw result and update the parsed result into TASK.")
-  (:method :before ((_ gts-parser) task)
+(cl-defgeneric gts-parse (parser task raw)
+  (:documentation "Parse and return the RAW result of TASK.")
+  (:method :before ((_ gts-parser) task _raw)
            (gts-log 'next (format "%s: prepare to parse" (oref task id))))
-  (:method :after ((parser gts-parser) task)
+  (:method :after ((parser gts-parser) task _raw)
            (gts-log 'next (format "%s: %s finished." (oref task id) (eieio-object-class-name parser))))
-  (:method ((_ gts-parser) _task) (cl-values (buffer-string)))) ;; do nothing, just return
+  (:method ((_ gts-parser) _task raw) (cl-values raw))) ;; do nothing, just return
 
 
 ;;; Render
@@ -456,6 +467,11 @@ Return the first path matching TEXT. If no path matches, return the non-nil
 
 (cl-defgeneric gts-output (render translator)
   (:documentation "Render TRANSLATOR with RENDER, called after every task responsed and parsed.")
+  (:method :around ((render gts-render) translator)
+           (with-slots (output) render
+             (if (functionp output)
+                 (funcall output render translator)
+               (cl-call-next-method render translator))))
   (:method ((render gts-render) translator)
            "Output to minibuffer by default."
            ;; output only when all tasks responsed
@@ -565,14 +581,14 @@ If engine failed, then try locally TTS if `gts-tts-try-speak-locally' is set."
          (gts-log 'translator "<3> all result parsed")
          (setf state 3))))))
 
-(defun gts-next (task)
+(defun gts-next (task raw)
   (with-slots (res meta engine translator version id) task
     (gts-with-slots (render engines tasks total state text) translator
       (if (equal version (oref translator version))
           (condition-case err
               ;; parse
               (cl-multiple-value-bind (result info filter)
-                  (gts-parse (oref engine parser) task)
+                  (gts-parse (oref engine parser) task raw)
                 (if info (setf meta (append info meta)))
                 (if filter (setq result (funcall filter result)))
                 (when (and (listp text) (cdr text))
@@ -610,20 +626,19 @@ The NEXT should contain the parse and render logic."
              (engine-name (eieio-object-class-name engine))
              (cache (gts-cache-get gts-default-cacher task)))
         ;; try cache
-        (with-temp-buffer
-          (insert cache)
+        (progn
           (gts-log 'render (format "%s: get result from cache!" id))
-          (funcall next task))
+          (funcall next task cache))
       ;; request from engine
       (gts-log 'next (format "%s: %s prepare to translate" id engine-name))
       (cl-call-next-method engine task
-                           (lambda (task)
+                           (lambda (task raw)
                              (gts-log 'next (format "%s: %s translate success!" id engine-name))
                              ;; set cache
                              (unless (oref task err)
-                               (gts-cache-set gts-default-cacher task (buffer-string)))
+                               (gts-cache-set gts-default-cacher task raw))
                              ;; parse and others
-                             (funcall next task))))))
+                             (funcall next task raw))))))
 
 (cl-defmethod initialize-instance :after ((this gts-translator) &rest _)
   (unless (gts-ensure-plain (oref this render))
@@ -641,7 +656,8 @@ When TEXT, SRC and TRGS is absent then pick them via `gts-pick'."
         gts-current-render (oref this render))
   ;; init input
   (unless text
-    (cl-multiple-value-setq (text src trgs) (gts-pick (gts-with-slots (picker) this))))
+    (gts-with-slots (picker) this
+      (cl-multiple-value-setq (text src trgs) (gts-pick picker))))
   (setq trgs (gts-ensure-list trgs))
   (oset this text text)
   (oset this src src)

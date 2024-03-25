@@ -103,7 +103,8 @@ Mainly fill the text to suitable length."
                             ("target_lang"     . ,(gts-deepl-get-lang trg))
                             ,(if src `("source_lang" . ,src))
                             ,@gts-deepl-extra-params)
-                 :done (lambda () (funcall next task))
+                 :done (lambda (raw)
+                         (funcall next task raw))
                  :fail (lambda (err)
                          (gts-fail task
                            (if (ignore-errors (= (caddar err) 403))
@@ -113,8 +114,8 @@ Mainly fill the text to suitable length."
 
 ;;; Parser
 
-(cl-defmethod gts-parse ((_ gts-deepl-parser) _task)
-  (let* ((json (json-read-from-string (buffer-string)))
+(cl-defmethod gts-parse ((_ gts-deepl-parser) _task raw)
+  (let* ((json (json-read-from-string raw))
          (str (mapconcat (lambda (r) (cdr (cadr r))) (cdar json) "\n"))
          (filter (lambda (parsed)
                    (cl-loop for p in (gts-ensure-list parsed)

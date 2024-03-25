@@ -39,10 +39,8 @@
     :headers (cons `("User-Agent" . ,gts-user-agent) headers)
     :body data
     :as 'string
-    :then (lambda (str)
-            (with-temp-buffer
-              (insert str)
-              (funcall done)))
+    :then (lambda (raw)
+            (funcall done raw))
     :else (lambda (err)
             (funcall fail (or (plz-error-message err)
                               (when-let (cr (plz-error-curl-error err))
@@ -320,7 +318,7 @@ When current-prefix is not nil, speak the source text instead of text under poin
           (let* ((state (if err 'err (if res 'done)))
                  (result (pcase state
                            ('err (propertize (format "%s" err) 'face 'gts-buffer-render-error-face))
-                           ('done (gts-ensure-list res))
+                           ('done (mapcar #'string-trim (gts-ensure-list res)))
                            (_ (propertize "Loading..." 'face 'gts-buffer-render-loading-face))))
                  (prefix (if (cdr text) ; multi-part
                              (if (or (cdr trgs) (cdr engines)) ; multi-task

@@ -81,14 +81,17 @@
         (funcall done)
       (gts-request :url base-url
                    :headers gts-google-request-headers
-                   :done (lambda ()
-                           (let ((tk (progn
-                                       (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
-                                       (cons (string-to-number (match-string 1))
-                                             (string-to-number (match-string 2))))))
-                             (setf token tk)
-                             (setf token-time (current-time))
-                             (funcall done)))
+                   :done (lambda (raw)
+                           (with-temp-buffer
+                             (insert raw)
+                             (goto-char (point-min))
+                             (let ((tk (progn
+                                         (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                                         (cons (string-to-number (match-string 1))
+                                               (string-to-number (match-string 2))))))
+                               (setf token tk)
+                               (setf token-time (current-time))
+                               (funcall done))))
                    :fail fail))))
 
 (cl-defmethod gts-translate ((engine gts-google-engine) task next)
@@ -97,7 +100,7 @@
       (with-slots (text src trg) task
         (gts-request :url (gts-google-gen-url engine text src trg)
                      :headers gts-google-request-headers
-                     :done (lambda () (funcall next task))
+                     :done (lambda (raw) (funcall next task raw))
                      :fail (lambda (err) (gts-fail task err)))))
     (lambda (err)
       (gts-fail task
@@ -183,8 +186,8 @@ Code from `google-translate', maybe improve it someday."
 
 ;; detail-mode, use as default
 
-(cl-defmethod gts-parse ((parser gts-google-parser) task)
-  (let* ((json        (gts-resp-to-json parser (buffer-string)))
+(cl-defmethod gts-parse ((parser gts-google-parser) task raw)
+  (let* ((json        (gts-resp-to-json parser raw))
          (brief       (gts-result--brief parser json))
          (sphonetic   (gts-result--sphonetic parser json))
          (tphonetic   (gts-result--tphonetic parser json))
@@ -247,8 +250,8 @@ Code from `google-translate', maybe improve it someday."
 
 ;; summary-mode
 
-(cl-defmethod gts-parse ((parser gts-google-summary-parser) task)
-  (let* ((json (gts-resp-to-json parser (buffer-string)))
+(cl-defmethod gts-parse ((parser gts-google-summary-parser) _task raw)
+  (let* ((json (gts-resp-to-json parser raw))
          (result (string-trim (gts-result--brief parser json))))
     (cl-values result)))
 
