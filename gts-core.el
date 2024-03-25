@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2021 lorniu <lorniu@gmail.com>
 ;; SPDX-License-Identifier: MIT
+;; Package-Requires: ((emacs "27.1"))
 
 ;;; Commentary:
 
@@ -69,8 +70,7 @@ Check and re-eval some slots for `gts-translator'."
 
 ;;; Logging
 
-(defvar gts-log-buffer-name "*gts-logger*"
-  "Log buffer for translation")
+(defvar gts-log-buffer-name "*gts-logger*" "Log buffer for translation")
 
 (defun gts-log (tag &rest messages)
   "Log MESSAGES to `gts-log-buffer-name'.
@@ -193,7 +193,7 @@ Make word live longer time than sentence."
 
 (cl-defgeneric gts-request (http-client &key url done fail data headers)
   "Use HTTP-CLIENT to request a URL with DATA.
-When success execute CALLBACK, or execute ERRORBACK."
+When success execute DONE, or execute FAIL."
   (:method (&key url done fail data headers)
            (if (and gts-default-http-client
                     (eieio-object-p gts-default-http-client)
@@ -318,7 +318,7 @@ You can implements your rules.")
 
 (defclass gts-render () ())
 
-(defconst gts-text-delimiter "3458a7612321z123")
+(defconst gts-text-delimiter "314141592926666")
 
 
 ;;; Picker/Texter
@@ -452,7 +452,7 @@ Return the first path matching TEXT. If no path matches, return the non-nil
                                     ('done (string-join (gts-ensure-list res) "\n"))
                                     (_ "Loading")))
                           (prefix (concat "[" (oref engine tag) (if (cdr trgs) (concat "::" trg)) "]" (if (cdr text) "\n" " "))))
-                     (push (list result prefix state trg engine) lst))))))))
+                     (push (list result prefix task state) lst))))))))
 
 (cl-defgeneric gts-output (render translator)
   (:documentation "Render TRANSLATOR with RENDER, called after every task responsed and parsed.")
@@ -462,9 +462,9 @@ Return the first path matching TEXT. If no path matches, return the non-nil
            (when (= (oref translator state) 3)
              (let ((ret (gts-extract render translator)))
                ;; format
-               (cl-loop for (result prefix) in ret
+               (cl-loop for (res prefix) in ret
                         for pp = (if (cdr ret) (propertize prefix 'face 'gts-render-prefix-face))
-                        collect (concat pp result) into results
+                        collect (concat pp res) into results
                         finally (setq ret results))
                ;; output
                (message "\n↓↓↓ Translate Result ↓↓↓\n")
@@ -631,9 +631,9 @@ The NEXT should contain the parse and render logic."
   (unless (gts-ensure-plain (oref this picker))
     (oset this picker (gts-noprompt-picker))))
 
-(cl-defmethod gts-translate ((this gts-translator) &optional text src trg)
+(cl-defmethod gts-translate ((this gts-translator) &optional text src trgs)
   "Fire a translation for THIS translator instance.
-When TEXT, SRC and TRG is absent then pick them via `gts-pick'."
+When TEXT, SRC and TRGS is absent then pick them via `gts-pick'."
   ;; dynamic
   (setq gts-current-command this-command
         gts-current-picker (oref this picker)
@@ -642,7 +642,7 @@ When TEXT, SRC and TRG is absent then pick them via `gts-pick'."
   ;; init input
   (unless text
     (cl-multiple-value-setq (text src trgs) (gts-pick (gts-with-slots (picker) this))))
-  (setq trgs (ensure-list trgs))
+  (setq trgs (gts-ensure-list trgs))
   (oset this text text)
   (oset this src src)
   (oset this trgs trgs)

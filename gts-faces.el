@@ -34,14 +34,14 @@
 ;;; Buffer Render
 
 (defface gts-buffer-render-header-lang-face '((t :inherit font-lock-keyword-face))
-  "Used in the buffer's header-line-format, sl/tl."
+  "Used in the buffer's `header-line-format' for langs."
   :group 'go-translate-faces)
 
 (defface gts-buffer-render-header-desc-face '((t :inherit font-lock-variable-name-face))
-  "Used in the buffer's header-line-format, description."
+  "Used in the buffer's `header-line-format' for description."
   :group 'go-translate-faces)
 
-(defface gts-buffer-render-source-face '((t :inherit font-lock-string-face))
+(defface gts-buffer-render-source-face '((t :inherit font-lock-doc-face))
   "Used in the buffer's source."
   :group 'go-translate-faces)
 
@@ -49,7 +49,11 @@
   "Used in the buffer's inline prefix."
   :group 'go-translate-faces)
 
-(defface gts-buffer-render-error-face '((t :inherit font-lock-warning-face))
+(defface gts-buffer-render-block-prefix-face '((t :background "slategray" :foreground "white" :extend t))
+  "Used in the buffer's block prefix."
+  :group 'go-translate-faces)
+
+(defface gts-buffer-render-error-face '((t :weight bold :inherit font-lock-comment-face))
   "Used in the buffer's error text."
   :group 'go-translate-faces)
 

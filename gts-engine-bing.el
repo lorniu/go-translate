@@ -88,7 +88,7 @@
                                         "[429] Too many requests! Please retry later")
                                        (t err))))))))
     (lambda (err)
-      (gts-fail task (format "Error occurred when request for token.\n\n%s" err)))))
+      (gts-fail task (format "Take token failed, %s" err)))))
 
 
 ;;; TTS
@@ -106,6 +106,7 @@
       (format tts-tpl l l n (encode-coding-string text 'utf-8)))))
 
 (cl-defmethod gts-tts ((engine gts-bing-engine) text lang)
+  (message "Requesting from bing.com...")
   (gts-bing-with-token engine
     (lambda ()
       (with-slots (tld-url sub-url token key ig parser ttsk-url tts-url tts-tpl) engine
@@ -123,10 +124,9 @@
                                                        ("authorization" . ,(format "Bearer %s" token))
                                                        ("x-microsoft-outputformat" . "audio-16khz-32kbitrate-mono-mp3"))
                                             :done (lambda () (gts-tts-speak-buffer-data))
-                                            :fail (lambda (_)
-                                                    (user-error "[BING-TTS] error when play sound")))))
-                     :fail (lambda (err) (user-error "%s" err)))))
-    (lambda (_) (user-error "Failed to get token"))))
+                                            :fail (lambda (err) (message "[BING-TTS] error when try to play: %s" err)))))
+                     :fail (lambda (err) (message "[BING-TTS] error in request, %s" err)))))
+    (lambda (err) (message "[BING-TTS] Failed to get token (%s)" err))))
 
 
 ;;; Parser

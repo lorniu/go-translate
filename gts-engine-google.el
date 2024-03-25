@@ -35,7 +35,7 @@
 (defvar gts-google-request-headers '(("Connection" . "Keep-Alive")))
 
 (defun gts-google-gen-url (engine text src trg)
-  "Generate the url with TEXT, SL and TL. Return a (url text sl tl) list."
+  "Generate url for google ENGINE with TEXT, SRC and TRG."
   (format "%s%s?%s"
           (oref engine base-url)
           (oref engine sub-url)
@@ -101,7 +101,7 @@
                      :fail (lambda (err) (gts-fail task err)))))
     (lambda (err)
       (gts-fail task
-        (format "Error when fetching Token-Key, check your network and proxy, or retry later\n\n%s" err)))))
+        (format "Take token failed, %s" err)))))
 
 ;; tts
 
@@ -148,7 +148,7 @@ Code from `google-translate', maybe improve it someday."
     (reverse result)))
 
 (defun gts-google-tts-gen-urls (engine text lang)
-  "Generate the tts urls for TEXT to LANGUAGE."
+  "Generate the tts urls for TEXT to LANG with ENGINE."
   (cl-loop with texts = (gts-google-tts-split-text text)
            for total = (length texts)
            for index from 0
@@ -191,7 +191,7 @@ Code from `google-translate', maybe improve it someday."
          (details     (gts-result--details parser json))
          (definitions (gts-result--definitions parser json))
          (suggestion  (gts-result--suggestion parser json))
-         (suggestionp (> (length suggestion) 0)) tbeg tend)
+         (suggestionp (> (length suggestion) 0)) sp)
     (cl-flet ((phonetic (ph)
                 (if (and (or definitions definitions) (> (length ph) 0))
                     (propertize (format " [%s]" ph) 'face 'gts-google-buffer-phonetic-face)
@@ -206,11 +206,12 @@ Code from `google-translate', maybe improve it someday."
         ;; phonetic & translate
         (if (or details definitions)
             (progn
-              (insert (if suggestionp suggestion (oref task text)))
+              (insert (if suggestionp
+                          suggestion
+                        (setq sp (point))
+                        (oref task text)))
               (insert (phonetic sphonetic) " ")
-              (setq tbeg (point))
               (insert (propertize brief 'face 'gts-google-buffer-brief-result-face))
-              (setq tend (point))
               (insert (phonetic tphonetic) "\n\n"))
           (insert brief))
         ;; details
@@ -242,14 +243,14 @@ Code from `google-translate', maybe improve it someday."
                                    (propertize (or eg "") 'face 'gts-google-buffer-detail-demo-face))
                                do (insert "\n"))))
         ;; at last, fill and return
-        (cl-values (buffer-string) (list :tbeg tbeg :tend tend))))))
+        (cl-values (buffer-string) (list :sp sp))))))
 
 ;; summary-mode
 
 (cl-defmethod gts-parse ((parser gts-google-summary-parser) task)
   (let* ((json (gts-resp-to-json parser (buffer-string)))
          (result (string-trim (gts-result--brief parser json))))
-    (cl-values result (list :tbeg 1 :tend (+ 1 (length result))))))
+    (cl-values result)))
 
 ;; Extract results from response
 
@@ -395,9 +396,7 @@ D is an integer."
   a)
 
 (defun gts-google-tkk (token text)
-  "Calculate the Token for search TEXT.
-
-It will use the tkk from Google translate page."
+  "Calculate the TOKEN for search TEXT."
   (let* ((b (car token))
          (d1 (cdr token))
          (ub "+-3^+b+-f")

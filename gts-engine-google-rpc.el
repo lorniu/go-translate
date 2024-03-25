@@ -87,9 +87,10 @@ you can customize it according to your country region."
                        :done (lambda () (funcall next task))
                        :fail (lambda (err) (gts-fail task err))))))
     (lambda (err)
-      (gts-fail task (format "Error occurred when request for token.\n\n%s" err)))))
+      (gts-fail task (format "Take token failed, %s" err)))))
 
 (cl-defmethod gts-tts ((engine gts-google-rpc-engine) text lang)
+  (message "Requesting google.com...")
   (gts-google-rpc-with-token engine
     (lambda (url-tpl)
       (with-slots (rpc-tts) engine
@@ -119,9 +120,9 @@ you can customize it according to your country region."
                                           (insert code)
                                           (base64-decode-region (point-min) (point-max))
                                           (gts-tts-speak-buffer-data))
-                                 (message "No tts data responsed."))))
-                     :fail (lambda (err) (user-error "[GoogleRPC-TTS] Error: %s" err)))))
-    (lambda (_) (user-error "Error occurred when request for token"))))
+                                 (message "[GoogleRPC-TTS] No tts data responsed"))))
+                     :fail (lambda (err) (message "[GoogleRPC-TTS] Error, %s" err)))))
+    (lambda (err) (message "[GoogleRPC-TTS] Take token failed, %s" err))))
 
 
 ;;; Parser
