@@ -492,12 +492,12 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
   (deactivate-mark)
   (let ((ret (gts-extract render translator)))
     ;; break when error
-    (when-let (r (cl-find-if (lambda (r) (eq (nth 3 r) 'err)) ret))
+    (when-let (r (cl-find-if (lambda (r) (= (plist-get r :state) 1)) ret))
       (kill-new "")
-      (error "%s" (car r)))
+      (error "%s" (plist-get r :result)))
     ;; output only when all tasks responsed
     (when (= (oref translator state) 3)
-      (kill-new (mapconcat #'car ret "\n\n"))
+      (kill-new (mapconcat (lambda (r) (string-join (plist-get r :result) "\n")) ret "\n\n"))
       (message "Result already in the kill ring."))))
 
 
@@ -515,14 +515,15 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 
 (cl-defmethod gts-output ((render gts-alert-render) translator)
   (when (= (oref translator state) 3)
-    (let ((ret (gts-extract render translator)))
+    (let ((ret (gts-extract render translator)) lst)
       ;; format
-      (cl-loop for (result prefix) in ret
-               collect (concat (if (cadr ret) prefix) result) into results
-               finally (setq ret results))
+      (dolist (tr ret)
+        (let ((prefix (if (cdr ret) (plist-get tr :prefix)))
+              (result (string-join (gts-ensure-list (plist-get tr :result)) "\n")))
+          (push (concat prefix result) lst)))
       ;; output
-      (message "")
-      (apply #'alert (string-join ret "\n") :title "*Go-Translate*" gts-alert-args))))
+      (apply #'alert (string-join (nreverse lst) "\n") :title "*Go-Translate*" gts-alert-args)
+      (message ""))))
 
 
 ;;; [Texter] take current-at-point-or-selection as source text

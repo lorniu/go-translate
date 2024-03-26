@@ -120,7 +120,7 @@ you can customize it according to your country region."
                                  (re-search-forward "^\\([0-9]+\\)$")
                                  (setq end (- (point) (length (match-string 1))))
                                  (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
-                                 (if-let (data (and (string= (gts-aref-for json 0 0) "wrb.fr") (gts-aref-for json 0 2)))
+                                 (if-let (data (and (string= (gts-aref json 0 0) "wrb.fr") (gts-aref json 0 2)))
                                      (progn (setq code (aref (json-read-from-string data) 0))
                                             (erase-buffer)
                                             (insert code)
@@ -162,21 +162,21 @@ you can customize it according to your country region."
      (if (ignore-errors (aref item 2))
          (format " %s" (aref item 0))
        (aref item 0)))
-   (gts-aref-for json 1 0 0 5)
+   (gts-aref json 1 0 0 5)
    ""))
 
 (cl-defmethod gts-result--sphonetic ((_ gts-google-rpc-parser) json)
   "Get the text phonetic from JSON."
-  (gts-aref-for json 0 0))
+  (gts-aref json 0 0))
 
 (cl-defmethod gts-result--tphonetic ((_ gts-google-rpc-parser) json)
   "Get the translation phonetic from JSON."
-  (gts-aref-for json 1 0 0 1))
+  (gts-aref json 1 0 0 1))
 
 (cl-defmethod gts-result--details ((_ gts-google-rpc-parser) json)
   "Get the details from JSON.
 Result style: ((noun (a (x y z))) (verb (b (m n o))))."
-  (cl-loop with dts = (ignore-errors (gts-aref-for json 3 5 0))
+  (cl-loop with dts = (ignore-errors (gts-aref json 3 5 0))
            for i across dts
            collect
            (cons
@@ -190,7 +190,7 @@ Result style: ((noun (a (x y z))) (verb (b (m n o))))."
 (cl-defmethod gts-result--definitions ((_ gts-google-rpc-parser) json)
   "Get the definitions from JSON.
 Result style: ((noun (a b)) (verb (c d)))."
-  (cl-loop with defs = (ignore-errors (gts-aref-for json 3 1 0))
+  (cl-loop with defs = (ignore-errors (gts-aref json 3 1 0))
            for i across defs
            collect
            (cons
@@ -203,7 +203,7 @@ Result style: ((noun (a b)) (verb (c d)))."
 (cl-defmethod gts-result--suggestion ((_ gts-google-rpc-parser) json)
   "Get the suggestion from JSON."
   (ignore-errors
-    (replace-regexp-in-string "<b>\\|</b>\\|<i>\\|</i>" "" (gts-aref-for json 0 1 0 0 1))))
+    (replace-regexp-in-string "<b>\\|</b>\\|<i>\\|</i>" "" (gts-aref json 0 1 0 0 1))))
 
 
 (provide 'gts-engine-google-rpc)

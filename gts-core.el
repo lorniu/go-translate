@@ -27,11 +27,16 @@
 
 ;;; Utils
 
-(defun gts-aref-for (vector &rest ns)
+(defun gts-aref (vector &rest ns)
   "Recursively find the element in VECTOR. NS is indexes, as the path."
   (while ns
     (setq vector (aref vector (pop ns))))
   vector)
+
+(defmacro gts-orefs (instance &rest slots)
+  "Get all the SLOTS in INSTANCE as a list."
+  `(list ,@(cl-loop for slot in slots
+                    collect `(slot-value ,instance ',slot))))
 
 (defun gts-format-params (data)
   "Format DATA to k=v style query string.
@@ -445,46 +450,49 @@ Return the first path matching TEXT. If no path matches, return the non-nil
 ;;; Render
 
 (cl-defgeneric gts-init (render translator)
-  (:documentation "Initialize for TRANSLATOR with RENDER.")
+  (:documentation "Initialize the RENDER for TRANSLATOR.")
   (:method :before ((_ gts-render) _translator) (message "Processing..."))
   (:method :after  ((_ gts-render)  translator) (gts-update-state translator))
   (:method ((_ gts-render) _translator) nil))
 
 (cl-defgeneric gts-extract (render translator)
-  (:documentation "Extract the responses of TRANSLATOR for RENDER.")
+  (:documentation "Extract TRANSLATOR's responses that to be consumed by RENDER.")
   (:method ((_ gts-render) translator)
-           (let (lst)
-             (gts-with-slots (text trgs tasks) translator
-               (dolist (task tasks (nreverse lst))
-                 (with-slots (trg err res engine) task
-                   (let* ((state (if err 'err (if res 'done)))
-                          (result (pcase state
-                                    ('err err)
-                                    ('done (string-join (gts-ensure-list res) "\n"))
-                                    (_ "Loading")))
-                          (prefix (concat "[" (oref engine tag) (if (cdr trgs) (concat "::" trg)) "]" (if (cdr text) "\n" " "))))
-                     (push (list result prefix task state) lst))))))))
+           (gts-with-slots (text trgs tasks) translator
+             (cl-loop for task in tasks
+                      for (src trg res err engine) = (gts-orefs task src trg res err engine)
+                      for prefix = (concat "[" (oref engine tag) (if (cdr trgs) (concat "::" trg)) "]" (if (cdr text) "\n" " "))
+                      for state = (if err 1 (if res 2 0))
+                      for result = (pcase state (0 "Loading...") (1 err) (2 (mapcar #'string-trim (gts-ensure-list res))))
+                      collect (list :text text
+                                    :result result
+                                    :prefix prefix
+                                    :state state
+                                    :src src
+                                    :trg trg
+                                    :engine engine
+                                    :task task)))))
 
 (cl-defgeneric gts-output (render translator)
-  (:documentation "Render TRANSLATOR with RENDER, called after every task responsed and parsed.")
+  (:documentation "Output result of TRANSLATOR with RENDER, called after every task parsed.")
   (:method :around ((render gts-render) translator)
            (with-slots (output) render
-             (if (functionp output)
-                 (funcall output render translator)
-               (cl-call-next-method render translator))))
+             (funcall (if (functionp output) output #'cl-call-next-method) render translator)))
   (:method ((render gts-render) translator)
            "Output to minibuffer by default."
-           ;; output only when all tasks responsed
-           (when (= (oref translator state) 3)
-             (let ((ret (gts-extract render translator)))
+           ;; only when all tasks responsed
+           (when (= 3 (oref translator state))
+             (let ((ret (gts-extract render translator)) lst)
                ;; format
-               (cl-loop for (res prefix) in ret
-                        for pp = (if (cdr ret) (propertize prefix 'face 'gts-render-prefix-face))
-                        collect (concat pp res) into results
-                        finally (setq ret results))
+               (dolist (tr ret)
+                 (cl-destructuring-bind (&key result prefix &allow-other-keys) tr
+                   (push (concat
+                          (if (cdr ret) (propertize prefix 'face 'gts-render-prefix-face)) ; prefix
+                          (if (consp result) (string-join result "\n") result))            ; content
+                         lst)))
                ;; output
                (message "\n↓↓↓ Translate Result ↓↓↓\n")
-               (message "%s" (string-join ret "\n"))))))
+               (message "%s" (string-join (nreverse lst) "\n"))))))
 
 
 ;;; TTS
@@ -675,7 +683,10 @@ When TEXT, SRC and TRGS is absent then pick them via `gts-pick'."
       (cl-loop for engine in engines
                do (cl-loop for trg in trgs
                            for task = (gts-task
-                                       :text text
+                                       :text (let ((lst (gts-ensure-list text)))
+                                               (if (consp (car lst))
+                                                   (mapcar (lambda (bd) (buffer-substring-no-properties (car bd) (cdr bd))) lst)
+                                                 lst))
                                        :src src
                                        :trg trg
                                        :engine engine
