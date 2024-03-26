@@ -464,12 +464,9 @@ Return the first path matching TEXT. If no path matches, return the non-nil
                       for prefix = (concat "[" (oref engine tag) (if (cdr trgs) (concat "::" trg)) "]" (if (cdr text) "\n" " "))
                       for state = (if err 1 (if res 2 0))
                       for result = (pcase state (0 "Loading...") (1 err) (2 (mapcar #'string-trim (gts-ensure-list res))))
-                      collect (list :text text
-                                    :result result
+                      collect (list :result result
                                     :prefix prefix
                                     :state state
-                                    :src src
-                                    :trg trg
                                     :engine engine
                                     :task task)))))
 
@@ -480,19 +477,16 @@ Return the first path matching TEXT. If no path matches, return the non-nil
              (funcall (if (functionp output) output #'cl-call-next-method) render translator)))
   (:method ((render gts-render) translator)
            "Output to minibuffer by default."
-           ;; only when all tasks responsed
            (when (= 3 (oref translator state))
-             (let ((ret (gts-extract render translator)) lst)
-               ;; format
-               (dolist (tr ret)
-                 (cl-destructuring-bind (&key result prefix &allow-other-keys) tr
-                   (push (concat
-                          (if (cdr ret) (propertize prefix 'face 'gts-render-prefix-face)) ; prefix
-                          (if (consp result) (string-join result "\n") result))            ; content
-                         lst)))
-               ;; output
+             (let* ((ret (gts-extract render translator))
+                    (lst (cl-loop for tr in ret
+                                  for result = (plist-get tr :result)
+                                  for prefix = (plist-get tr :prefix)
+                                  collect (concat
+                                           (if (cdr ret) (propertize prefix 'face 'gts-render-prefix-face))
+                                           (if (consp result) (string-join result "\n") result)))))
                (message "\n↓↓↓ Translate Result ↓↓↓\n")
-               (message "%s" (string-join (nreverse lst) "\n"))))))
+               (message "%s" (string-join lst "\n"))))))
 
 
 ;;; TTS
@@ -666,6 +660,7 @@ When TEXT, SRC and TRGS is absent then pick them via `gts-pick'."
   (unless text
     (gts-with-slots (picker) this
       (cl-multiple-value-setq (text src trgs) (gts-pick picker))))
+  (setq text (gts-ensure-list text))
   (setq trgs (gts-ensure-list trgs))
   (oset this text text)
   (oset this src src)
@@ -683,10 +678,8 @@ When TEXT, SRC and TRGS is absent then pick them via `gts-pick'."
       (cl-loop for engine in engines
                do (cl-loop for trg in trgs
                            for task = (gts-task
-                                       :text (let ((lst (gts-ensure-list text)))
-                                               (if (consp (car lst))
-                                                   (mapcar (lambda (bd) (buffer-substring-no-properties (car bd) (cdr bd))) lst)
-                                                 lst))
+                                       :text (if (stringp (car text)) text
+                                               (mapcar (lambda (bd) (buffer-substring-no-properties (car bd) (cdr bd))) text))
                                        :src src
                                        :trg trg
                                        :engine engine

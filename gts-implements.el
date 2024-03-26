@@ -501,6 +501,60 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
       (message "Result already in the kill ring."))))
 
 
+;;; [Render] overlay-in-current-buffer render
+
+(defclass gts-overlay-render (gts-render)
+  ((dest :initarg :dest :initform nil))) ; help-echo after replace
+
+(defvar gts-overlay-close-string (propertize " [x] " 'face 'font-lock-comment-face))
+
+(defun gts-overlay-delete-current ()
+  "Delete translate overlays under point."
+  (interactive)
+  (cl-flet ((ovs (p) (cl-remove-if-not
+                      (lambda (ov)
+                        (eq (overlay-get ov 'type) 'gts))
+                      (overlays-at p))))
+    (mapc #'delete-overlay (or (ovs (point)) (ovs (- (point) 1))))))
+
+(cl-defmethod gts-output ((render gts-overlay-render) translator)
+  (gts-with-slots (state text trgs) translator
+    (unless (consp (car text))
+      (user-error "%s only works when source are position bounds in buffer" (eieio-object-class-name render)))
+    (when (= 3 state)
+      ;; clean
+      (dolist (ov (apply #'overlays-in
+                         (if (use-region-p)
+                             (list (region-beginning) (region-end))
+                           (list (point-min) (point-max)))))
+        (if (eq (overlay-get ov 'type) 'gts) (delete-overlay ov)))
+      ;; output
+      (cl-loop with ret = (gts-extract render translator)
+               with dest = (let ((dest (oref render dest))
+                                 (dests '(help-echo replace after)))
+                             (unless (member dest dests)
+                               (setq dest (intern (completing-read "Show with overlay at position: " dests nil t))))
+                             dest)
+               for (beg . end) in text for i from 0
+               for rs = (cl-loop for tr in ret
+                                 for prefix = (if (cdr ret) (plist-get tr :prefix))
+                                 for result = (plist-get tr :result)
+                                 for pp = (if (consp result) (propertize (nth i result) 'face 'gts-overlay-result-face) result)
+                                 collect (concat prefix pp) into lst
+                                 finally (return (string-join lst "\n")))
+               for ov = (make-overlay beg end)
+               do (overlay-put ov 'type 'gts)
+               do (if (eq dest 'help-echo)
+                      (overlay-put ov 'help-echo rs)
+                    (let* ((map (make-sparse-keymap))
+                           (close (propertize gts-overlay-close-string 'keymap map 'mouse-face t)))
+                      (define-key map (kbd "<mouse-1>") #'gts-overlay-delete-current)
+                      (if (eq dest 'replace)
+                          (overlay-put ov 'display (concat rs " " close))
+                        (overlay-put ov 'after-string (concat "\n\n" rs close)))))
+               do (message "ok.")))))
+
+
 ;;; [Render] Alert Render
 
 (defclass gts-alert-render (gts-render) ())

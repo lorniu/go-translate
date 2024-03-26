@@ -125,6 +125,13 @@
   :type 'string
   :group 'go-translate-faces)
 
+
+;;; Overlay Render
+
+(defface gts-overlay-result-face '((t :inherit font-lock-doc-face))
+  "Used in the overy's result."
+  :group 'go-translate-faces)
+
 (provide 'gts-faces)
 
 ;;; gts-faces.el ends here
