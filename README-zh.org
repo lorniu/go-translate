@@ -1,0 +1,544 @@
+* Go Translate
+
+这是一个翻译框架，其主要特点是高度可配置性和高度可扩展性。
+
+作为一个翻译框架，它有很多优点:
+- 支持多种翻译引擎，比如 Bing, Google, DeepL, 有道词典, StarDict 等
+- 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等
+- 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
+- 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
+- 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好
+- 基于 eieio (CLOS) 实现，各种组件，允许用户灵活搭配、自由扩展
+
+当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意需要进行文本转换的场合 (Text to Text)，比如 ChatGPT 等。
+  
+** 基本使用
+
+首先，需要通过 MELPA 或者其他途径下载并加载本包。
+
+对于最基本的使用，添加如下代码到配置文件:
+#+begin_src emacs-lisp
+  (setq gt-langs '(en zh))
+  (setq gt-default-translator (gt-translator :engines (gt-google-engine)))
+
+  ;; 上述配置的意思是，初始化默认翻译器，让其在 en 和 zh 之间通过 Google 进行翻译，
+  ;; 结果将显示在 Echo Area 中
+#+end_src
+
+然后选中某段文本，执行命令 =gt-do-translate= 即可。
+
+当然，也可以为翻译器指定更多选项，比如:
+#+begin_src emacs-lisp
+  (setq gt-default-translator
+        (gt-translator
+         :taker   (gt-taker :text 'buffer :pick 'paragraph)  ; 配置拾取器
+         :engines (list (gt-bing-engine) (gt-google-engine)) ; 指定多引擎
+         :render  (gt-buffer-render)))                       ; 配置渲染器
+
+  ;; 上述配置的意思是，初始化默认翻译器，让其将当前 buffer 中的所有段落交给 DeepL 和 Google 进行翻译，
+  ;; 并将结果通过一个新的 Buffer 渲染出来
+#+end_src
+
+除了通过 =gt-default-translator= 设定默认翻译器，也可以通过 =gt-preset-translators= 配置若干预设翻译器。
+如果 =gt-default-translator= 为 nil，那么 =gt-preset-translators= 中的第一个将会被作为默认翻译器。
+
+定义预设翻译器的语法如下:
+#+begin_src emacs-lisp
+  (setq gt-preset-translators
+        `((ts-1 . ,(gt-translator
+                    :taker (gt-taker :langs '(en zh) :text 'word)
+                    :engines (gt-bing-engine)
+                    :render (gt-overlay-render)))
+          (ts-2 . ,(gt-translator
+                    :taker (gt-taker :langs '(en fr ru) :text 'sentence)
+                    :engines (gt-google-engine)
+                    :render (gt-insert-render)))
+          (ts-3 . ,(gt-translator
+                    :taker (gt-taker :langs '(en zh) :text 'buffer
+                                     :pick 'word :pick-pred (lambda (w) (length> w 6)))
+                    :engines (gt-google-engine)
+                    :render (gt-overlay-render :type 'help-echo)))))
+#+end_src
+
+上面预设了三个翻译器：
+- *ts-1*: 使用 Bing 在 en 和 zh 间进行翻译，翻译的是光标附近的单词或选中的文本，结果将以 overlay 的方式显示在当前位置
+- *ts-2*: 使用 Google 在 en, fr 和 ru 间进行翻译，翻译的是光标附近的句子或选中的文本，结果将插入当前 buffer
+- *ts-3*: 使用 Google 翻译 buffer 中所有长度大于 6 的单词，将鼠标放到被翻译的单词上后，翻译结果将以 popup 方式显示
+
+随后就可以通过命令 =gt-do-translate= 进行翻译，并可通过 =gt-do-setup= 在不同翻译器间进行切换。
+
+#+begin_quote
+*强烈建议:*
+
+安装 curl 程序和 [[https://github.com/alphapapa/plz.el][plz.el]] 包。之后请求将会通过 curl 进行发送，效果比内置的 url.el 好很多!
+#+end_quote
+
+请通过 =M-x customize-group go-translate= 查看更多配置选项，通过阅读之后的章节了解更多配置细节。
+
+** 更多配置
+
+翻译框架最核心的组件是翻译器，即 =gt-translator=, 它主要包含如下组件:
+- =gt-taker= 组件: 用来捕获用户的输入，包括文本和要翻译的语言
+- =gt-engine= 组件: 用于将 taker 捕获的内容翻译成对应的目标文本
+- =gt-render= 组件: 用于将 engine 翻译的结果聚合起来，并输出到用户
+
+翻译的基本流程 =[输入] -> [翻译/转换] -> [输出]=, 分别对应以上 =[Taker] -> [Engine] -> [Render]= 三种组件。
+对翻译器执行 =gt-start= 方法，就会按照基本流程完成一次完整的翻译。
+
+因此，配置的实质就是创建一个翻译器实例，并按需求为其指定不同的组件:
+#+begin_src emacs-lisp
+  ;; 通过 :taker :engines 和 :render 指定组件; 通过 gt-start 方法执行翻译
+  (gt-start (gt-translator :taker ... :engines ... :render ...))
+
+  ;; gt-do-translate 命令使用 gt-default-translator 指向的翻译器执行翻译任务
+  (setq gt-default-translator (gt-translator :taker ... :engines ... :render ..))
+  (call-interactively #'gt-do-translate)
+#+end_src
+
+因此，完善配置之前，需要对组件进行进一步了解。
+
+*** 用于捕获输入的 =gt-taker= 组件
+
+| slot      | 介绍                         | 值                                                                                  |
+|-----------+------------------------------+-------------------------------------------------------------------------------------|
+| text      | 初始文本                     | 字符串或返回字符串的一个函数，也可以是 'buffer 'word 'paragraph 'sentence 等 symbol |
+| langs     | 要翻译的语言                 | 列表，比如 '(en zh), '(en ru it fr)，如果为空，则采用变量 gt-langs 的值             |
+| prompt    | 交互式确认                   | 如果为 t 则通过 Minibuffer 确认，如果为 'buffer 则通过打开一个新 buffer 进行确认    |
+| pick      | 从文本中挑选段落、句子或单词 | 进行挑选的函数，或者 'word 'paragraph 'sentence 等 symbol                           |
+| pick-pred | 用于过滤 pick 到的文字       | 传入字符串，输出布尔类型                                                            |
+| then      | take 之后要执行的逻辑，钩子  | 一个以当前 translator 为参数的函数。可以对 take 到的内容进行最后一步修改            |
+
+当前只内置了一个 Taker 实现，它可以适用大多数场景:
+: 通过 text 决定初始文本，通过 langs 判定翻译语言，通过 prompt 进行确认，通过 pick 从中摘取某些段落、句子或单词
+
+如果没有为翻译器指定 Taker 或指定了 Taker 但缺乏选项，将使用下面变量的值作为默认选项:
+#+begin_src emacs-lisp
+  (setq gt-langs '(en zh))        ; 默认的翻译语言，至少要指定两个语言
+  (setq gt-taker-text 'word)      ; 默认情况下，初始文本是光标下的单词。如果有文本选中，优先使用选中文本
+  (setq gt-taker-pick 'paragraph) ; 默认情况下，会按照段落标准分割初始文本。如果不想使用多段翻译，将其设置为 nil
+  (setq gt-taker-prompt nil)      ; 默认情况下，没有 prompt 步骤。如果需要，将其设置为 t 或 'buffer
+#+end_src
+
+使用 =:taker= 显式为翻译器指定 Taker。比如，下面创建的 Taker 跟上述的配置是一致的:
+#+begin_src emacs-lisp
+  (gt-translator :taker (gt-taker))
+  (gt-translator :taker (gt-taker :langs '(en zh) :text 'word :pick 'paragraph :prompt nil))
+  (gt-translator :taker (lambda () (gt-taker))) ; 可以是一个函数
+#+end_src
+
+Taker 将使用 =text= 决定初始翻译内容。如果当前有文本被选中，则选中的文本被采用。否则使用下面规则:
+#+begin_src emacs-lisp
+  ;; 如果是 symbol 使用 thing-at-thing 的逻辑决定初始文本
+  (gt-translator :taker (gt-taker :text 'word))      ; 当前单词 (默认值)
+  (gt-translator :taker (gt-taker :text 'buffer))    ; 当前 buffer 的内容
+  (gt-translator :taker (gt-taker :text 'paragraph)) ; 当前段落的内容
+  (gt-translator :taker (gt-taker :text t))          ; 交互式选中一个 symbol，之后根据 symbol 选取
+
+  ;; 如果是一个字符串或返回字符串的函数，则以其作为初始文本
+  (gt-translator :taker (gt-taker :text "hello world"))                        ; 固定文本
+  (gt-translator :taker (gt-taker :text (lambda () (buffer-substring 10 15)))) ; 函数返回值，字符串
+  (gt-translator :taker (gt-taker :text (lambda () '((10 . 15)))))             ; 函数返回值，bounds
+#+end_src
+
+Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rules= 里的规则进行判定和选取:
+#+begin_src emacs-lisp
+  (gt-translator :taker (gt-taker :langs '(en zh)))    ; 在中、英之间进行翻译
+  (gt-translator :taker (gt-taker :langs '(en zh ru))) ; 在中、英、俄之间进行翻译
+  (setq gt-polyglot-p t) ; 如果将此变量设置为 t，那么将进行多语言翻译，即一次翻译成多语言并聚合输出
+#+end_src
+
+通过设定 =prompt= 让用户对初始文本和翻译语言进行交互式修改和确认:
+#+begin_src emacs-lisp
+  ;; 通过 Minibuffer 的方式进行确认。集成了一些快捷键，不仅可以修改文本，也可以切换语言
+  (gt-translator :taker (gt-taker :prompt t))
+
+  ;; 通过打开新 Buffer 的方式进行确认。在某些场合，通过新 Buffer 进行某些调整工作是更合适的
+  (gt-translator :taker (gt-taker :prompt 'buffer))
+#+end_src
+
+最后，会根据 =pick= 和 =pick-pred= 对初始文本进行切割和提取。它返回的内容才是最终要被翻译的:
+#+begin_src emacs-lisp
+  ;; pick 可以是类似于 text 的 symbol
+  (gt-translator :taker (gt-taker ; 翻译整个 buffer 中所有段落
+                         :text 'buffer
+                         :pick 'paragraph))
+  (gt-translator :taker (gt-taker ; 翻译当前段落中长度大于 6 的单词
+                         :text 'paragraph
+                         :pick 'word :pick-pred (lambda (w) (length> w 6))))
+
+  ;; pick 也可以是一个函数。下面例子等同于上面，翻译当前段落中长度大于 6 的单词
+  ;; 也可以实现更复杂、更智能的选取逻辑。比如，只选取生词进行翻译
+  (defun my-get-words-length>-6 (text)
+    (cl-remove-if-not (lambda (bd) (> (- (cdr bd) (car bd)) 6))
+                      (gt-pick-items-from-text text 'word)))
+  (gt-translator :taker (gt-taker :text 'paragraph :pick #'my-get-words-length>-6))
+#+end_src
+
+*** 用于翻译转换的 =gt-engine= 组件
+
+| slot      | 介绍                          | 值                                                                                    |
+|-----------+-------------------------------+---------------------------------------------------------------------------------------|
+| parse     | 指定解析器                    | 解析器或函数                                                                          |
+| cache     | 配置缓存                      | 如果设为 nil 则为当前 engine 禁用缓存。也可以为不同 engine 指定不同 cacher 或缓存策略 |
+| if        | 过滤                          | 函数或字面量表达式，用于根据输入的内容决定当前 engine 是否参与当前翻译任务            |
+| delimiter | 分隔符                        | 如果不为空，则采取「连接-翻译-分割」的翻译策略                                        |
+| then      | engine 完成后执行的逻辑，钩子 | 一个以当前 task 为参数的函数。可以用于在渲染之前对返回的内容进行最后一步修改          |
+
+内置的 Engine 实现有:
+- =gt-engine-deepl=, DeepL 翻译
+- =gt-engine-bing=, 微软翻译
+- =gt-engine-google/gt-engine-google-rpc=, Google 翻译
+- =gt-engine-youdao=, 有道翻译
+- =gt-engine-stardict=, StarDict，离线翻译
+
+通过 =:engines= 为翻译器指定引擎。一个翻译器可以有一个或多个引擎，也可以指定一个返回引擎列表的函数:
+#+begin_src emacs-lisp
+  (gt-translator :engines (gt-google-engine))
+  (gt-translator :engines (list (gt-google-engine) (gt-deepl-engine)))
+  (gt-translator :engines (lambda () (gt-google-engine)))
+#+end_src
+
+若引擎存在多个解析器，则可以通过 =parse= 指定某个从而实现特定解析，比如:
+#+begin_src emacs-lisp
+  (gt-translator
+   :engines (list (gt-google-engine :parse (gt-google-parser))           ; 详细结果
+                  (gt-google-engine :parse (gt-google-summary-parser)))) ; 简约结果
+#+end_src
+
+可以通过 =if= 为不同引擎指定不同翻译任务，比如：
+#+begin_src emacs-lisp
+  (gt-translator
+   :engines (list (gt-google-engine :if 'word)                      ; 只有当翻译内容为单词时启用
+                  (gt-bing-engine :if '(and not-word parts))        ; 只有翻译内容不是单词且是多个段落时启用
+                  (gt-deepl-engine :if 'not-word :cache nil)        ; 只有翻译内容不是单词时启用; 不缓存
+                  (gt-youdao-dict-engine :if '(or src:zh tgt:zh)))) ; 只有翻译中文时启用
+#+end_src
+
+可以通过 =cache= 为不同引擎指定不同的缓存策略:
+#+begin_src emacs-lisp
+  (gt-translator
+   :engines (list (gt-youdao-dict-engine)       ; 默认缓存机制
+                  (gt-google-engine :cache nil) ; 禁用缓存
+                  (gt-bing-engine :cache 'word) ; 只缓存单词
+                  (gt-deepl-engine :cache (gt-xxx-cacher)))) ; 指定其他缓存器
+#+end_src
+
+需要网络的引擎都派生自 =gt-web-engine=, 可以通过 =hc= 让它们通过不同的 Http Client 发送请求:
+#+begin_src emacs-lisp
+  (gt-translator
+   :engines (list (gt-google-engine)                          ; 使用默认 http client
+                  (gt-bing-engine :hc (gt-plz-http-client)))) ; 使用指定的 http client
+#+end_src
+
+#+begin_quote
+*注意:*
+
+如果是多段落或多单词翻译，默认将会采取:
+1. 先将翻译的内容连成一个字符串，
+2. 通过一次翻译得到结果，
+3. 之后再将结果分割开来的翻译策略。
+
+这时传递给 Engine 翻译的文本是一个单独的字符串。
+
+如果将 delimiter 设定为 nil 那么传递给 Engine 的将是一个字符串列表，这时将需要 Engine 有处理列表的能力。
+#+end_quote
+
+*** 用于渲染输出的 =gt-render= 组件
+
+| slot   | 介绍                       | 值                                                                            |
+|--------+----------------------------+-------------------------------------------------------------------------------|
+| prefix | 定制输出中的 Prefix 内容   | 函数或字符串。定制 Prefix 显示格式。Prefix 是输出结果中的语言、引擎提示的文本 |
+| then   | 渲染完成后执行的逻辑，钩子 | 函数或另一个渲染器。可以将渲染任务传递给下一个渲染器，实现多渲染器输出的效果  |
+
+内置的 Render 实现有:
+- =gt-render=, 默认实现，会将结果输出到 Echo Area
+- =gt-buffer-render=, 打开一个在新 Buffer 来渲染结果 (*推荐使用*)
+- =gt-posframe-pop-render=, 在当前位置打开一个 childframe 弹窗来渲染结果
+- =gt-posframe-pin-render=, 使用屏幕固定位置的 childframe 窗口来渲染结果
+- =gt-insert-render=, 将翻译结果插入到当前 buffer，可设定插入的位置、样式等
+- =gt-overlay-render=, 将翻译结果通过 Overlay 的方式进行显示，可设定显示的位置、样式等
+- =gt-kill-ring-render=, 将翻译结果保存到 Kill Ring 中
+- =gt-alert-render=, 借助 [[https://github.com/jwiegley/alert][alert]] 包将结果显示为系统消息
+
+通过 =:render= 为翻译器配置渲染器。可以通过 =:then= 将多个渲染器串起来搭配使用:
+#+begin_src emacs-lisp
+  (gt-translator :render (gt-alert-render))
+  (gt-translator :render (gt-alert-render :then (gt-kill-ring-render))) ; 以系统消息方式展示，并保存进 kill-ring
+  (gt-translator :render (lambda () (if buffer-read-only (gt-buffer-render) (gt-insert-render)))) ; 可以指定函数
+#+end_src
+
+** 常用组件/补充说明
+*** gt-taker
+
+如果通过 minibuffer 进行 prompt，那么在 minibuffer 中存在如下快捷键:
+- =C-n= 和 =C-p= 切换语言
+- =C-l= 清空输入
+- =C-g= 取消翻译
+
+如果通过 buffer 进行 prompt，那么在打开的 buffer 中默认存在如下快捷键:
+- =C-c C-c= 提交修改，进行翻译
+- =C-c C-k= 取消翻译
+- 也可以切换语言、切换组件，通过 mode-line 获取更多信息
+
+*** gt-memory-cacher
+
+这是内置的缓存实现，功能简单直接。只需要将 =gt-cache-p= 设置为 t 即可使用。
+
+可以通过 =gt-default-cacher= 对缓存进行配置或切换其他缓存实现:
+#+begin_src emacs-lisp
+  (setq gt-default-cacher (gt-memory-cacher :if 'word)) ; 只缓存单词
+  (setq gt-default-cacher (gt-memory-cacher :if '(or word not-src:zh))) ; 只缓存单词和非中文翻译
+  (setq gt-default-cacher (gt-xxxxxx-cacher)) ; 使用其他缓存实现
+#+end_src
+
+要关闭缓存，可以将总开关 =gt-cache-p= 设为 nil，也可以单独关闭某引擎的缓存:
+#+begin_src emacs-lisp
+  (gt-translator :engines (gt-google-engine :cache nil))
+#+end_src
+
+#+begin_quote
+可以通过扩展将翻译结果缓存进文件、SQLite 或 Redis 等。但感觉没必要。
+#+end_quote
+
+*** gt-plz-http-client
+
+某些引擎需要通过网络获取翻译结果，这需要借助 =gt-http-client= 组件进行网络处理。
+
+默认情况下网络是通过 url.el 处理的 (=gt-url-http-client=)，效率很低。这个组件实现了通过 curl 进行 http 请求的目的，效果比 url.el 好很多。
+
+确保系统内已经安装了 curl 程序，其次从 melpa 安装 [[https://github.com/alphapapa/plz.el][plz]] 包。如果检测到 curl 和 plz 都存在，组件 =gt-plz-http-client= 将成为默认请求器。
+
+如果想让 =gt-plz-http-client= 走代理，这样设置:
+#+begin_src emacs-lisp
+  (setq gt-default-http-client
+        (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
+#+end_src
+
+结合 =gt-web-engine= 的 =hc= 选项，可以只让部分引擎走代理:
+#+begin_src emacs-lisp
+  (setq my-hc-1 (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
+  (gt-translator :engines (list (gt-bing-engine)                ; 使用默认 http client
+                                (gt-youdao-dict-engine :hc (gt-plz-http-client)) ; 不走代理
+                                (gt-google-engine :hc my-hc-1)  ; 走代理
+                                (gt-deepl-engine :hc my-hc-1))) ; 走代理
+#+end_src
+
+*** gt-deepl-engine
+
+DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取。
+
+然后，可以通过下列方法对 auth-key 进行设置:
+
+1. 在 engine 定义中直接指定:
+
+   #+begin_example
+   (gt-translator :engines (gt-deepl-engine :auth-key "***"))
+   #+end_example
+
+2. 将 auth-key 存进系统的 =.authinfo= 文件中:
+
+   #+begin_example
+   machine api.deepl.com login auth-key password ***
+   #+end_example
+
+*** gt-buffer-render
+
+打开一个新的 buffer 来展示翻译结果。这是非常通用的一种展示结果的方式。
+
+在弹出的 buffer 中，存在若干快捷键 (可以通过 =?= 获取到相关提示)，比如:
+- 通过 =t= 切换语言
+- 通过 =T= 切换多语言模式
+- 通过 =y= 进行语音播报
+- 通过 =C= 清除缓存
+- 通过 =g= 刷新
+- 通过 =q= 退出
+
+可以通过 =buffer-name/window-config/split-threshold= 等对弹出的窗口进行设定:
+#+begin_src emacs-lisp
+  (gt-translator :render (gt-buffer-render
+                          :buffer-name "abc"
+                          :window-config '((display-buffer-at-bottom))
+                          :then (lambda (_) (pop-to-buffer "abc"))))
+#+end_src
+
+下面是若干使用示例:
+#+begin_src emacs-lisp
+  ;; 捕获光标下的单词或选区，使用 Google 翻译单词，使用 DeepL 翻译句子，使用 Buffer 展示结果
+  ;; 这是非常通用的一种配置方式
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :langs '(en zh) :text 'word)
+         :engines (list (gt-google-engine :if 'word) (gt-deepl-engine :if 'not-word))
+         :render (gt-buffer-render)))
+
+  ;; 封装了一个命令，用于将 Buffer 中的多个段落翻译为多种语言，并渲染到新的 Buffer 中
+  ;; 这主要展示了命令的封装，以及多引擎多段落多语言的聚合显示效果
+  (defun demo-translate-multiple-langs-and-multiple-parts ()
+    (interactive)
+    (let ((gt-polyglot-p t)
+          (translator (gt-translator
+                       :taker (gt-taker :langs '(en zh ru ja) :text 'buffer :pick 'paragraph)
+                       :engines (list (gt-google-engine) (gt-deepl-engine))
+                       :render (gt-buffer-render))))
+      (gt-start translator)))
+#+end_src
+
+*** gt-posframe-pop-render/gt-posframe-pin-render
+
+需要安装 [[https://github.com/tumashu/posframe][posframe]] 之后才能使用。
+
+这两个 Render 的效果跟 =gt-buffer-render= 类似，只不过它的窗口是浮动的。
+快捷键也是一致的，比如 =q= 表示退出。
+
+*** gt-insert-render
+
+将翻译结果插入到当前 buffer。
+
+可以指定如下类型 (=type=):
+- =after=, 默认类型，将结果插入到光标之后
+- =replace=, 用翻译结果替换被翻译的源文本
+
+如果对默认的输出格式和样式不满意，可以通过如下选项进行调整:
+- =sface=, 翻译完成后，被翻译的源文本的 face
+- =rfmt=, 翻译结果的输出格式
+- =rface=, 为翻译结果指定特定样式
+
+选项 =rfmt= 是一个包含控制字符 =%s= 的字符串，也可以是一个函数:
+#+begin_src emacs-lisp
+  ;; %s 是翻译结果的占位符
+  (gt-insert-render :rfmt " [%s]")
+  ;; 一个参数，传入的是翻译结果字符串
+  (gt-insert-render :rfmt (lambda (res) (concat " [" res "]")))
+  ;; 两个参数，则第一个是源文本
+  (gt-insert-render :rfmt (lambda (stext res)
+                            (if (length< stext 3)
+                                (concat "\n" res)
+                              (propertize res 'face 'font-lock-warning-face)))
+                    :rface 'font-lock-doc-face)
+#+end_src
+
+下面是若干使用示例:
+#+begin_src emacs-lisp
+  ;; 按段落进行翻译，将每一段翻译的结果，插入到段落后面
+  ;; 这种配置适合文章的翻译工作。基本流程是: 翻译 -> 修改 -> 保存
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'buffer :pick 'paragraph)
+         :engines (gt-google-engine)
+         :render (gt-insert-render :type 'after)))
+
+  ;; 翻译当前段落，并使用翻译的结果替换掉被翻译的段落
+  ;; 这种配置适合即时聊天等场合。输入文本，翻译得到译文，执行发送
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'paragraph :pick nil)
+         :engines (gt-google-engine)
+         :render (gt-insert-render :type 'replace)))
+
+  ;; 将当前段落中符合条件的单词进行翻译，并将结果插入到单词之后
+  ;; 这种配置方式，可以辅助阅读有生僻字的文章
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'paragraph
+                          :pick 'word
+                          :pick-pred (lambda (w) (length> w 6)))
+         :engines (gt-google-engine)
+         :render (gt-insert-render :type 'after
+                                   :rfmt " (%s)"
+                                   :rface '(:foreground "grey"))))
+#+end_src
+
+*** gt-overlay-render
+
+使用 Overlay 显示翻译结果。
+
+通过 =type= 设置显示的方式:
+- =after=, 默认类型，将翻译结果显示在源文本后面
+- =replace=, 将翻译结果覆盖显示到源文本上面
+- =help-echo=, 鼠标移动到源文本上时，翻译结果才弹出显示
+
+它在很多方面跟 =gt-insert-render= 很像，包括选项:
+- =sface=, 翻译完成后，被翻译的源文本的 face
+- =rfmt=, 翻译结果的输出格式
+- =rface=, 为翻译结果指定特定样式
+- =pface=, 单独为翻译后的 Prefix (语言、引擎的提示) 设定样式
+
+下面是若干使用示例:
+#+begin_src emacs-lisp
+  ;; 翻译 buffer 中所有段落，将结果通过指定格式显示在原段落之后
+  ;; 这是一种适合阅读 Info, News 等只读内容的配置
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'buffer :pick 'paragraph)
+         :engines (gt-google-engine)
+         :render (gt-overlay-render :type 'after
+                                    :sface nil
+                                    :rfmt "\n\n%s"
+                                    :rface 'font-lock-doc-face)))
+
+  ;; 将 Buffer 中所有符合条件的单词做标记，当鼠标移上去的时候显示翻译结果
+  ;; 这是一种实用的配置，适合阅读存在某些生僻词的文章
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'buffer :pick 'word :pick-pred (lambda (w) (length> w 5)))
+         :engines (gt-google-engine)
+         :render (gt-overlay-render :type 'help-echo
+                                    :sface '(:underline (:color "pink" :style wave)))))
+
+  ;; 使用 Overlay 把翻译的结果直接覆盖到原文之上
+  ;; 对于某篇文章，如果想通过速览的方式获取其大致意思，适合使用这种配置
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'buffer)
+         :engines (gt-google-engine)
+         :render (gt-overlay-render :type 'replace :rface nil)))
+#+end_src
+
+** 定制与扩展
+
+代码基于 eieio (CLOS) 编写，所有的组件都是类，因此几乎每一部分都是可以扩展或替换的。
+
+比如，要实现一个引擎，让它将捕获的文本倒序输出。实现起来很简单:
+#+begin_src emacs-lisp
+  ;; 首先，定义引擎，继承自 gt-engine
+  (defclass my-reverse-engine (gt-engine)
+    ((delimiter :initform nil)))
+
+  ;; 其次，为引擎实现 gt-translate 方法
+  (cl-defmethod gt-translate ((_ my-reverse-engine) task next)
+    (with-slots (text res) task
+      (setf res (cl-loop for c in text collect (reverse c)))
+      (funcall next task)))
+
+  ;; 最后，配置使用
+  (setq gt-default-translator (gt-translator :engines (my-reverse-engine)))
+#+end_src
+
+比如，想扩展 Taker，让它能够捕获 org mode 中所有的标题。也很简单:
+#+begin_src emacs-lisp
+  ;; [实现] 让 Taker 的 text 支持 org-headline，只需要对方法进行特化
+  (cl-defmethod gt-thing-at-point ((_ (eql 'org-headline)) (_ (eql 'org-mode)))
+    (let (bds)
+      (org-element-map (org-element-parse-buffer) 'headline
+        (lambda (h)
+          (save-excursion
+            (goto-char (org-element-property :begin h))
+            (skip-chars-forward "* ")
+            (push (cons (point) (line-end-position)) bds))))))
+
+  ;; [使用] 通过 :text org-headline 捕获所有 headline; 通过 overlay 展示结果
+  (setq gt-default-translator (gt-translator
+                               :taker (gt-taker :text 'org-headline)
+                               :engines (gt-google-engine)
+                               :render (gt-overlay-render :rfmt " (%s)" :sface nil)))
+#+end_src
+
+如此这般，只要发挥想象，将可以做到很多。
+
+** 欢迎提供反馈跟建议
+
+要打开调试，需要将 =gt-debug-p= 设为 t。之后将能在 =*gt-log*= 中查看日志内容。
+
+我现在使用翻译不多，这个框架纯粹是兴趣使然。因为对翻译工作的认知有限，某些功能设置未必合理。
+因此若有同学和专业人士提出好的想法和建议，必欣然受之。请不吝赐教，谢谢。
+

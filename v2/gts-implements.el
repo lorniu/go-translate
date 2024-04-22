@@ -83,7 +83,7 @@
 (defcustom gts-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
   "The user agent used when send a request."
   :type 'string
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defvar url-http-end-of-headers)
 
@@ -117,7 +117,7 @@ Execute DONE when success, or FAIL when failed."
 
 (defcustom gts-split-width-threshold 80
   "Threshold width for window horizontal split."
-  :group 'go-translate
+  :group 'go-translate-v2
   :type '(choice
           (const :tag "Disable" nil)
           (integer :tag "Threshold")))
@@ -125,12 +125,12 @@ Execute DONE when success, or FAIL when failed."
 (defcustom gts-buffer-follow-p nil
   "If t then pop to the result window after translation."
   :type 'boolean
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defcustom gts-buffer-name "*Go-Translate*"
   "The name of translation result buffer."
   :type 'string
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defcustom gts-buffer-window-config nil
   "Window configuration used by the result buffer window.
@@ -142,12 +142,12 @@ For example, set to:
 
 will force opening in right side window."
   :type 'list
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defcustom gts-buffer-render-task-header-function #'gts-buffer-render-task-header
   "Function used to render the task header when in multiple engines's query."
   :type 'function
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defvar-local gts-buffer-translator nil)
 (defvar-local gts-buffer-keybinding-messages nil)
@@ -410,7 +410,7 @@ Manually close the frame with `q'.")
 (defcustom gts-posframe-pop-render-buffer " *GTS-Pop-Posframe*"
   "Buffer name of Pop Posframe."
   :type 'string
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defvar gts-posframe-pop-render-timeout 30)
 (defvar gts-posframe-pop-render-poshandler nil)
@@ -483,7 +483,7 @@ Other operations in the childframe buffer, just like in 'gts-buffer-render'.")
 (defcustom gts-posframe-pin-render-buffer " *GTS-Pin-Posframe*"
   "Buffer name of Pin Posframe."
   :type 'string
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defvar gts-posframe-pin-render-frame nil)
 (defvar gts-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)

@@ -38,12 +38,12 @@
 (defcustom gts-stardict-program "sdcv"
   "Executable command of sdcv (StarDict Console Version)."
   :type 'string
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (defcustom gts-stardict-args '("-n" "-c" "-0" "-1")
   "Arguments passed to command `sdcv'."
   :type 'list
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (cl-defmethod gts-translate ((engine gts-stardict-engine) task rendercb)
   (let* ((text (oref task text))

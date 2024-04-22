@@ -15,7 +15,7 @@
   "The base url of Google translate used by google-rpc engine.
 you can customize it according to your country region."
   :type 'string
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 
 ;;; Components

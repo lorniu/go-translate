@@ -39,7 +39,7 @@ translation effect, and filling the output for better reading experience.
 You can override the behaviors by :around the method `gts-deepl-fill-input'
 or `gts-deepl-fill-output'."
   :type 'boolean
-  :group 'go-translate)
+  :group 'go-translate-v2)
 
 (cl-defmethod gts-deepl-fill-input (text)
   "Improve the input TEXT for better translation effect.
