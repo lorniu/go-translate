@@ -53,7 +53,7 @@ Of course, it is possible to specify more options for the translator, such as:
          :render  (gt-buffer-render)))                       ; config the Render
 
   ;; This configuration means:
-  ;; Initialize the default translator, let it send all paragraphs in the buffer to DeepL and Google,
+  ;; Initialize the default translator, let it send all paragraphs in the buffer to Bing and Google,
   ;; and output the results with a new Buffer.
 #+end_src
 
@@ -207,11 +207,11 @@ Finally, the initial text is cut and filtered based on =pick= and =pick-pred=. T
 | then      | The logic to be executed after the engine is completed. Hook | A function that takes current task as argument. Can be used to make final modifications to the translate result before rendering          |
 
 The built-in Engine implementations are:
-- =gt-engine-deepl=, DeepL Translate
-- =gt-engine-bing=, Bing Translate
-- =gt-engine-google/gt-engine-google-rpc=, Google Translate
-- =gt-engine-youdao=, 有道翻译
-- =gt-engine-stardict=, StarDict，for offline translate
+- =gt-deepl-engine=, DeepL Translate
+- =gt-bing-engine=, Bing Translate
+- =gt-google-engine/gt-google-rpc-engine=, Google Translate
+- =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道翻译，有道近义词
+- =gt-stardict-engine=, StarDict，for offline translate
 
 Specify engines for translator via =:engines=. A translator can have one or more engines, or you can specify a function that returns the engines:
 #+begin_src emacs-lisp

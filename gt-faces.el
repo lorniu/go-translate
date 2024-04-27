@@ -158,6 +158,32 @@
   :group 'go-translate-faces)
 
 
+;; Youdao
+
+(defface gt-youdao-dict-label-face '((((background light)) :foreground "lightblue")
+                                     (((background dark)) :foreground "darkcyan"))
+  "Face for label of youdao-dict."
+  :group 'go-translate-faces)
+
+(defface gt-youdao-dict-phonetic-face '((((background light)) :foreground "grey")
+                                        (((background dark)) :foreground "darkgray"))
+  "Face for phonetic of youdao-dict."
+  :group 'go-translate-faces)
+
+(defface gt-youdao-dict-entry-face '((t :bold t))
+  "Face for entry of youdao-dict."
+  :group 'go-translate-faces)
+
+(defface gt-youdao-suggest-entry-face '((t :bold t))
+  "Face for entry of youdao-suggest."
+  :group 'go-translate-faces)
+
+(defface gt-youdao-suggest-cixing-face '((((background light)) :foreground "grey")
+                                         (((background dark)) :foreground "grey"))
+  "Face for cixing of youdao-suggest."
+  :group 'go-translate-faces)
+
+
 ;;; Misc
 
 (defface gt-bionic-reading-face '((t :weight bold))

@@ -29,6 +29,7 @@
 
 (require 'cl-lib)
 (require 'subr-x)
+(require 'dom)
 (require 'eieio)
 
 (defgroup go-translate nil
@@ -345,7 +346,7 @@ That is: 1) define the translator 2) executable `gt-start'.")
   "Validate OBJECT, return t if it's available.")
 
 
-;;; Utils
+;;; Global
 
 (defun gt-aref (vector &rest ns)
   "Recursively find the element in VECTOR. NS is indexes, as the path."
@@ -397,6 +398,11 @@ If OBJ is symbol, return its value."
                 (text-property-search-backward 'font-lock-face))))
       str (propertize str 'face face)))
 
+(defun gt-line-height-separator (pixel)
+  "This can set line-height of the following line to PIXEL."
+  (concat (propertize "\s" 'display `(space :height (,pixel)))
+          (propertize "\n" 'line-height t)))
+
 (defun gt-collect-bounds-to-text (bounds)
   "Collect the text corresponding to each boundary in BOUNDS."
   (when (consp (car bounds))
@@ -410,6 +416,13 @@ PARAMS contains search keys like :user, :host same as `auth-source-search'."
     (if (functionp secret)
         (funcall secret)
       secret)))
+
+(defun gt-parse-html-dom (str)
+  "Parse html STR and return the DOM body."
+  (with-temp-buffer
+    (insert str)
+    (xml-remove-comments (point-min) (point-max))
+    (dom-by-tag (libxml-parse-html-region) 'body)))
 
 (defmacro gt-read-from-buffer (&rest forms)
   "Read text in a new created buffer interactively.
@@ -504,6 +517,9 @@ This is a generic method, you can extend the V as you wish."
          (funcall (if (eq (pop v) 'or) #'cl-some #'cl-every)
                   #'identity
                   (mapcar (lambda (x) (gt-valid-literally x text src tgt)) v)))))
+
+(defconst gt-word-classes
+  '(pron adj adv adt art aux conj prep det abbr int vt vi v n a))
 
 
 ;;; Logging

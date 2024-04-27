@@ -3,7 +3,7 @@
 这是一个翻译框架，其主要特点是高度可配置性和高度可扩展性。
 
 作为一个翻译框架，它有很多优点:
-- 支持多种翻译引擎，比如 Bing, Google, DeepL, 有道词典, StarDict 等
+- 支持多种翻译引擎，比如 Bing, Google, DeepL, 有道词典/近义词, StarDict 等
 - 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
@@ -19,9 +19,9 @@
 对于最基本的使用，添加如下代码到配置文件:
 #+begin_src emacs-lisp
   (setq gt-langs '(en zh))
-  (setq gt-default-translator (gt-translator :engines (gt-google-engine)))
+  (setq gt-default-translator (gt-translator :engines (gt-youdao-dict-engine)))
 
-  ;; 上述配置的意思是，初始化默认翻译器，让其在 en 和 zh 之间通过 Google 进行翻译，
+  ;; 上述配置的意思是，初始化默认翻译器，让其在 en 和 zh 之间通过有道词典进行翻译，
   ;; 结果将显示在 Echo Area 中
 #+end_src
 
@@ -31,11 +31,11 @@
 #+begin_src emacs-lisp
   (setq gt-default-translator
         (gt-translator
-         :taker   (gt-taker :text 'buffer :pick 'paragraph)  ; 配置拾取器
-         :engines (list (gt-bing-engine) (gt-google-engine)) ; 指定多引擎
-         :render  (gt-buffer-render)))                       ; 配置渲染器
+         :taker   (gt-taker :text 'buffer :pick 'paragraph)       ; 配置拾取器
+         :engines (list (gt-bing-engine) (gt-youdao-dict-engine)) ; 指定多引擎
+         :render  (gt-buffer-render)))                            ; 配置渲染器
 
-  ;; 上述配置的意思是，初始化默认翻译器，让其将当前 buffer 中的所有段落交给 DeepL 和 Google 进行翻译，
+  ;; 上述配置的意思是，初始化默认翻译器，让其将当前 buffer 中的所有段落交给 Bing 和有道进行翻译，
   ;; 并将结果通过一个新的 Buffer 渲染出来
 #+end_src
 
@@ -185,11 +185,11 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 | then      | engine 完成后执行的逻辑，钩子 | 一个以当前 task 为参数的函数。可以用于在渲染之前对返回的内容进行最后一步修改          |
 
 内置的 Engine 实现有:
-- =gt-engine-deepl=, DeepL 翻译
-- =gt-engine-bing=, 微软翻译
-- =gt-engine-google/gt-engine-google-rpc=, Google 翻译
-- =gt-engine-youdao=, 有道翻译
-- =gt-engine-stardict=, StarDict，离线翻译
+- =gt-deepl-engine=, DeepL 翻译
+- =gt-bing-engine=, 微软翻译
+- =gt-google-engine/gt-google-rpc-engine=, Google 翻译
+- =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词
+- =gt-stardict-engine=, StarDict，离线翻译
 
 通过 =:engines= 为翻译器指定引擎。一个翻译器可以有一个或多个引擎，也可以指定一个返回引擎列表的函数:
 #+begin_src emacs-lisp
@@ -208,10 +208,11 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 可以通过 =if= 为不同引擎指定不同翻译任务，比如：
 #+begin_src emacs-lisp
   (gt-translator
-   :engines (list (gt-google-engine :if 'word)                      ; 只有当翻译内容为单词时启用
-                  (gt-bing-engine :if '(and not-word parts))        ; 只有翻译内容不是单词且是多个段落时启用
-                  (gt-deepl-engine :if 'not-word :cache nil)        ; 只有翻译内容不是单词时启用; 不缓存
-                  (gt-youdao-dict-engine :if '(or src:zh tgt:zh)))) ; 只有翻译中文时启用
+   :engines (list (gt-google-engine :if 'word)                        ; 只有当翻译内容为单词时启用
+                  (gt-bing-engine :if '(and not-word parts))          ; 只有翻译内容不是单词且是多个段落时启用
+                  (gt-deepl-engine :if 'not-word :cache nil)          ; 只有翻译内容不是单词时启用; 不缓存
+                  (gt-youdao-dict-engine :if '(or src:zh tgt:zh))     ; 只有翻译中文时启用
+                  (gt-youdao-suggest-engine :if '(and word src:en)))) ; 只有翻译英文单词时启用
 #+end_src
 
 可以通过 =cache= 为不同引擎指定不同的缓存策略:
