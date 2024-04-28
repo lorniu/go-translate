@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.1
+;; Version: 3.0.2
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -86,6 +86,7 @@
                gt-buffer-render--toggle-polyglot
                gt-buffer-render--show-tips
                gt-posframe-render-auto-close-handler
+               gt-stardict-switch-dict
                gt-overlay-render-save-to-kill-ring))
   (put cmd 'completion-predicate (lambda (&rest _) nil)))
 

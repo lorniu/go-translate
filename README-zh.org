@@ -37,6 +37,17 @@
 
   ;; 上述配置的意思是，初始化默认翻译器，让其将当前 buffer 中的所有段落交给 Bing 和有道进行翻译，
   ;; 并将结果通过一个新的 Buffer 渲染出来
+
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :langs '(en zh) :text 'word :prompt t)
+         :engines (list (gt-stardict-engine :exact t)
+                        (gt-youdao-dict-engine)
+                        (gt-youdao-suggest-engine))
+         :render (gt-buffer-render)))
+
+  ;; 上面配置适用于中英单词互译，初始化翻译器，让其翻译当前或选中单词，使用 StarDict 和有道进行翻译，
+  ;; 结果使用新的 Buffer 渲染出来
 #+end_src
 
 除了通过 =gt-default-translator= 设定默认翻译器，也可以通过 =gt-preset-translators= 配置若干预设翻译器。
@@ -188,8 +199,8 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 - =gt-deepl-engine=, DeepL 翻译
 - =gt-bing-engine=, 微软翻译
 - =gt-google-engine/gt-google-rpc-engine=, Google 翻译
-- =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词
-- =gt-stardict-engine=, StarDict，离线翻译
+- =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词。主要用于中英互译
+- =gt-stardict-engine=, StarDict，支持外挂字典，可以用于离线翻译
 
 通过 =:engines= 为翻译器指定引擎。一个翻译器可以有一个或多个引擎，也可以指定一个返回引擎列表的函数:
 #+begin_src emacs-lisp
@@ -323,6 +334,42 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
                                 (gt-google-engine :hc my-hc-1)  ; 走代理
                                 (gt-deepl-engine :hc my-hc-1))) ; 走代理
 #+end_src
+
+*** gt-stardict-engine
+
+这是个支持外挂字典的离线翻译引擎。
+
+首先，需要确保你的系统中已经安装了 [[https://github.com/Dushistov/sdcv][sdcv]]:
+: sudo pacman -S sdcv
+
+另外，需要下载字典文件放入到相关目录。比如下面是在 Linux 下安装朗道字典文件的示例:
+#+begin_src shell
+  mkdir -p ~/.stardict/dic
+  cd ~/.stardict/dic
+  wget http://download.huzheng.org/zh_CN/stardict-langdao-ce-gb-2.4.2.tar.bz2
+  wget http://download.huzheng.org/zh_CN/stardict-langdao-ce-gb-2.4.2.tar.bz2
+  tar xvf stardict-langdao-ec-gb-2.4.2.tar.bz2
+  tar xvf stardict-langdao-ce-gb-2.4.2.tar.bz2
+  sdcv -l
+#+end_src
+
+之后，你就可以配置使用此引擎了:
+#+begin_src emacs-lisp
+  ;; 基本配置
+  (setq gt-default-translator
+        (gt-translator :engines (gt-stardict-engine)
+                       :render (gt-buffer-render)))
+
+  ;; 可以指定更多选项
+  (setq gt-default-translator
+        (gt-translator :engines (gt-stardict-engine
+                                 :dir "~/.stardict/dic"  ; 指定数据文件位置
+                                 :dict "朗道英汉字典5.0" ; 可以指定具体使用的字典
+                                 :exact t) ; do not fuzzy-search, only return exact matches
+                       :render (gt-buffer-render)))
+#+end_src
+
+*注意*: 如果是通过 Buffer-Render 等渲染，可以通过点击字典名或错误提示实现字典切换 (快捷键: =C-c C-c=)。
 
 *** gt-deepl-engine
 
@@ -540,6 +587,6 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 
 要打开调试，需要将 =gt-debug-p= 设为 t。之后将能在 =*gt-log*= 中查看日志内容。
 
-我现在使用翻译不多，这个框架纯粹是兴趣使然。因为对翻译工作的认知有限，某些功能设置未必合理。
+我使用翻译不多，这个框架纯粹是兴趣使然。因为对翻译工作的认知有限，某些功能设置未必合理。
 因此若有同学和专业人士提出好的想法和建议，必欣然受之。请不吝赐教，谢谢。
 

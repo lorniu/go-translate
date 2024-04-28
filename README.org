@@ -346,6 +346,33 @@ If only some engines need proxy, set individually like this:
                                 (gt-deepl-engine :hc my-hc-1))) ; use proxy
 #+end_src
 
+*** gt-stardict-engine
+
+This is an offline translation engine that supports plug-in dictionaries.
+
+First, make sure [[https://github.com/Dushistov/sdcv][sdcv]] has been installed on your system:
+: sudo pacman -S sdcv
+
+In addition, download the dictionary files and put them to the correct location.
+
+After that, configure and use the engine:
+#+begin_src emacs-lisp
+  ;; Basic configuration
+  (setq gt-default-translator
+        (gt-translator :engines (gt-stardict-engine)
+                       :render (gt-buffer-render)))
+
+  ;; More options can be specified
+  (setq gt-default-translator
+        (gt-translator :engines (gt-stardict-engine
+                                 :dir "~/.stardict/dic" ; specify data file location
+                                 :dict "dict-name"      ; specify a dict name
+                                 :exact t)              ; exact, do not fuzzy-search
+                       :render (gt-buffer-render)))
+#+end_src
+
+*NOTE*: If rendering via Buffer-Render etc, you can switch between dictionaries by click dictionary name or error message (or press =C-c C-c= on it).
+
 *** gt-deepl-engine
 
 DeepL requires =auth-key= to work, please obtained it through the official website.

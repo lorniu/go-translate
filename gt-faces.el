@@ -184,6 +184,28 @@
   :group 'go-translate-faces)
 
 
+;;; StarDict
+
+(defface gt-stardict-dict-face '((((background light)) :foreground "grey")
+                                 (((background dark)) :foreground "grey"))
+  "Face for dict of StarDict."
+  :group 'go-translate-faces)
+
+(defface gt-stardict-word-face '((((background light)) :bold t :foreground "darkblue")
+                                 (((background dark)) :bold t))
+  "Face for word of StarDict."
+  :group 'go-translate-faces)
+
+(defface gt-stardict-phonetic-face '((((background light)) :foreground "lightblue")
+                                     (((background dark)) :foreground "darkcyan"))
+  "Face for phonetic of StarDict."
+  :group 'go-translate-faces)
+
+(defface gt-stardict-word-class-face '((t :bold t))
+  "Face for cixing of StarDict."
+  :group 'go-translate-faces)
+
+
 ;;; Misc
 
 (defface gt-bionic-reading-face '((t :weight bold))

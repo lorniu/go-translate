@@ -123,7 +123,6 @@ you can customize it according to your country region.")
                               (setf (aref inner 1) lang)
                               (setf (aref (aref (aref outer 0) 0) 0) rpc-tts)
                               (setf (aref (aref (aref outer 0) 0) 1) (json-encode inner))
-                              (setq aaa (json-encode outer))
                               (json-encode outer))))
                     :done (lambda (raw)
                             (with-temp-buffer
