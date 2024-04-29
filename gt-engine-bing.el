@@ -30,7 +30,7 @@
 
 (defclass gt-bing-parser (gt-parser) ())
 
-(defclass gt-bing-engine (gt-web-engine)
+(defclass gt-bing-engine (gt-engine)
   ((tag       :initform 'Bing)
    (base-url  :initform "https://www.bing.com")
    (sub-url   :initform "/ttranslatev3")
@@ -107,7 +107,7 @@
                                               (429 "[429] Too many requests! Please try later")
                                               (_ err))))))))
     (lambda (err)
-      (gt-fail task (format "Bing failed to take token: %s" err)))))
+      (gt-fail task (cons "Bing failed to take token:" (gt-ensure-list err))))))
 
 
 ;;; TTS

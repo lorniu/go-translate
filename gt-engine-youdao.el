@@ -45,7 +45,7 @@
 
 (defclass gt-youdao-dict-parser (gt-parser) ())
 
-(defclass gt-youdao-dict-engine (gt-web-engine)
+(defclass gt-youdao-dict-engine (gt-engine)
   ((tag     :initform '有道词典)
    (url     :initform "https://dict.youdao.com/result?word=%s&lang=%s")
    (parse   :initform (gt-youdao-dict-parser))))
@@ -139,7 +139,7 @@
 
 (defclass gt-youdao-suggest-parser (gt-parser) ())
 
-(defclass gt-youdao-suggest-engine (gt-web-engine)
+(defclass gt-youdao-suggest-engine (gt-engine)
   ((tag     :initform '有道同义词)
    (url     :initform "https://dict.youdao.com/suggest?q=%s&num=%s&doctype=json")
    (limit   :initform 9 :initarg :limit)

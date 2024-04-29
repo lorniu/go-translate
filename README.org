@@ -245,13 +245,6 @@ You can specify different caching policies for different engines with =cache=:
                        (gt-deepl-engine :cache (gt-xxx-cacher)))) ; use specify cacher
 #+end_src
 
-Engines that need network are derived from =gt-web-engine=, use =hc= to specify http client for them:
-#+begin_src emacs-lisp
-  (gt-translator
-   :engines (list (gt-google-engine)                          ; no specify, use default http client
-                  (gt-bing-engine :hc (gt-plz-http-client)))) ; use the specified http client
-#+end_src
-
 #+begin_quote
 *Notice:*
 
@@ -290,21 +283,9 @@ Configure render for translator via =:render=. Multiple renders can be chained t
 #+end_src
 
 ** Components (Supplementary Notes)
-*** gt-taker
+*** gt-default-cacher/gt-memory-cacher
 
-If prompt via minibuffer, the following keys exist in minibuffer:
-- =C-n= and =C-p= switch languages
-- =C-l= clear input
-- =C-g= abort translate
-
-If prompt via buffer, the following keys exist in the taking buffer:
-- =C-c C-c= submit translate
-- =C-c C-k= abort translate
-- Other keys like switch languages and components please refer to tips on buffer mode line
-
-*** gt-memory-cacher
-
-This is the built-in cache implementation. Just set =gt-cache-p= to t to use it.
+Component =gt-memory-cacher= is the built-in cache implementation. Just set =gt-cache-p= to t to use it.
 
 You can configure the cacher or switch to another cacher by setting =gt-default-cacher=:
 #+begin_src emacs-lisp
@@ -322,29 +303,39 @@ Set =gt-cache-p= to nil to turn off all caches. Or turn off the cache for engine
 Translation results can be cached in files, SQLite or Redis through extensions. But maybe it's unnecessary.
 #+end_quote
 
-*** gt-plz-http-client
+*** gt-default-http-client/gt-plz-http-client
 
 Some engines need to fetch translation results over the network, which requires network processing with the help of the =gt-http-client= component.
 
-By default, use =gt-url-http-client= as the http client, that is, request is sent by =url.el=, which is inefficient.
+By default, =gt-url-http-client= is used as the http client, which is inefficient.
 This component uses =curl= to send the request, which is much better.
 
-Make sure that =curl= is exists and package [[https://github.com/alphapapa/plz.el][plz]] is installed. Then the component =gt-plz-http-client= becomes the default http client.
+Config =gt-default-http-client= to switch http client, or just make sure =curl= and [[https://github.com/alphapapa/plz.el][plz]] is exists in your system, then the component =gt-plz-http-client=
+will be used as the default http client.
 
-To make =gt-plz-http-client= use proxy, config like this:
+To send request with proxy, config like this:
 #+begin_src emacs-lisp
   (setq gt-default-http-client
         (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
+
+  (setq gt-default-http-client
+        (lambda (host)
+          (if (string-match-p "deepl" host)
+              (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
+            (gt-plz-http-client))))
 #+end_src
 
-If only some engines need proxy, set individually like this:
-#+begin_src emacs-lisp
-  (setq my-hc-1 (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
-  (gt-translator :engines (list (gt-bing-engine)                ; use default http client
-                                (gt-youdao-dict-engine :hc (gt-plz-http-client)) ; no proxy
-                                (gt-google-engine :hc my-hc-1)  ; use proxy
-                                (gt-deepl-engine :hc my-hc-1))) ; use proxy
-#+end_src
+*** gt-taker
+
+If prompt via minibuffer, the following keys exist in minibuffer:
+- =C-n= and =C-p= switch languages
+- =C-l= clear input
+- =C-g= abort translate
+
+If prompt via buffer, the following keys exist in the taking buffer:
+- =C-c C-c= submit translate
+- =C-c C-k= abort translate
+- Other keys like switch languages and components please refer to tips on buffer mode line
 
 *** gt-stardict-engine
 

@@ -37,7 +37,7 @@
 (defclass gt-google-summary-parser (gt-google-parser)
   ((tag :initform "Summary")))
 
-(defclass gt-google-engine (gt-web-engine)
+(defclass gt-google-engine (gt-engine)
   ((tag                :initform 'Google)
    (base-url           :initform "http://translate.googleapis.com")
    (sub-url            :initform "/translate_a/single")

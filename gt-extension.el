@@ -54,6 +54,12 @@
 (declare-function plz-response-status "ext:plz.el" t t)
 (declare-function plz-response-body "ext:plz.el" t t)
 
+(defvar gt-plz-initialize-error-message
+  "\n\nTry to install curl and specify the program like this to solve the problem:\n
+  (setq plz-curl-program \"c:/msys64/usr/bin/curl.exe\")\n
+Or switch http client to `gt-url-http-client' instead:\n
+  (setq gt-default-http-client (gt-url-http-client))")
+
 (cl-defmethod gt-request :before ((_ gt-plz-http-client) &rest _)
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
     (error "You should have `plz.el' and `curl' installed before using `gt-plz-http-client'")))
@@ -67,15 +73,19 @@
       :headers (cons `("User-Agent" . ,gt-user-agent) headers)
       :body data
       :as 'string
-      :then (lambda (raw)
-              (funcall done raw))
+      :then (lambda (raw) (funcall done raw))
       :else (lambda (err)
-              ;; try to compat with error object of url.el, see `url-retrieve' for details
-              (funcall fail (or (when-let (r (plz-error-message err)) r)
-                                (when-let (r (plz-error-curl-error err))
-                                  (or (cdr r) (list 'curl-error (car r))))
-                                (when-let (r (plz-error-response err))
-                                  (list 'http (plz-response-status r) (plz-response-body r)))))))))
+              (let ((ret ;; try to compat with error object of url.el, see `url-retrieve' for details
+                     (or (plz-error-message err)
+                         (when-let (r (plz-error-curl-error err))
+                           (list 'curl-error
+                                 (concat (format "%s" (or (cdr r) (car r)))
+                                         (pcase (car r)
+                                           (2 (when (memq system-type '(cygwin windows-nt ms-dos))
+                                                gt-plz-initialize-error-message))))))
+                         (when-let (r (plz-error-response err))
+                           (list 'http (plz-response-status r) (plz-response-body r))))))
+                (funcall fail ret))))))
 
 ;; Prefer plz/curl as backend
 
@@ -152,11 +162,12 @@ Notice, this can be overrided by `window-config' slot of render instance."
 
 (defun gt-buffer-render--refresh ()
   (interactive)
-  (gt-start gt-buffer-render-translator t))
+  (oset gt-buffer-render-translator keep t)
+  (gt-start gt-buffer-render-translator))
 
 (defun gt-buffer-render--cycle-next (&optional ignore-rules)
   (interactive "P")
-  (with-slots (target taker) gt-buffer-render-translator
+  (with-slots (target taker keep) gt-buffer-render-translator
     (if (gt-functionp (oref taker langs))
         (user-error "Current taker not support cycle next")
       (let* ((curr gt-last-target)
@@ -164,14 +175,15 @@ Notice, this can be overrided by `window-config' slot of render instance."
              (gt-ignore-target-history-p t)
              (next (gt-target taker gt-buffer-render-translator 'next)))
         (unless (equal next curr)
-          (setf target next)
-          (gt-start gt-buffer-render-translator t))))))
+          (setf target next keep t)
+          (gt-start gt-buffer-render-translator))))))
 
 (defun gt-buffer-render--toggle-polyglot ()
   (interactive)
   (setq gt-polyglot-p (not gt-polyglot-p))
-  (oset gt-buffer-render-translator target nil)
-  (gt-start gt-buffer-render-translator t))
+  (with-slots (target keep) gt-buffer-render-translator
+    (setf target nil keep t)
+    (gt-start gt-buffer-render-translator)))
 
 (defun gt-buffer-render--speak-current ()
   "Speak current text with current engine.

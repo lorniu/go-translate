@@ -41,7 +41,7 @@ you can customize it according to your country region.")
 (defclass gt-google-rpc-summary-parser (gt-google-summary-parser gt-google-rpc-parser)
   ((tag :initform "Summary")))
 
-(defclass gt-google-rpc-engine (gt-web-engine)
+(defclass gt-google-rpc-engine (gt-engine)
   ((tag       :initform 'GoogleRPC)
    (sub-url   :initform "/_/TranslateWebserverUi/data/batchexecute")
    (parse     :initform (gt-google-rpc-parser))

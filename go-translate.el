@@ -120,13 +120,15 @@ of `gt-default-translator' at any time in `gt-do-setup'."
 
 (defcustom gt-preset-engines
   (lambda ()
-    `((Google                         . ,(gt-google-engine))
-      (Bing                           . ,(gt-bing-engine))
-      (DeepL                          . ,(gt-deepl-engine :pro nil))
-      (Youdao-Dict                    . ,(gt-youdao-dict-engine :if '(or (and src:en tgt:zh) (and src:zh tgt:en))))
-      ("Google, summary parser"       . ,(gt-google-engine :parse (gt-google-summary-parser)))
-      ("Bing only for sentence"       . ,(gt-bing-engine :if 'not-word))
-      ("Bionic Reading"               . ,(gt-echo-engine :do '(clean br) :tag "Bionic Reading"))))
+    `((Bing                 . ,(gt-bing-engine))
+      (DeepL                . ,(gt-deepl-engine))
+      (Google               . ,(gt-google-engine))
+      (GoogleRPC            . ,(gt-google-rpc-engine))
+      (Youdao-Dict          . ,(gt-youdao-dict-engine))
+      (Youdao-Suggest       . ,(gt-youdao-suggest-engine))
+      (StarDict             . ,(gt-stardict-engine))
+      (Google-Summary       . ,(gt-google-engine :parse (gt-google-summary-parser)))
+      (Bionic_Reading       . ,(gt-echo-engine :do '(clean br) :tag "Bionic Reading"))))
   "Preset engines.
 
 It is an alist or a function return the alist, which the value is a valid
@@ -143,12 +145,12 @@ of `gt-default-translator' at any time in `gt-do-setup'."
 (defcustom gt-preset-renders
   (lambda ()
     `((,gt-buffer-render-buffer-name  . ,(gt-buffer-render))
-      (message->echo-area             . ,(gt-render))
-      (save->kill-ring                . ,(gt-kill-ring-render))
       (insert/after                   . ,(gt-insert-render  :type 'after))
       (insert/replace                 . ,(gt-insert-render  :type 'replace))
       (overlay/after                  . ,(gt-overlay-render :type 'after))
       (overlay/help-echo              . ,(gt-overlay-render :type 'help-echo))
+      (message->echo-area             . ,(gt-render))
+      (save->kill-ring                . ,(gt-kill-ring-render))
       (Pop-Posframe                   . ,(gt-posframe-pop-render))
       (Pin-Posframe                   . ,(gt-posframe-pin-render))
       (overlay-or-insert              . ,(lambda ()
@@ -200,7 +202,7 @@ will be used as the default translator."
   (unless gt-default-translator
     (setq gt-default-translator (cdar (gt-ensure-plain gt-preset-translators))))
   (if (cl-typep gt-default-translator 'gt-translator)
-      (gt-reset gt-default-translator)
+      (let (gt-debug-p) (gt-reset gt-default-translator))
     (user-error "The `gt-default-translator' is unavailable"))
   gt-default-translator)
 
@@ -271,11 +273,14 @@ will be used as the default translator."
   "Switch `gt-default-translator' to another defined in `gt-preset-translators'."
   (interactive)
   (let* ((tss (gt-ensure-plain gt-preset-translators))
-         (tsn (completing-read "Switch to a preset translator: " tss nil t))
+         (tsn (completing-read "Preset translator: " tss nil t))
          (translator (alist-get tsn tss nil nil #'string-equal)))
-    (setq gt-default-translator (clone translator)) ; clone copy
-    (gt-ensure-default-translator)
-    (message "Switch default translator to: %s" tsn)))
+    (if (called-interactively-p 'any)
+        (progn
+          (setq gt-default-translator (clone translator)) ; clone copy
+          (gt-ensure-default-translator)
+          (message "Switch default translator to: %s" tsn))
+      (clone translator))))
 
 ;;;###autoload
 (transient-define-prefix gt-do-setup ()
@@ -299,7 +304,7 @@ will be used as the default translator."
 ;;; Entrance
 
 ;;;###autoload
-(defun gt-do-translate ()
+(defun gt-do-translate (&optional arg)
   "Translate using `gt-default-translator'.
 
 Define your default translator like this:
@@ -316,10 +321,13 @@ Or define several different translators and put them in `gt-preset-translators',
 and switch with `gt-do-setup' at any time.
 
 This is just a simple wrapper of `gt-start' method. Create other translate
-commands in the same way using your creativity."
-  (interactive)
-  (gt-ensure-default-translator)
-  (gt-start gt-default-translator))
+commands in the same way using your creativity.
+
+If ARG is not nil, translate with translator return by `gt-switch-translator'."
+  (interactive "P")
+  (let ((gt-default-translator (if arg (gt-switch-translator) gt-default-translator)))
+    (gt-ensure-default-translator)
+    (gt-start gt-default-translator)))
 
 (provide 'go-translate)
 

@@ -58,11 +58,13 @@
   "Used in the buffer's `header-line-format' for description."
   :group 'go-translate-faces)
 
-(defface gt-buffer-render-source-face '((t :inherit font-lock-doc-face))
-  "Used in the buffer's source."
+(defface gt-buffer-render-source-face
+  '((((background light)) :background "ivory")
+    (((background dark)) :foreground "darkgray" :weight light :slant italic))
+  "Used in the buffer's source text."
   :group 'go-translate-faces)
 
-(defface gt-buffer-render-inline-prefix-face '((t :inherit font-lock-keyword-face))
+(defface gt-buffer-render-inline-prefix-face '((t :height 0.8 :foreground "grey"))
   "Used in the buffer's inline prefix."
   :group 'go-translate-faces)
 
@@ -187,7 +189,7 @@
 ;;; StarDict
 
 (defface gt-stardict-dict-face '((((background light)) :foreground "grey")
-                                 (((background dark)) :foreground "grey"))
+                                 (((background dark)) :foreground "darkcyan"))
   "Face for dict of StarDict."
   :group 'go-translate-faces)
 

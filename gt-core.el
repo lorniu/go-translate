@@ -200,16 +200,6 @@ be passed to the engine, and a translated string list is expected.
 Also in some cases, you should turn the cache off by setting `no-cache' to t."
   :abstract t)
 
-(defclass gt-web-engine (gt-engine)
-  ((http-client
-    :initarg :hc
-    :type gt-http-client
-    :documentation "Set up the http client separately for the engine."))
-  :abstract t
-  :documentation
-  "Add the ability to set HTTP Client. If the engine needs network, it's best
-to derive from this class.")
-
 (defclass gt-render ()
   ((output
     :initarg :output
@@ -279,6 +269,11 @@ the contents are changed in the prompt or elsewhere.")
 2: render prepared
 3: all result parsed
 4: translate abort")
+
+   (keep
+    :initform nil
+    :type boolean
+    :documentation "If t then don't clean text and target in a new translation.")
 
    (version
     :documentation "Used to distinguish with expired translations.")
@@ -669,31 +664,31 @@ Optional keyword arguments:
   - DATA: The data to include in the request.
   - HEADERS: Additional headers to include in the request."
   (:method (&key url done fail data headers)
-           (if (and gt-default-http-client
-                    (eieio-object-p gt-default-http-client)
-                    (object-of-class-p gt-default-http-client 'gt-http-client))
-               (let ((tag (format "%s" (eieio-object-class gt-default-http-client)))
-                     (data (gt-format-params data)))
-                 (gt-log tag
-                   (format "> %s" url)
-                   (if headers (format "> HEADER: %s" headers))
-                   (if data (format "> DATA:   %s" data)))
-                 (gt-request gt-default-http-client
-                             :url url
-                             :headers headers
-                             :data data
-                             :done (lambda (raw)
-                                     (gt-log tag (format "✓ %s" url))
-                                     (condition-case err
-                                         (funcall done raw)
-                                       (error
-                                        (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
-                                        (funcall fail err))))
-                             :fail (lambda (status)
-                                     (gt-log tag (format "Request fail! (%s) %s" url status))
-                                     (funcall fail status))))
-             (funcall fail "Make sure `gt-default-http-client' is available. eg:\n
- (setq gt-default-http-client (gt-url-http-client))\n\n\n"))))
+           (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
+             (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
+                 (let ((tag (format "%s" (eieio-object-class client)))
+                       (data (gt-format-params data)))
+                   (gt-log tag
+                     (format "> %s" client)
+                     (format "> %s" url)
+                     (if headers (format "> HEADER: %s" headers))
+                     (if data (format "> DATA:   %s" data)))
+                   (gt-request client
+                               :url url
+                               :headers headers
+                               :data data
+                               :done (lambda (raw)
+                                       (gt-log tag (format "✓ %s" url))
+                                       (condition-case err
+                                           (funcall done raw)
+                                         (error
+                                          (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
+                                          (funcall fail err))))
+                               :fail (lambda (status)
+                                       (gt-log tag (format "Request fail! (%s) %s" url status))
+                                       (funcall fail status))))
+               (funcall fail "Make sure `gt-default-http-client' is available. eg:\n
+ (setq gt-default-http-client (gt-url-http-client))\n\n\n")))))
 
 ;; http client implemented using `url.el'
 
@@ -707,7 +702,7 @@ Optional keyword arguments:
 
 (defvar url-http-end-of-headers)
 
-(cl-defmethod gt-request ((_ gt-url-http-client) &key url done fail data headers)
+(cl-defmethod gt-request ((client gt-url-http-client) &key url done fail data headers)
   (cl-assert (and url done fail))
   (let ((inhibit-message t)
         (message-log-max nil)
@@ -1048,11 +1043,15 @@ See type `gt-taker' for more description."
              ;; record buffer
              (if bounds (setf bounds (cons (current-buffer) bounds)))))
   (:method ((taker gt-taker) translator)
-           (with-slots (text target) translator
+           (with-slots (text target keep) translator
              (let ((prompt (and (null text) (null target)
                                 (if (slot-boundp taker 'prompt)
                                     (oref taker prompt)
-                                  gt-taker-prompt))))
+                                  gt-taker-prompt)))
+                   (nopick (or (and text keep)
+                               (gt-functionp (if (slot-boundp taker 'text)
+                                                 (oref taker text)
+                                               gt-taker-text)))))
                ;; text
                (unless text (setf text (gt-text taker translator)))
                ;; target
@@ -1062,10 +1061,7 @@ See type `gt-taker' for more description."
                ;; check
                (unless text (user-error "No source text found at all"))
                ;; pick
-               (unless (gt-functionp (if (slot-boundp taker 'text)
-                                         (oref taker text)
-                                       gt-taker-text))
-                 (setf text (gt-pick taker translator)))))))
+               (unless nopick (setf text (gt-pick taker translator)))))))
 
 (cl-defgeneric gt-text (_taker translator)
   "Used to take initial text for TRANSLATOR.
@@ -1190,13 +1186,6 @@ will do the parse and render job. See type `gt-engine' for more description."
                                               (gt-next engine task)
                                             (gt-fail task err))
                                         (gt-log 'next (format "%s: ----- expired -----" id))))))))
-  (:method :around ((engine gt-web-engine) task &optional next)
-           (let ((gt-default-http-client
-                  (if (slot-boundp engine 'http-client)
-                      (oref engine http-client)
-                    gt-default-http-client)))
-             (gt-log 'next (format "%s: request with %s" (oref task id) gt-default-http-client))
-             (cl-call-next-method engine task next)))
   (:method ((engine gt-engine) _task _next)
            (user-error "Method `gt-translate' of %s is not implement" (eieio-object-class engine))))
 
@@ -1424,8 +1413,10 @@ Output to minibuffer by default."
   (with-slots (translator render err version id) task
     (when (equal version (oref translator version))
       (setf err (if (consp error)
-                    (progn (if (memq (car error) '(error user-error)) (pop error))
-                           (mapconcat (lambda (r) (format "%s" r)) error " "))
+                    (mapconcat (lambda (r)
+                                 (format (if (string-suffix-p "error" (format "%s" r)) "[%s]" "%s") r))
+                               (cl-remove-if (lambda (r) (memq r '(error user-error))) error)
+                               " ")
                   (or error "")))
       (gt-update-state translator)
       (gt-output render translator))
@@ -1446,20 +1437,20 @@ Output to minibuffer by default."
                (setf _taker taker _engines engines _render render))
              (setf version (time-to-seconds) state 0 tasks nil total 0))))
 
-(cl-defmethod gt-init ((translator gt-translator) &optional keep)
-  "Initialize the components, text and target for TRANSLATOR.
-If KEEP is non nil, don't reset text and target in TRANSLATOR before taking."
+(cl-defmethod gt-init ((translator gt-translator))
+  "Initialize the components, text and target for TRANSLATOR."
   (gt-log-funcall "init (%s)" translator)
-  (with-slots (text bounds target version taker engines render _taker _engines _render) translator
+  (with-slots (keep text bounds target version taker engines render _taker _engines _render) translator
     ;; reset
     (gt-reset translator)
     ;; take
     (unless keep (setf text nil bounds nil target nil))
     (setf taker (or (gt-ensure-plain _taker) (user-error "No taker found in this translator")))
     (gt-take taker translator)
-    ;; history
-    (let ((history-delete-duplicates t)) (add-to-history 'gt-target-history target 8))
-    ;; plain
+    (setf keep nil)
+    (let ((history-delete-duplicates t))
+      (add-to-history 'gt-target-history target 8))
+    ;; prepare engines and render
     (setf engines (gt-ensure-list (gt-ensure-plain _engines)))
     (setf render (gt-ensure-plain _render))
     ;; log
@@ -1469,14 +1460,13 @@ If KEEP is non nil, don't reset text and target in TRANSLATOR before taking."
                                 (mapcar (lambda (en) (oref en tag)) engines)
                                 (eieio-object-class render)))))
 
-(cl-defgeneric gt-start (translator &optional keep)
-  "Start a new translation with TRANSLATOR.
-If KEEP is non nil, retain something in translator and not reset them."
+(cl-defgeneric gt-start (translator)
+  "Start a new translation with TRANSLATOR."
   (gt-log-funcall "\n\ngt-start (%s)" translator)
   (setq gt-current-command this-command)
   (setq gt-current-translator translator)
   ;; init
-  (gt-init translator keep)
+  (gt-init translator)
   (with-slots (text target version total engines render) translator
     ;; tasks
     (cl-loop for engine in engines

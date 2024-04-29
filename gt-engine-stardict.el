@@ -120,7 +120,8 @@
                                      (complete-with-action action (cons 'ALL dicts) input pred)))
                                  nil t nil nil (oref engine dict))))
       (oset engine dict (unless (string= dict "ALL") dict))
-      (gt-start gt-buffer-render-translator t))))
+      (oset gt-buffer-render-translator keep t)
+      (gt-start gt-buffer-render-translator))))
 
 (cl-defgeneric gt-stardict-pretty-definition (dictionary definition)
   "Try to pretty the DEFINITION part of DICTIONARY for output."

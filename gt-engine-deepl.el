@@ -37,7 +37,7 @@
 
 (defclass gt-deepl-parser (gt-parser) ())
 
-(defclass gt-deepl-engine (gt-web-engine)
+(defclass gt-deepl-engine (gt-engine)
   ((tag       :initform 'DeepL)
    (host      :initform "https://api.deepl.com")
    (host-free :initform "https://api-free.deepl.com")
