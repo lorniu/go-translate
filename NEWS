@@ -1,0 +1,13 @@
+Version 3.0.2
+  - Improve `gt-stardict-engine` with a better parser
+  - Update the options and commands used by `gt-stardict-engine`
+
+Version 3.0.1
+  - Update `gt-youdao-dict-engine`, now retrieve the html code and parse from DOM
+  - Add new engine `gt-youdao-suggest-engine` for Chinese word translation
+
+Version 3.0
+  - Refactor from v2, almost all APIs have been changed
+
+Version 2.0
+  - Refactor from v1, almost all APIs have been changed
