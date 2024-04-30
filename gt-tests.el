@@ -123,6 +123,18 @@ This buffer is for text that is not saved, and for Lisp evaluation.
         (gt-current-cacher (gt-bing-engine :cache (gt-memory-cacher :if 'xxx)) nil)
       (should (and (eq (oref c if) 'xxx) (null d))))))
 
+(ert-deftest test--gt-plist-let ()
+  (should (gt-plist-let '(:b 2 :c 3)
+            (equal (+ .b .c) 5)))
+  (should (gt-plist-let `(:b 2 :c ,(max 2 3))
+            (equal (+ .b .c) 5)))
+  (should (gt-plist-let ((a 1) '(:b 2 :c 3))
+            (equal (+ a .b .c) 6)))
+  (should (gt-plist-let ((a 1) `(:b 2 :c ,(max 2 3)))
+            (equal (+ a .b .c) 6)))
+  (should (let ((a `(:b 2 :c ,(max 2 3))))
+            (gt-plist-let a (equal (+ .b .c) 5)))))
+
 (ert-deftest test--gt-translation-life-cycle ()
   (let* ((res nil)
          (translator (gt-translator :taker (gt-taker

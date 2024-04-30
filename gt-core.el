@@ -419,6 +419,33 @@ PARAMS contains search keys like :user, :host same as `auth-source-search'."
     (xml-remove-comments (point-min) (point-max))
     (dom-by-tag (libxml-parse-html-region) 'body)))
 
+(defmacro gt-plist-let (varlist &rest body)
+  "Let-bind dotted symbols to plist and execute BODY like `let-alist'.
+
+The last form of VARLIST is the plist to be bound with dot, bind other variables
+like those in `let*'.
+
+For example:
+
+  (gt-plist-let plist (list .a .b))
+
+  (gt-plist-let \\=`(:a 3 :b 4) (+ .a .b))
+
+  (gt-plist-let ((x 1) \\='(:y 2 :z 3)) (+ x .y .z))
+
+See gt-tests.el for details."
+  (declare (indent 1) (debug t))
+  (require 'let-alist)
+  (let ((var (make-symbol "plist")))
+    `(let* (,@(if (or (atom varlist)
+                      (eq (car varlist) 'quote)
+                      (eq (car varlist) '\`))
+                  `((,var ,varlist))
+                `(,@(butlast varlist) ,(cons var (last varlist))))
+            ,@(cl-loop for (.k . k) in (delete-dups (let-alist--deep-dot-search body))
+                       collect `(,.k (plist-get ,var ,(intern (format ":%s" k))))))
+       ,@body)))
+
 (defmacro gt-read-from-buffer (&rest forms)
   "Read text in a new created buffer interactively.
 
@@ -436,33 +463,33 @@ line format or bind keys here.
 
 User can modify the buffer, and submit with `apply-key', then the contents of
 the buffer will returned as the result."
-  (let* ((params (cl-loop for item in forms by #'cddr
-                          while (keywordp item)
-                          append (list (pop forms) (pop forms))))
-         (buffer (or (plist-get params :buffer) (format "*gt-%s*" (gensym "tmp-"))))
-         (tag (or (plist-get params :catch) 'gt-read-from-buffer))
-         (apply-key  (or (plist-get params :apply-key)  "C-c C-c"))
-         (cancel-key (or (plist-get params :cancel-key) "C-c C-k")))
-    `(if (and (cl-plusp (recursion-depth)) (buffer-live-p (get-buffer ,buffer)))
-         (throw 'exit t) ; avoid recursion
-       (save-window-excursion
-         (catch ,tag
-           (unwind-protect
-               (with-current-buffer (get-buffer-create ,buffer)
-                 ,(if-let (map (plist-get params :keymap)) `(use-local-map ,map))
-                 (local-set-key (kbd ,apply-key) (lambda () (interactive) (throw ,tag (buffer-string))))
-                 (local-set-key (kbd ,cancel-key) (lambda () (interactive) (throw ,tag nil)))
-                 (add-hook 'kill-buffer-query-functions
-                           (lambda () ; only allow quit with C-c C-k
-                             (not (and (memq this-command '(kill-buffer kill-this-buffer))
-                                       (message "Quit the buffer using `%s' please" ,cancel-key))))
-                           nil t)
-                 (erase-buffer)
-                 ,(if-let (c (plist-get params :initial-contents)) `(insert ,c))
-                 ,@forms
-                 (pop-to-buffer ,buffer ,(plist-get params :window-config))
-                 (recursive-edit))
-             (ignore-errors (kill-buffer ,buffer))))))))
+  (gt-plist-let
+      ((cl-loop for item in forms by #'cddr
+                while (keywordp item) append (list (pop forms) (pop forms))))
+    (let ((buffer (or .buffer (format "*gt-%s*" (gensym "tmp-"))))
+          (tag (or .catch 'gt-read-from-buffer))
+          (apply-key  (or .apply-key  "C-c C-c"))
+          (cancel-key (or .cancel-key "C-c C-k")))
+      `(if (and (cl-plusp (recursion-depth)) (buffer-live-p (get-buffer ,buffer)))
+           (throw 'exit t) ; avoid recursion
+         (save-window-excursion
+           (catch ,tag
+             (unwind-protect
+                 (with-current-buffer (get-buffer-create ,buffer)
+                   ,(if .keymap `(use-local-map ,.keymap))
+                   (local-set-key (kbd ,apply-key) (lambda () (interactive) (throw ,tag (buffer-string))))
+                   (local-set-key (kbd ,cancel-key) (lambda () (interactive) (throw ,tag nil)))
+                   (add-hook 'kill-buffer-query-functions
+                             (lambda () ; only allow quit with C-c C-k
+                               (not (and (memq this-command '(kill-buffer kill-this-buffer))
+                                         (message "Quit the buffer using `%s' please" ,cancel-key))))
+                             nil t)
+                   (erase-buffer)
+                   ,(if .initial-contents `(insert ,.initial-contents))
+                   ,@forms
+                   (pop-to-buffer ,buffer ,.window-config)
+                   (recursive-edit))
+               (ignore-errors (kill-buffer ,buffer)))))))))
 
 (cl-defgeneric gt-word-p (lang text)
   "Whether TEXT is a single word in LANG.
@@ -1364,14 +1391,14 @@ Output to minibuffer by default."
                           (message "[output error] %s" (cadr err))))))))
   (:method ((render gt-render) translator)
            (when (= 3 (oref translator state))
-             (let* ((ret (gt-extract render translator))
-                    (mpp (cdr (oref translator text)))
-                    (lst (cl-loop for tr in ret
-                                  for prefix = (concat "[" (plist-get tr :prefix) "]" (if mpp "\n" " "))
-                                  for result = (plist-get tr :result)
-                                  collect (concat (if (cdr ret) (propertize prefix 'face 'gt-render-prefix-face))
-                                                  (if (consp result) (string-join result "\n") result)))))
-               (message "%s" (string-join lst "\n"))))))
+             (cl-loop with ret = (gt-extract render translator)
+                      with mpp = (cdr (oref translator text))
+                      for tr in ret
+                      for (prefix result) = (gt-plist-let tr (list (concat "[" .prefix "]" (if mpp "\n" " ")) .result))
+                      collect (concat (if (cdr ret) (propertize prefix 'face 'gt-render-prefix-face))
+                                      (if (consp result) (string-join result "\n") result))
+                      into lst
+                      finally (message "%s" (string-join lst "\n"))))))
 
 
 ;;; Translator

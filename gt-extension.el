@@ -295,8 +295,7 @@ as argument that return a length.")
                                for res = (propertize "Loading..."
                                                      'face 'gt-buffer-render-loading-face
                                                      'gt-result t)
-                               for prefix = (plist-get tr :prefix)
-                               for task = (plist-get tr :task)
+                               for (prefix task) = (gt-plist-let tr (list .prefix .task))
                                for output = (propertize (concat prefix res "\n\n") 'gt-task task 'gt-part i)
                                do (insert output)))))
       ;; keybinds
@@ -332,14 +331,13 @@ as argument that return a length.")
                    for i from 0
                    do (cl-loop for tr in ret
                                for (beg . end) = (pop bds)
-                               for res = (plist-get tr :result)
+                               for (res state task) = (gt-plist-let tr (list .result .state .task))
                                do (goto-char beg)
-                               do (when (and (cl-plusp (plist-get tr :state))
-                                             (null (get-char-property beg 'gt-done)))
+                               do (when (and (cl-plusp state) (null (get-char-property beg 'gt-done)))
                                     (delete-region beg end)
                                     (insert (propertize (if (consp res) (nth i res) res)
                                                         'gt-result t 'gt-done t
-                                                        'gt-task (plist-get tr :task)
+                                                        'gt-task task
                                                         'gt-part i))))))))
     ;; update states
     (set-buffer-modified-p nil)
@@ -387,15 +385,13 @@ TAG is extra message show in the middle if not nil."
 (cl-defmethod gt-extract :around ((render gt-buffer-render) translator)
   (cl-loop with mpp = (cdr (oref translator text))
            for tr in (cl-call-next-method render translator)
-           for prefix = (plist-get tr :prefix)
+           for (prefix result state) = (gt-plist-let tr (list .prefix (format "%s" .result) .state))
            if (and prefix (or (not (slot-boundp render 'prefix)) (eq (oref render prefix) t)))
            do (plist-put tr :prefix
                          (concat (propertize (concat prefix (unless mpp "\n"))
                                              'face (if mpp 'gt-buffer-render-inline-prefix-face 'gt-buffer-render-block-prefix-face))
                                  "\n"))
-           if (= 1 (plist-get tr :state))
-           do (plist-put tr :result
-                         (propertize (format "%s" (plist-get tr :result)) 'face 'gt-buffer-render-error-face))
+           if (= 1 state) do (plist-put tr :result (propertize result 'face 'gt-buffer-render-error-face))
            collect tr))
 
 (cl-defmethod gt-init ((render gt-buffer-render) translator)

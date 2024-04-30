@@ -61,28 +61,26 @@
                   :done (lambda (raw) (setf res (gt-parse-html-dom raw)) (funcall next task))
                   :fail (lambda (err) (gt-fail task err))))))
 
-(defun gt-youdao-dict--phonetic (dom)
-  "从 DOM 中解析音标。"
-  (cl-loop for p in (dom-by-class dom "per-phone")
-           collect (cons (nth 2 (nth 2 p)) (nth 2 (nth 3 p)))))
-
-(defun gt-youdao-dict--explain (dom)
-  "从 DOM 中解析翻译结果。"
-  (let* ((node (dom-by-id dom "catalogue_author"))
-         (exp-ce (when-let (ns (dom-by-class node "word-exp-ce"))
-                   (cl-loop for n in ns
-                            for s = (car (dom-by-class n "point"))
-                            for r = (car (dom-by-class n "word-exp_tran"))
-                            collect (cons (nth 2 s) (nth 2 r)))))
-         (exp-nw (when-let (ns (and (not exp-ce) (dom-by-class node "trans-content")))
-                   (cl-loop for n in ns collect (nth 2 n))))
+(defun gt-youdao-dict--extract (dom)
+  "从 DOM 中解析结果。"
+  (let* ((phonetic (cl-loop for p in (dom-by-class dom "per-phone")
+                            collect (cons (nth 2 (nth 2 p)) (nth 2 (nth 3 p)))))
+         (node (dom-by-id dom "catalogue_author"))
+         (exp-ce (cl-loop for n in (dom-by-class node "word-exp-ce")
+                          for s = (car (dom-by-class n "point"))
+                          for r = (car (dom-by-class n "word-exp_tran"))
+                          collect (cons (nth 2 s) (nth 2 r))))
+         (exp-nw (unless exp-ce
+                   (cl-loop for n in (dom-by-class node "trans-content")
+                            collect (nth 2 n))))
          (exp-ec (unless (or exp-nw exp-ce)
                    (cl-loop for n in (dom-by-class node "word-exp")
                             collect (cons (nth 2 (nth 2 n)) (nth 2 (nth 3 n))))))
          (exam-type (mapcar #'caddr (dom-by-class node "exam_type-value")))
          (word-wfs (cl-loop for n in (dom-by-class node "word-wfs-cell-less")
                             collect (cons (nth 2 (nth 2 (nth 2 n))) (nth 2 (nth 3 n))))))
-    (list :exp-nw exp-nw :exp-ce exp-ce :exp-ec exp-ec :exam-type exam-type :word-wfs word-wfs)))
+    (list :exp-nw exp-nw :exp-ce exp-ce :exp-ec exp-ec :phonetic phonetic
+          :exam-type exam-type :word-wfs word-wfs)))
 
 (defun gt-youdao-dict--filter (result)
   "对结果进行某些美化。"
@@ -90,46 +88,39 @@
 
 (cl-defmethod gt-parse ((_ gt-youdao-dict-parser) task)
   (with-slots (res meta) task
-    (let* ((phonetic (gt-youdao-dict--phonetic res))
-           (exps (gt-youdao-dict--explain res))
-           (exp-nw (plist-get exps :exp-nw))
-           (exp-ce (plist-get exps :exp-ce))
-           (exp-ec (plist-get exps :exp-ec))
-           (exam-type (plist-get exps :exam-type))
-           (word-wfs  (plist-get exps :word-wfs)))
+    (gt-plist-let ((gt-youdao-dict--extract res))
       (with-temp-buffer
         ;; 音标
-        (when phonetic
+        (when .phonetic
           (insert (substring-no-properties (oref task text)) "  "
-                  (propertize
-                   (if exp-ce (propertize (caar phonetic) 'face 'gt-youdao-dict-phonetic-face)
-                     (mapconcat (lambda (p)
-                                  (concat (propertize (car p) 'face 'gt-youdao-dict-label-face) " "
-                                          (propertize (cdr p) 'face 'gt-youdao-dict-phonetic-face)))
-                                phonetic "  "))
-                   'display '(height 0.7))
+                  (propertize (if .exp-ce
+                                  (propertize (caar .phonetic) 'face 'gt-youdao-dict-phonetic-face)
+                                (mapconcat (lambda (p)
+                                             (concat (propertize (car p) 'face 'gt-youdao-dict-label-face) " "
+                                                     (propertize (cdr p) 'face 'gt-youdao-dict-phonetic-face)))
+                                           .phonetic "  "))
+                              'display '(height 0.7))
                   "\n\n"))
         ;; 释义
         (insert (cond
-                 (exp-nw (mapconcat #'identity exp-nw "\n"))
-                 (exp-ce (mapconcat (lambda (exp)
-                                      (concat (propertize (car exp) 'face 'gt-youdao-dict-entry-face)
-                                              "\n\n  " (cdr exp)))
-                                    exp-ce "\n\n"))
-                 (exp-ec (mapconcat (lambda (exp)
-                                      (if (cdr exp)
-                                          (concat (propertize (car exp) 'face 'gt-youdao-dict-entry-face) " " (cdr exp))
-                                        (gt-youdao-dict--filter (car exp))))
-                                    exp-ec "\n\n"))
+                 (.exp-nw (mapconcat #'identity .exp-nw "\n"))
+                 (.exp-ce (mapconcat (lambda (exp)
+                                       (concat (propertize (car exp) 'face 'gt-youdao-dict-entry-face) "\n\n  " (cdr exp)))
+                                     .exp-ce "\n\n"))
+                 (.exp-ec (mapconcat (lambda (exp)
+                                       (if (cdr exp)
+                                           (concat (propertize (car exp) 'face 'gt-youdao-dict-entry-face) " " (cdr exp))
+                                         (gt-youdao-dict--filter (car exp))))
+                                     .exp-ec "\n\n"))
                  (t (user-error "也许没有翻译结果?")))
                 "\n\n")
         ;; 相关
-        (cl-loop for wf in word-wfs
+        (cl-loop for wf in .word-wfs
                  for i from 1
                  do (insert (propertize (car wf) 'face 'gt-youdao-dict-label-face) "  " (cdr wf))
-                 do (insert (if (= (length word-wfs) i) "\n\n" (if (> (current-column) fill-column) "\n" "\t"))))
+                 do (insert (if (= (length .word-wfs) i) "\n\n" (if (> (current-column) fill-column) "\n" "\t"))))
         ;; 考试
-        (when-let (et (and exam-type (mapconcat #'identity exam-type " / ")))
+        (when-let (et (and .exam-type (mapconcat #'identity .exam-type " / ")))
           (insert (propertize et 'face 'gt-youdao-dict-phonetic-face 'display '(height 0.7))))
         ;; 返回
         (setf res (buffer-string))))))
