@@ -502,14 +502,15 @@ Use Overlays to display translation results.
 
 Set the display mode through =type=:
 - =after=, the default type, displays the translation results after the source text
+- =before=, displays the translation results before the source text
 - =replace=, overlays the translation results on top of the source text
 - =help-echo=, display result only when the mouse is hovered over the source text
   
 It is similar to =gt-insert-render= in many ways, including options:
 - =sface=, propertize the source text with this face after the translation is complete
 - =rfmt=, the output format of the translation result
-- =rface=, specify a face for the translation results
-- =pface=, specify a face for the translation prefix (language and engine prompts)
+- =rface/rdisp=, specify face or display for the translation results
+- =pface/pdisp=, specify face or display for the translation prefix (language and engine prompts)
 
 Here are some usage examples:
 #+begin_src emacs-lisp
@@ -530,8 +531,7 @@ Here are some usage examples:
         (gt-translator
          :taker (gt-taker :text 'buffer :pick 'word :pick-pred (lambda (w) (length> w 5)))
          :engines (gt-google-engine)
-         :render (gt-overlay-render :type 'help-echo
-                                    :sface '(:underline (:color "pink" :style wave)))))
+         :render (gt-overlay-render :type 'help-echo)))
 
   ;; Use overlays to overlay the translated results directly on top of the original text
   ;; Use this configuration for an article to get its general idea quickly
@@ -539,8 +539,10 @@ Here are some usage examples:
         (gt-translator
          :taker (gt-taker :text 'buffer)
          :engines (gt-google-engine)
-         :render (gt-overlay-render :type 'replace :rface nil)))
+         :render (gt-overlay-render :type 'replace)))
 #+end_src
+
+It is flexible, even something like real-time translation can be implement with the help of hook or timer.
 
 ** Customization and Extension
 

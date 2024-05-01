@@ -384,14 +384,32 @@ If OBJ is symbol, return its value."
   (remove-text-properties 0 (length text) props text)
   text)
 
-(defun gt-face-lazy (str face)
-  "Propertize STR to add FACE only when no face exists on it."
+(defun gt-face-lazy (str face &optional display)
+  "Propertize STR to add FACE only when no face exists on it.
+Set DISPLAY property to STR if it is not nil.
+
+For example:
+
+  \\=(gt-face-lazy s 'font-lock-doc-face '(space (:width 30) raise 0.5))
+
+When `space' in DISPLAY, prepend a space to the STR."
   (if (or (null face)
           (with-temp-buffer
             (insert str)
             (or (text-property-search-backward 'face)
-                (text-property-search-backward 'font-lock-face))))
-      str (propertize str 'face face)))
+                (text-property-search-backward 'font-lock-face)
+                (text-property-search-backward 'display))))
+      str
+    (let ((r (if face (propertize str 'face face) str))
+          (ds (cl-loop for (k v) on display by #'cddr
+                       if (eq k 'space) append v into spaces
+                       else append (list k v) into normals
+                       finally (return (cons normals spaces)))))
+      (when-let (normals (car ds))
+        (setq r (propertize r 'display normals)))
+      (when-let (spaces (cdr ds))
+        (setq r (concat (propertize " " 'display (cons 'space spaces)) r)))
+      r)))
 
 (defun gt-line-height-separator (pixel)
   "This can set line-height of the following line to PIXEL."
@@ -915,7 +933,7 @@ specific MODE."
              (when thing
                (cl-call-next-method thing mode))))
   (unless (member thing gt-taker-text-things)
-    (setq thing (intern (completing-read "Take _ at point as source text: " gt-taker-text-things nil t))))
+    (setq thing (intern (completing-read "Take _ at point as source text: " gt-taker-text-things nil t nil 'gt-text-hist))))
   (gt-log 'taker (format "take text by: %s" thing))
   (if (eq thing 'buffer)
       (let ((beg (save-excursion
@@ -959,7 +977,7 @@ Return the list of bounds or text pieces."
   (if (or (cdr-safe text) (null thing))
       text ; only pick from solo text; do nothing when thing is nil
     (unless (memq thing gt-taker-pick-things)
-      (setq thing (intern (completing-read "Pick _ for source text: " gt-taker-pick-things nil t))))
+      (setq thing (intern (completing-read "Pick _ for source text: " gt-taker-pick-things nil t nil 'gt-pick-hist))))
     (cl-flet ((ps (beg end mode)
                 (save-excursion
                   (save-restriction

@@ -560,7 +560,7 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
   ((type
     :initarg :type
     :initform 'after
-    :type (member after replace)
+    :type (or (member after replace) boolean)
     :documentation "How to insert the result.")
    (rfmt
     :initarg :rfmt
@@ -637,7 +637,7 @@ Otherwise, join the results use the default logic."
      (t (setq res (string-join res "\n"))
         ;; when multiple lines or at the end of line, will insert in a new line
         (when (eq type 'after)
-          (setq res (concat (if (or (string-match-p "\n" res) (eolp)) "\n" " ") res)))
+          (setq res (concat (if (or (string-match-p "\n" res) (and (not (gt-word-p nil src)) (eolp))) "\n" " ") res)))
         (gt-face-lazy res rface)))))
 
 (cl-defmethod gt-init ((render gt-insert-render) translator)
@@ -656,33 +656,35 @@ Otherwise, join the results use the default logic."
         (when-let (err (cl-find-if (lambda (tr) (<= (plist-get tr :state) 1)) ret))
           (user-error "Error in translation, %s" (plist-get err :result)))
         (with-current-buffer (car bounds)
-          (with-slots (rfmt sface) render
-            (cl-loop with bds = (mapcar (lambda (bd)
-                                          (cons (set-marker (make-marker) (car bd))
-                                                (set-marker (make-marker) (cdr bd))))
-                                        (cdr bounds))
-                     with type = (let ((type (or (oref render type) gt-insert-render-type))
-                                       (types '(after replace)))
-                                   (if (member type types) type
-                                     (intern (completing-read "Insert text as: " types nil t))))
-                     with hash = (when (and (eq type 'replace) (not (buffer-modified-p)))
-                                   (buffer-hash))
-                     for (beg . end) in bds
-                     for i from 0
-                     for src = (buffer-substring beg end)
-                     for res = (mapcar (lambda (tr) (nth i (plist-get tr :result))) ret)
-                     for fres = (progn (goto-char end) (gt-insert-render-format render src res))
-                     do (progn (delete-region beg end)
-                               (when (eq type 'after)
-                                 (insert (if-let (face (gt-ensure-plain sface src))
-                                             (propertize src 'face face) src)))
-                               (if (= (length bds) (+ i 1)) (push-mark))
-                               (insert fres))
-                     finally (when (and hash (equal hash (buffer-hash)))
-                               (set-buffer-modified-p nil)))
-            (deactivate-mark)
-            (run-hook-with-args 'gt-insert-render-output-hook translator)
-            (message "ok.")))))))
+          (save-excursion
+            (with-slots (rfmt sface) render
+              (cl-loop with bds = (mapcar (lambda (bd)
+                                            (cons (set-marker (make-marker) (car bd))
+                                                  (set-marker (make-marker) (cdr bd))))
+                                          (cdr bounds))
+                       with type = (let ((type (or (oref render type) gt-insert-render-type))
+                                         (types '(after replace)))
+                                     (if (member type types) type
+                                       (intern (completing-read "Insert text as: " types nil t))))
+                       with hash = (when (and (eq type 'replace) (not (buffer-modified-p)))
+                                     (buffer-hash))
+                       for (beg . end) in bds
+                       for i from 0
+                       for src = (buffer-substring beg end)
+                       for res = (mapcar (lambda (tr) (nth i (plist-get tr :result))) ret)
+                       for fres = (progn (goto-char end) (gt-insert-render-format render src res))
+                       do (progn (if (eq type 'replace)
+                                     (delete-region beg end)
+                                   (when-let (face (and (eq type 'after) (gt-ensure-plain sface src)))
+                                     (delete-region beg end)
+                                     (insert (propertize src 'face face))))
+                                 (insert (propertize fres 'type 'gt-insert-result))
+                                 (if (= (length bds) (+ i 1)) (push-mark)))
+                       finally (when (and hash (equal hash (buffer-hash)))
+                                 (set-buffer-modified-p nil)))
+              (deactivate-mark)
+              (run-hook-with-args 'gt-insert-render-output-hook translator)
+              (message "ok."))))))))
 
 
 ;;; [Render] Render with Overlay
@@ -691,7 +693,7 @@ Otherwise, join the results use the default logic."
   ((type
     :initarg :type
     :initform 'after
-    :type (member after replace help-echo)
+    :type (or (member after replace help-echo before) boolean)
     :documentation "How to display the result.")
    (rfmt
     :initarg :rfmt
@@ -709,21 +711,30 @@ just propertize the source text with the face.")
     :initarg :rface
     :initform 'gt-overlay-result-face
     :documentation "Result face.")
+   (rdisp
+    :initarg :rdisp
+    :initform nil
+    :documentation "Same as rface but used in `display' property.")
    (pface
     :initarg :pface
     :initform 'gt-overlay-prefix-face
-    :documentation "Prefix face.")))
+    :documentation "Prefix face.")
+   (pdisp
+    :initarg :pdisp
+    :initform nil
+    :documentation "Same as pface but used in `display' property.")))
 
 (defcustom gt-overlay-render-type 'after
   "How to display result in Overlay-Render.
 
 If this is `help-echo', display with help echo, if this is `replace', display
-by covering the source text, otherwise, display after the source text.
+by covering the source text, otherwise, display before or after the source text.
 
 The value can be overrided by `type' slot of render."
   :type '(choice (const :tag "Repace" replace)
                  (const :tag "Help Echo" help-echo)
-                 (other :tag "After" after))
+                 (const :tag "After" after)
+                 (other :tag "Before" before))
   :group 'go-translate)
 
 (defvar gt-overlay-render-map
@@ -791,21 +802,27 @@ argument. If four arguments, then chain the formatting task to the function.
                                (propertize w `face `font-lock-warning-face))))
 
 Otherwise, join the results use the default logic."
-  (with-slots (type rfmt rface pface) render
+  (with-slots (type rfmt rface rdisp pface pdisp) render
     (cond
      ((stringp rfmt)
-      (mapconcat (lambda (r) (gt-face-lazy (format rfmt r) (gt-ensure-plain rface r))) res "\n"))
+      (mapconcat (lambda (r) (gt-face-lazy (format rfmt r)
+                                           (gt-ensure-plain rface r)
+                                           (gt-ensure-plain rdisp r)))
+                 res "\n"))
      ((functionp rfmt)
       (let ((n (cdr (func-arity rfmt))))
         (if (<= n 2)
             (mapconcat (lambda (r)
                          (let ((ret (or (if (= n 2) (funcall rfmt src r) (funcall rfmt r)) r)))
-                           (gt-face-lazy ret (gt-ensure-plain rface r))))
+                           (gt-face-lazy ret (gt-ensure-plain rface r) (gt-ensure-plain rdisp r))))
                        res "\n")
           (funcall rfmt render src res prefix))))
      (t (cl-loop for r in res for p in prefix
-                 for pr = (gt-face-lazy (concat (if (and (eq type 'after) (eolp)) "\n") r) (gt-ensure-plain rface r))
-                 for pp = (if p (concat " " (propertize p 'face (gt-ensure-plain pface p))))
+                 for pr = (gt-face-lazy
+                           (concat (if (and (eq type 'after) (and (not (gt-word-p nil src)) (eolp))) "\n") r)
+                           (gt-ensure-plain rface r)
+                           (gt-ensure-plain rdisp r))
+                 for pp = (if p (concat " " (gt-face-lazy p (gt-ensure-plain pface p) (gt-ensure-plain pdisp p))))
                  collect (concat (if (eq type 'after) " ") pr pp) into ret
                  finally (return (string-join ret "\n")))))))
 
@@ -824,7 +841,7 @@ Otherwise, join the results use the default logic."
           (user-error "Error in translation, %s" (plist-get err :result)))
         (with-current-buffer (car bounds)
           (cl-loop with type = (let ((type (or (oref render type) gt-overlay-render-type))
-                                     (types '(help-echo replace after)))
+                                     (types '(help-echo replace after before)))
                                  (if (memq type types) type
                                    (intern (completing-read "Display with overlay as: " types nil t))))
                    for (beg . end) in (cdr bounds)
@@ -836,18 +853,22 @@ Otherwise, join the results use the default logic."
                                render src
                                (mapcar (lambda (tr) (nth i (plist-get tr :result))) ret)
                                (mapcar (lambda (tr) (plist-get tr :prefix)) ret))
-                   for ov = (make-overlay beg end)
+                   for ov = (make-overlay beg end nil t)
                    do (let* ((sface (oref render sface))
                              (sface (unless (eq type 'replace) (gt-ensure-plain sface src))))
                         (pcase type
                           ('help-echo (overlay-put ov 'help-echo fres))
-                          ('after (overlay-put ov 'after-string fres)))
+                          ('after (overlay-put ov 'after-string fres))
+                          ('before (overlay-put ov 'before-string fres)))
                         (overlay-put ov 'gt fres)
                         (overlay-put ov 'evaporate t)
+                        (overlay-put ov 'pointer 'arrow)
+                        (overlay-put ov 'modification-hooks `((lambda (o &rest _) (delete-overlay o))))
                         (overlay-put ov 'keymap gt-overlay-render-map)
-                        (overlay-put ov 'display (if (eq type 'replace) fres
-                                                   (if sface (propertize src 'face sface)
-                                                     src)))))
+                        (if (eq type 'replace)
+                            (progn (overlay-put ov 'display fres)
+                                   (overlay-put ov 'help-echo src))
+                          (if sface (overlay-put ov 'face sface)))))
           (deactivate-mark)
           (message "ok."))))))
 

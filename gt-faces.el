@@ -147,7 +147,7 @@
 
 ;;; Overlay Render
 
-(defface gt-overlay-source-face '((t :underline t))
+(defface gt-overlay-source-face '((t :underline (:color "grey" :style wave)))
   "Used in the overlay's source."
   :group 'go-translate-faces)
 

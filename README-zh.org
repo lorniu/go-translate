@@ -514,14 +514,15 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 
 通过 =type= 设置显示的方式:
 - =after=, 默认类型，将翻译结果显示在源文本后面
+- =before=, 将翻译结果显示在源文本前面
 - =replace=, 将翻译结果覆盖显示到源文本上面
 - =help-echo=, 鼠标移动到源文本上时，翻译结果才弹出显示
 
 它在很多方面跟 =gt-insert-render= 很像，包括选项:
 - =sface=, 翻译完成后，被翻译的源文本的 face
 - =rfmt=, 翻译结果的输出格式
-- =rface=, 为翻译结果指定特定样式
-- =pface=, 单独为翻译后的 Prefix (语言、引擎的提示) 设定样式
+- =rface/rdisp=, 为翻译结果指定特定样式
+- =pface/pdisp=, 单独为翻译后的 Prefix (语言、引擎的提示) 设定样式
 
 下面是若干使用示例:
 #+begin_src emacs-lisp
@@ -542,8 +543,18 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
         (gt-translator
          :taker (gt-taker :text 'buffer :pick 'word :pick-pred (lambda (w) (length> w 5)))
          :engines (gt-google-engine)
-         :render (gt-overlay-render :type 'help-echo
-                                    :sface '(:underline (:color "pink" :style wave)))))
+         :render (gt-overlay-render :type 'help-echo)))
+
+  ;; 也可以将符合条件单词的翻译直接显示在原单词后面
+  (setq gt-default-translator
+        (gt-translator
+         :taker (gt-taker :text 'buffer :pick 'word :pick-pred (lambda (w) (length> w 5)))
+         :engines (gt-google-engine)
+         :render (gt-overlay-render :type 'after
+                                    :sface nil
+                                    :rfmt "%s"
+                                    :rdisp '(space (:width 0.3) raise 0.6)
+                                    :rface '(:foreground "grey" :height 0.5))))
 
   ;; 使用 Overlay 把翻译的结果直接覆盖到原文之上
   ;; 对于某篇文章，如果想通过速览的方式获取其大致意思，适合使用这种配置
@@ -551,7 +562,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
         (gt-translator
          :taker (gt-taker :text 'buffer)
          :engines (gt-google-engine)
-         :render (gt-overlay-render :type 'replace :rface nil)))
+         :render (gt-overlay-render :type 'replace)))
 #+end_src
 
 ** 定制与扩展
