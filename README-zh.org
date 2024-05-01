@@ -7,7 +7,7 @@
 - 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
-- 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好
+- 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好。支持为不同请求设定不同代理
 - 基于 eieio (CLOS) 实现，各种组件，允许用户灵活搭配、自由扩展
 
 当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意需要进行文本转换的场合 (Text to Text)，比如 ChatGPT 等。
@@ -273,7 +273,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 #+end_src
 
 ** 常用组件/补充说明
-*** gt-default-cacher/gt-memory-cacher
+*** gt-memory-cacher (gt-default-cacher)
 
 =gt-memory-cacher= 是内置的缓存实现，功能简单直接。只需要将 =gt-cache-p= 设置为 t 即可使用。
 
@@ -293,7 +293,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 可以通过扩展将翻译结果缓存进文件、SQLite 或 Redis 等。但感觉没必要。
 #+end_quote
 
-*** gt-default-http-client/gt-plz-http-client
+*** gt-url-http-client/gt-plz-http-client (gt-default-http-client)
 
 某些引擎需要通过网络获取翻译结果，这需要借助 =gt-http-client= 组件进行网络处理。
 
@@ -305,21 +305,34 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 
 如果想让请求走代理，这样设置:
 #+begin_src emacs-lisp
+  ;; 如果是 gt-url-http-client
+  (setq gt-default-http-client
+        (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
+
+  ;; 如果是 gt-plz-http-client
   (setq gt-default-http-client
         (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
 #+end_src
 
-如果只想让特定请求走代理，可以仿照下面方式设置:
+若想让不同请求走不同代理，可以仿照下面方式设置:
 #+begin_src emacs-lisp
   (setq my-client-1 (gt-url-http-client))
-  (setq my-client-2 (gt-plz-http-client))
-  (setq my-client-3 (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
+  (setq my-client-2 (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
+  (setq my-client-3 (gt-plz-http-client))
+  (setq my-client-4 (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
 
   (setq gt-default-http-client
         (lambda (host)
-          (cond ((not (require 'plz nil t)) my-client-1)
-                ((string-match-p "google\\|deepl\\|openai" host) my-client-3)
-                (t my-client-2))))
+          (if (string-match-p "google\\|deepl\\|openai" host)
+              my-client-4 my-client-3)))
+
+  (setq gt-default-http-client
+        (lambda (host)
+          (let ((plz? (require 'plz nil t))
+                (proxy? (string-match-p "google\\|deepl\\|openai" host)))
+            (if plz?
+                (if proxy? my-client-4 my-client-3)
+              (if proxy? my-client-2 my-client-1)))))
 #+end_src
 
 *** gt-taker

@@ -677,7 +677,8 @@ TEXT should be a string representing one part of all text list."
 
 (defvar gt-default-http-client nil)
 
-(defclass gt-http-client () ()
+(defclass gt-http-client ()
+  ((user-agent :initarg :user-agent :initform nil :type (or string null)))
   "Used to send a request and get the response."
   :abstract t)
 
@@ -719,11 +720,16 @@ Optional keyword arguments:
 
 ;; http client implemented using `url.el'
 
-(defclass gt-url-http-client (gt-http-client) ()
+(defclass gt-url-http-client (gt-http-client)
+  ((proxy-services
+    :initarg :proxies
+    :initform nil
+    :type (or list null)
+    :documentation "Proxy services passed to `url.el', see `url-proxy-services' for details."))
   :documentation "Http Client implemented using `url.el'.")
 
 (defcustom gt-user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36"
-  "The user agent used when send a request."
+  "The default user agent used when send a request."
   :type 'string
   :group 'go-translate)
 
@@ -734,11 +740,13 @@ Optional keyword arguments:
   (let ((inhibit-message t)
         (message-log-max nil)
         (url-debug gt-debug-p)
-        (url-user-agent gt-user-agent)
+        (url-user-agent (or (oref client user-agent) gt-user-agent))
+        (url-proxy-services (or (oref client proxy-services) url-proxy-services))
         (url-request-extra-headers headers)
         (url-request-method (if data "POST" "GET"))
         (url-request-data data))
     (url-retrieve url (lambda (status)
+                        (set-buffer-multibyte t)
                         (unwind-protect
                             (if-let (err (or (cdr-safe (plist-get status :error))
                                              (when (or (null url-http-end-of-headers) (= 1 (point-max)))

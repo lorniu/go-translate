@@ -19,7 +19,7 @@ As a translation framework, it offers many advantages:
 - Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others.
 - Flexible retrieval of content and language for translation, with the help of the built-in Taker component.
 - Support for word and sentence translation, as well as translation of multiple paragraphs. It can use multiple engines concurrently to translate multiple paragraphs into multiple languages.
-- Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience.
+- Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience. Support independent proxy configs.
 - Implemented based on eieio (CLOS), allowing users to flexibly configure and extend the various components.
 
 It's more than just a translation framework.
@@ -283,7 +283,7 @@ Configure render for translator via =:render=. Multiple renders can be chained t
 #+end_src
 
 ** Components (Supplementary Notes)
-*** gt-default-cacher/gt-memory-cacher
+*** gt-memory-cacher (gt-default-cacher)
 
 Component =gt-memory-cacher= is the built-in cache implementation. Just set =gt-cache-p= to t to use it.
 
@@ -303,21 +303,28 @@ Set =gt-cache-p= to nil to turn off all caches. Or turn off the cache for engine
 Translation results can be cached in files, SQLite or Redis through extensions. But maybe it's unnecessary.
 #+end_quote
 
-*** gt-default-http-client/gt-plz-http-client
+*** gt-url-http-client/gt-plz-http-client (gt-default-http-client)
 
 Some engines need to fetch translation results over the network, which requires network processing with the help of the =gt-http-client= component.
 
 By default, =gt-url-http-client= is used as the http client, which is inefficient.
-This component uses =curl= to send the request, which is much better.
 
-Config =gt-default-http-client= to switch http client, or just make sure =curl= and [[https://github.com/alphapapa/plz.el][plz]] is exists in your system, then the component =gt-plz-http-client=
-will be used as the default http client.
+The component =gt-plz-http-client= uses =curl= to send the request, which is much better.
+
+Config =gt-default-http-client= to switch http client. Or just make sure =curl= and [[https://github.com/alphapapa/plz.el][plz]] is exists in your system, then =gt-plz-http-client=
+will be used as the default http client without any other configs.
 
 To send request with proxy, config like this:
 #+begin_src emacs-lisp
+  ;; for gt-url-http-client
+  (setq gt-default-http-client
+        (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
+
+  ;; for gt-plz-http-client
   (setq gt-default-http-client
         (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
 
+  ;; dynamic by host of request url
   (setq gt-default-http-client
         (lambda (host)
           (if (string-match-p "deepl" host)

@@ -70,7 +70,7 @@ Or switch http client to `gt-url-http-client' instead:\n
              (append (oref client extra-args) plz-curl-default-args)
            plz-curl-default-args)))
     (plz (if data 'post 'get) url
-      :headers (cons `("User-Agent" . ,gt-user-agent) headers)
+      :headers (cons `("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) headers)
       :body data
       :as 'string
       :then (lambda (raw) (funcall done raw))
