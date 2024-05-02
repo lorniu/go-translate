@@ -269,18 +269,20 @@ will be used as the default translator."
   (oset translator _render render)
   (message "Changed render done."))
 
-(defun gt-switch-translator ()
-  "Switch `gt-default-translator' to another defined in `gt-preset-translators'."
-  (interactive)
+(defun gt-translator-copy-of-presets ()
   (let* ((tss (gt-ensure-plain gt-preset-translators))
          (tsn (completing-read "Preset translator: " tss nil t))
          (translator (alist-get tsn tss nil nil #'string-equal)))
-    (if (called-interactively-p 'any)
-        (progn
-          (setq gt-default-translator (clone translator)) ; clone copy
-          (gt-ensure-default-translator)
-          (message "Switch default translator to: %s" tsn))
-      (clone translator))))
+    (list (clone translator) tsn)))
+
+(defun gt-switch-translator ()
+  "Switch `gt-default-translator' to another defined in `gt-preset-translators'."
+  (interactive)
+  (cl-destructuring-bind (translator name)
+      (gt-translator-copy-of-presets)
+    (setq gt-default-translator translator)
+    (gt-ensure-default-translator)
+    (message "Switch default translator to: %s" name)))
 
 ;;;###autoload
 (transient-define-prefix gt-do-setup ()
@@ -323,9 +325,9 @@ and switch with `gt-do-setup' at any time.
 This is just a simple wrapper of `gt-start' method. Create other translate
 commands in the same way using your creativity.
 
-If ARG is not nil, translate with translator return by `gt-switch-translator'."
+If ARG is not nil, translate with translator select by `gt-preset-translators'."
   (interactive "P")
-  (let ((gt-default-translator (if arg (gt-switch-translator) gt-default-translator)))
+  (let ((gt-default-translator (if arg (car (gt-translator-copy-of-presets)) gt-default-translator)))
     (gt-ensure-default-translator)
     (gt-start gt-default-translator)))
 
