@@ -113,7 +113,6 @@ to engines for result, at last extracted by render for output.")
     :documentation "Filter the picked element with this function.")
    (langs
     :initarg :langs
-    :initform nil
     :type list
     :documentation "See `gt-langs' for details.")
    (prompt
@@ -164,6 +163,7 @@ use one of them at a time.")
     :documentation "Display label for this engine.")
    (parse
     :initarg :parse
+    :initform (gt-parser)
     :type (or function gt-parser)
     :documentation "Used to generate user-friendly result from response.")
    (delimiter
@@ -226,6 +226,7 @@ every task finished.")
 (defclass gt-translator ()
   ((target
     :type list
+    :initform nil
     :documentation "The target taken by taker.
 
 This should be a list. Generally, the first element is the source language and
@@ -238,6 +239,7 @@ targets.")
 
    (text
     :type list
+    :initform nil
     :initarg :text
     :documentation "The text taken by taker, and prepare to translate.
 This should be a list, every element is a string as one pargraph or one part.
@@ -245,6 +247,7 @@ This list will be sent to translate engines later.")
 
    (bounds
     :type list
+    :initform nil
     :documentation "The bounds in buffer corresponds to the `text' slot.
 The first element is buffer, while rest are bounds. By default, the taker will
 prioritize taking bounds over the text string. However, the bounds maybe lost if
@@ -732,7 +735,8 @@ Optional keyword arguments:
                                           (funcall fail err))))
                                :fail (lambda (status)
                                        (gt-log tag (format "Request fail! (%s) %s" url status))
-                                       (funcall fail status))))
+                                       (if fail (funcall fail status)
+                                         (signal (car status) (cdr status))))))
                (funcall fail "Make sure `gt-default-http-client' is available. eg:\n
  (setq gt-default-http-client (gt-url-http-client))\n\n\n")))))
 
@@ -1025,7 +1029,8 @@ one or more languages."
                     (goto-char (point-min))
                     (while (re-search-forward "\\s.\\|\n" nil t) (replace-match ""))
                     ;; apply rules
-                    (cl-loop for (l . m) in gt-lang-rules
+                    (cl-loop with rules = (cl-loop for r in gt-lang-rules if (member (car r) langs) collect r)
+                             for (l . m) in rules
                              do (goto-char (point-min))
                              do (if (if (functionp m) (funcall m) (re-search-forward m nil t))
                                     (throw 'gt-langs l) ; hit the one, return directly
@@ -1047,9 +1052,11 @@ one or more languages."
 (defun gt-prompt-from-minibuffer (text langs translator)
   (let* ((enable-recursive-minibuffers t)
          (minibuffer-allow-text-properties t)
-         (prompt (concat "[" (if-let (src (car langs)) (format "%s > " src))
-                         (mapconcat (lambda (s) (format "%s" s)) (gt-ensure-list (cdr langs)) ", ")
-                         "] Text: "))
+         (prompt (concat
+                  (if langs (concat "[" (if-let (src (car langs)) (format "%s > " src))
+                                    (mapconcat (lambda (s) (format "%s" s)) (gt-ensure-list (cdr langs)) ", ")
+                                    "] "))
+                  "Text: "))
          (text (minibuffer-with-setup-hook
                    (lambda () (setq gt-prompt-translator translator))
                  (read-from-minibuffer prompt text gt-prompt-map))))
@@ -1145,12 +1152,14 @@ This is non-destructive, return the picked elements as string or string list."
 This is non-destructive, return the target will be used. If DIR is `next or
 `prev, return the next or previous one."
   (:method ((taker gt-taker) translator &optional dir)
-           (let* ((text (oref translator text))
-                  (tgts (gt-available-langs (gt-ensure-list (or (oref taker langs) gt-langs)) text))
-                  (index (let ((n (cl-position gt-last-target tgts :test #'equal)))
-                           (if n (+ n (pcase dir ('next 1) ('prev -1) (_ 0))) 0)))
-                  (target (nth (if (>= index (length tgts)) 0 (if (< index 0) (- (length tgts) 1) index)) tgts)))
-             (setq gt-last-target target))))
+           (let ((langs (if (slot-boundp taker 'langs) (oref taker langs) gt-langs)))
+             (when langs
+               (let* ((text (oref translator text))
+                      (tgts (gt-available-langs (gt-ensure-list langs) text))
+                      (index (let ((n (cl-position gt-last-target tgts :test #'equal)))
+                               (if n (+ n (pcase dir ('next 1) ('prev -1) (_ 0))) 0)))
+                      (target (nth (if (>= index (length tgts)) 0 (if (< index 0) (- (length tgts) 1) index)) tgts)))
+                 (setq gt-last-target target))))))
 
 (cl-defgeneric gt-prompt (_taker translator _type)
   "Used to prompt user with the initial text and target for TRANSLATOR."
@@ -1366,8 +1375,8 @@ If engine failed, then try locally TTS if `gt-tts-try-speak-locally' is set."
   "Extract TRANSLATOR's responses that to be consumed by RENDER."
   (:method ((render gt-render) translator)
            (with-slots (text tasks) translator
-             (cl-loop with engines = (mapcar (lambda (task) (oref task engine)) tasks)
-                      with tgts = (cl-delete-duplicates (mapcar (lambda (item) (oref item tgt)) tasks))
+             (cl-loop with tgts = (cl-delete-duplicates (mapcar (lambda (item) (oref item tgt)) tasks))
+                      with engines = (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))
                       for task in tasks
                       for (tgt res err engine) = (gt-orefs task tgt res err engine)
                       for state = (if err 1 (if res 2 0)) ; 0 loading 1 error 2 result
@@ -1536,7 +1545,7 @@ Output to minibuffer by default."
                          do (cl-incf total) and do (gt-add-task task))
              finally (gt-update-state translator))
     (when (zerop total)
-      (user-error "No available engines found for current translate"))
+      (user-error "No task created, please check engines and langs setup"))
     ;; translate
     (if render (gt-init render translator))
     (cl-loop for task in (oref translator tasks)

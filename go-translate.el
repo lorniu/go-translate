@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.2
+;; Version: 3.0.3
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -32,9 +32,9 @@
 ;;  - Support multiple translation engines, such as Google, Bing, deepL, StarDict.
 ;;  - With variety of output styles, such as Buffer, Overlay, Childframe and so on.
 ;;  - With a flexible taker for easy retrieval of translated content and targets.
-;;  - Support multiple paragraphs/parts and polyglot translation.
+;;  - Support multiple paragraphs/parts and multi-language translation.
 ;;  - Support different http backends, such as url.el, curl. Async and non-blocking.
-;;  - Support caches and more.
+;;  - Support caches, proxy and more.
 ;;
 ;; Notice, it is not limited to just being a translation framework. It can fulfill
 ;; any text transformation tasks, such as ChatGPT and more.
@@ -59,6 +59,7 @@
 
 ;;; Code:
 
+(require 'transient)
 (require 'gt-core)
 (require 'gt-extension)
 (require 'gt-engine-bing)
@@ -68,7 +69,7 @@
 (require 'gt-engine-stardict)
 (require 'gt-engine-youdao)
 (require 'gt-engine-echo)
-(require 'transient)
+(require 'gt-text-utility)
 
 ;; Compat old version
 (ignore-errors

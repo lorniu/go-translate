@@ -10,7 +10,9 @@
 - 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好。支持为不同请求设定不同代理
 - 基于 eieio (CLOS) 实现，各种组件，允许用户灵活搭配、自由扩展
 
-当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意需要进行文本转换的场合 (Text to Text)，比如 ChatGPT 等。
+当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意文本转换的场合 (Text to Text):
+- 比如内置的 Text Utility，集成了文本的加密解密、求取哈希、生成二维码等功能
+- 比如可以扩展为 ChatGPT 的客户端 (TODO)
   
 ** 基本使用
 
@@ -563,6 +565,44 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
          :taker (gt-taker :text 'buffer)
          :engines (gt-google-engine)
          :render (gt-overlay-render :type 'replace)))
+#+end_src
+
+*** gt-text-utility
+
+派生自 =gt-translator= 的一个组件，集成了很多文本转换和处理方面的功能。
+
+这展示了本框架的扩展性，它不仅可以应用在翻译方面，其 taker 和 render 具备普适性。
+
+如果要生成二维码，需要在系统中安装 =qrencode= 程序或通过 MELPA 安装 =qrencode= 包:
+#+begin_src sh
+  pacman -S qrencode
+  brew install qrencode
+
+  # or in Emacs
+  M-x package-install qrencode
+#+end_src
+
+另外，可以通过扩展 generic 方法 =gt-text-util= 集成其他想要的功能。
+
+下面是若干使用示例:
+#+begin_src emacs-lisp
+  ;; 默认情况下，通过 completing-read 选择如何进行文本处理
+  ;; 注意：无需为其指定 engines
+  (setq gt-default-translator
+        (gt-text-utility :render (gt-buffer-render)))
+
+  ;; 为当前文本生成二维码 (通过 :langs 指定 utility)
+  ;; 实用的配置，适用于电脑向手机传递文本片段
+  (setq gt-default-translator
+        (gt-text-utility
+         :taker (gt-taker :langs '(qrcode) :pick nil)
+         :render (gt-buffer-render)))
+
+  ;; 为 buffer 中的每段文字都生成 TTS 按钮以及其 md5 值
+  (setq gt-default-translator
+        (gt-text-utility
+         :taker (gt-taker :langs '(speak md5) :text 'buffer :pick 'paragraph)
+         :render (gt-posframe-pin-render)))
 #+end_src
 
 ** 定制与扩展

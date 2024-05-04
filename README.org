@@ -22,9 +22,9 @@ As a translation framework, it offers many advantages:
 - Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience. Support independent proxy configs.
 - Implemented based on eieio (CLOS), allowing users to flexibly configure and extend the various components.
 
-It's more than just a translation framework.
-
-It's flexible, and can easily be extended to various Text-to-Text conversion scenarios, such as ChatGPT and so on.
+It's more than just a translation framework.It's flexible, and can easily be extended to various Text-to-Text conversion scenarios:
+- For example, the built-in Text-Utility component integrates text encryption/decryption, hashing, QR code generation, etc.
+- For example, it can be extended as a client for ChatGPT (TODO)
 
 ** Basic Usage
 
@@ -543,6 +543,44 @@ Here are some usage examples:
 #+end_src
 
 It is flexible, even something like real-time translation can be implement with the help of hook or timer.
+
+*** gt-text-utility
+
+Derived from =gt-translator=, integrates a lot of text conversion and processing features.
+
+This demonstrates the extensibility of the framework, shows that it can be used not only for translation.
+
+To generate QR code for text, need to install the =qrencode= program or =qrencode= package first:
+#+begin_src sh
+  pacman -S qrencode
+  brew install qrencode
+
+  # or in Emacs
+  M-x package-install qrencode
+#+end_src
+
+In addition, other functionalities can be integrated by extending the generic method =gt-text-util=.
+
+Here are some usage examples:
+#+begin_src emacs-lisp
+  ;; By default, interactivelly choose what to do with the text
+  ;; Notice: you should not specify any engine for it
+  (setq gt-default-translator
+        (gt-text-utility :render (gt-buffer-render)))
+
+  ;; Generate QR Code for current text (specify the `utility' explicitly with :langs)
+  ;; Very practical configuration for sharing text to Mobile phone
+  (setq gt-default-translator
+        (gt-text-utility
+         :taker (gt-taker :langs '(qrcode) :pick nil)
+         :render (gt-buffer-render)))
+
+  ;; Output text to speech label and MD5 sum
+  (setq gt-default-translator
+        (gt-text-utility
+         :taker (gt-taker :langs '(speak md5) :text 'buffer :pick 'paragraph)
+         :render (gt-posframe-pin-render)))
+#+end_src
 
 ** Customization and Extension
 

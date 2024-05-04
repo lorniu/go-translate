@@ -168,7 +168,7 @@ Notice, this can be overrided by `window-config' slot of render instance."
 (defun gt-buffer-render--cycle-next (&optional ignore-rules)
   (interactive "P")
   (with-slots (target taker keep) gt-buffer-render-translator
-    (if (gt-functionp (oref taker langs))
+    (if (and (slot-boundp taker 'langs) (gt-functionp (oref taker langs)))
         (user-error "Current taker not support cycle next")
       (let* ((curr gt-last-target)
              (gt-skip-lang-rules-p ignore-rules)

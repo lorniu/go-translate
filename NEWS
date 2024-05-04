@@ -1,3 +1,6 @@
+Version 3.0.3
+  - Add component `gt-text-utility`, integrated text encode/decode, qrcode and others
+
 Version 3.0.2
   - Improve `gt-stardict-engine` with a better parser
   - Update the options and commands used by `gt-stardict-engine`
