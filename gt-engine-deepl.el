@@ -41,22 +41,18 @@
   ((tag       :initform 'DeepL)
    (host      :initform "https://api.deepl.com")
    (host-free :initform "https://api-free.deepl.com")
-   (sub-url   :initform "/v2/translate")
+   (path      :initform "/v2/translate")
    (parse     :initform (gt-deepl-parser))
 
    (pro       :initform nil
               :initarg :pro
               :documentation "Set t when use PRO version.")
 
-   (auth-key  :initform 'auth-key
-              :initarg :auth-key
+   (key       :initform 'auth-key
+              :initarg :key
               :documentation "The auth-key of DeepL.
-
 You can also put it into .authinfo file as:
-
-  machine api.deepl.com login auth-key password ***
-
-This is required.")))
+  machine api.deepl.com login auth-key password ***")))
 
 
 ;;; Utils
@@ -102,58 +98,56 @@ Mainly fill the text to suitable length."
                 :value-type (string :tag "Value"))
   :group 'go-translate-deepl)
 
-(defvar gt-deepl-langs-mapping '(("en" . "EN")
-                                 ("zh" . "ZH")
-                                 ("de" . "DE") ; German
-                                 ("fr" . "FR") ; French
-                                 ("it" . "IT") ; Italian
-                                 ("ja" . "JA") ; Japanese
-                                 ("es" . "ES") ; Spanish
-                                 ("nl" . "NL") ; Dutch
-                                 ("pl" . "PL") ; Polish
-                                 ("pt" . "PT") ; Portuguese (all Portuguese varieties mixed)
-                                 ("ru" . "RU") ; Russian
+(defvar gt-deepl-langs-mapping '((en . "EN")
+                                 (zh . "ZH")
+                                 (de . "DE") ; German
+                                 (fr . "FR") ; French
+                                 (it . "IT") ; Italian
+                                 (ja . "JA") ; Japanese
+                                 (es . "ES") ; Spanish
+                                 (nl . "NL") ; Dutch
+                                 (pl . "PL") ; Polish
+                                 (pt . "PT") ; Portuguese (all Portuguese varieties mixed)
+                                 (ru . "RU") ; Russian
                                  ))
 
 (defun gt-deepl-get-lang (lang)
   (if-let (mapping (assoc lang gt-deepl-langs-mapping))
       (cdr mapping)
-    (user-error "Language %s is not supported by DeepL.\nSupported list: %s"
-                lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
+    (user-error "Language %s is not supported by DeepL.
+Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
 
-(cl-defmethod gt-url ((engine gt-deepl-engine))
-  (with-slots (host host-free sub-url pro) engine
-    (concat (if pro host host-free) sub-url)))
-
-(cl-defmethod gt-translate :before ((engine gt-deepl-engine) &rest _)
-  (with-slots (auth-key) engine
-    (unless (stringp auth-key)
-      (if-let ((key (gt-lookup-password
-                     :user (if auth-key (format "%s" auth-key) "auth-key")
-                     :host "api.deepl.com")))
-          (setf auth-key key)
+(cl-defmethod gt-ensure-key ((engine gt-deepl-engine))
+  (with-slots (key) engine
+    (unless (stringp key)
+      (if-let (auth-key (gt-lookup-password
+                         :user (if key (format "%s" key) "auth-key")
+                         :host "api.deepl.com"))
+          (setf key auth-key)
         (user-error "You should provide a auth-key for gt-deepl-engine")))))
 
 (cl-defmethod gt-translate ((engine gt-deepl-engine) task next)
+  (gt-ensure-key engine)
   (with-slots (text src tgt res) task
-    (gt-request :url (gt-url engine)
-                :headers `(("Content-Type"    . "application/x-www-form-urlencoded;charset=UTF-8")
-                           ("Authorization"   . ,(concat "DeepL-Auth-Key " (oref engine auth-key))))
-                :data    `(("text"            . ,(gt-deepl-fill-input text))
-                           ("target_lang"     . ,(gt-deepl-get-lang tgt))
-                           ,(if-let (src (gt-deepl-get-lang src)) `("source_lang" . ,src))
-                           ,@gt-deepl-extra-params)
-                :done (lambda (raw)
-                        (setf res raw)
-                        (funcall next task))
-                :fail (lambda (err)
-                        (gt-fail task (pcase (car-safe (cdr-safe err))
-                                        (403 "[403] Authorization failed. Please supply a valid auth_key parameter")
-                                        (413 "[413] The request size exceeds the limit")
-                                        (414 "[414] Request-URI Too Long")
-                                        (429 "[429] Too many requests. Please wait and resend your request")
-                                        (456 "[456] Quota exceeded. The character limit has been reached")
-                                        (_ err)))))))
+    (with-slots (host host-free path pro key) engine
+      (gt-request :url (concat (if pro host host-free) path)
+                  :headers `(("Content-Type"    . "application/x-www-form-urlencoded;charset=UTF-8")
+                             ("Authorization"   . ,(concat "DeepL-Auth-Key " key)))
+                  :data    `(("text"            . ,(gt-deepl-fill-input text))
+                             ("target_lang"     . ,(gt-deepl-get-lang tgt))
+                             ,(if-let (src (gt-deepl-get-lang src)) `("source_lang" . ,src))
+                             ,@gt-deepl-extra-params)
+                  :done (lambda (raw)
+                          (setf res raw)
+                          (funcall next task))
+                  :fail (lambda (err)
+                          (gt-fail task (pcase (car-safe (cdr-safe err))
+                                          (403 "[403] Authorization failed. Please supply a valid auth_key parameter")
+                                          (413 "[413] The request size exceeds the limit")
+                                          (414 "[414] Request-URI Too Long")
+                                          (429 "[429] Too many requests. Please wait and resend your request")
+                                          (456 "[456] Quota exceeded. The character limit has been reached")
+                                          (_ err))))))))
 
 
 ;;; Parser

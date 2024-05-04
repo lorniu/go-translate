@@ -1,4 +1,4 @@
-;;; gt-engine-google.el --- Google translate module -*- lexical-binding: t -*-
+;;; gt-engine-google.el --- Google translate -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2024 lorniu <lorniu@gmail.com>
 ;; Author: lorniu <lorniu@gmail.com>
@@ -28,6 +28,16 @@
 
 (require 'gt-extension)
 
+(defgroup go-translate-google nil
+  "Configs for Google engine."
+  :group 'go-translate)
+
+(defcustom gt-google-host "http://translate.googleapis.com"
+  "The base url of Google translate used by google engine.
+you can customize it according to your country region."
+  :type 'string
+  :group 'go-translate-google)
+
 
 ;;; Components
 
@@ -39,8 +49,8 @@
 
 (defclass gt-google-engine (gt-engine)
   ((tag                :initform 'Google)
-   (base-url           :initform "http://translate.googleapis.com")
-   (sub-url            :initform "/translate_a/single")
+   (host               :initform nil)
+   (path               :initform "/translate_a/single")
    (token              :initform (cons 430675 2721866130) :initarg token) ; hard code
    (token-time         :initform t)
    (token-expired-time :initform (* 30 60))
@@ -49,39 +59,44 @@
 
 ;;; Engine
 
-(defvar gt-google-request-headers '(("Connection" . "Keep-Alive")))
+(defcustom gt-google-request-headers '(("Connection" . "Keep-Alive"))
+  "Extra request headers send to google server."
+  :type '(alist :key-type (string :tag "Key") :value-type (string :tag "Value"))
+  :group 'go-translate-google)
 
 (defun gt-google-gen-url (engine text src tgt)
   "Generate url for google ENGINE with TEXT, SRC and TGT."
-  (format "%s%s?%s"
-          (oref engine base-url)
-          (oref engine sub-url)
-          (mapconcat (lambda (p)
-                       (format "%s=%s" (url-hexify-string (car p)) (url-hexify-string (cdr p))))
-                     `(("client" . "gtx")
-                       ("ie"     . "UTF-8")
-                       ("oe"     . "UTF-8")
-                       ("dt"     . "bd")
-                       ("dt"     . "ex")
-                       ("dt"     . "ld")
-                       ("dt"     . "md")
-                       ("dt"     . "qc")
-                       ("dt"     . "rw")
-                       ("dt"     . "rm")
-                       ("dt"     . "ss")
-                       ("dt"     . "t")
-                       ("dt"     . "at")
-                       ("pc"     . "1")
-                       ("otf"    . "1")
-                       ("srcrom" . "1")
-                       ("ssel"   . "0")
-                       ("tsel"   . "0")
-                       ("q"      . ,text)
-                       ("sl"     . ,src)
-                       ("tl"     . ,tgt)
-                       ("hl"     . ,tgt)
-                       ("tk"     . ,(gt-google-tkk (oref engine token) text)))
-                     "&")))
+  (with-slots (host path token) engine
+    (format "%s%s?%s"
+            (or host gt-google-host) path
+            (mapconcat (lambda (p)
+                         (format "%s=%s"
+                                 (url-hexify-string (car p))
+                                 (url-hexify-string (format "%s" (cdr p)))))
+                       `(("client" . "gtx")
+                         ("ie"     . "UTF-8")
+                         ("oe"     . "UTF-8")
+                         ("dt"     . "bd")
+                         ("dt"     . "ex")
+                         ("dt"     . "ld")
+                         ("dt"     . "md")
+                         ("dt"     . "qc")
+                         ("dt"     . "rw")
+                         ("dt"     . "rm")
+                         ("dt"     . "ss")
+                         ("dt"     . "t")
+                         ("dt"     . "at")
+                         ("pc"     . "1")
+                         ("otf"    . "1")
+                         ("srcrom" . "1")
+                         ("ssel"   . "0")
+                         ("tsel"   . "0")
+                         ("q"      . ,text)
+                         ("sl"     . ,src)
+                         ("tl"     . ,tgt)
+                         ("hl"     . ,tgt)
+                         ("tk"     . ,(gt-google-tkk token text)))
+                       "&"))))
 
 (defun gt-google-token-available-p (engine)
   (with-slots (token token-time token-expired-time) engine
@@ -93,10 +108,10 @@
 
 (defun gt-google-with-token (engine done fail)
   (declare (indent 1))
-  (with-slots (token token-time base-url) engine
+  (with-slots (host token token-time) engine
     (if (gt-google-token-available-p engine)
         (funcall done)
-      (gt-request :url base-url
+      (gt-request :url (or host gt-google-host)
                   :headers gt-google-request-headers
                   :done (lambda (raw)
                           (with-temp-buffer
@@ -166,36 +181,27 @@ Code from `google-translate', maybe improve it someday."
 		        (setq pos limit)))))))
     (reverse result)))
 
-(defun gt-google-tts-gen-urls (engine text lang)
-  "Generate the tts urls for TEXT to LANG with ENGINE."
+(cl-defmethod gt-speak ((engine gt-google-engine) text lang)
+  (message "Requesting from %s for %s..." (or (oref engine host) gt-google-host) lang)
   (cl-loop with texts = (gt-google-tts-split-text text)
-           for total = (length texts)
-           for index from 0
-           for piece in texts
-           collect
-           (let ((params `(("ie"      . "UTF-8")
-                           ("client"  . "gtx")
-                           ("prev"    . "input")
-                           ("q"       . ,text)
-                           ("tl"      . ,lang)
-                           ("total"   . ,(number-to-string total))
-                           ("idx"     . ,(number-to-string index))
-                           ("textlen" . ,(number-to-string (length piece)))
-                           ("tk"      . ,(gt-google-tkk (oref engine token) piece)))))
-             (format "%s/translate_tts?%s"
-                     (oref engine base-url)
-                     (mapconcat (lambda (p)
-                                  (format "%s=%s"
-                                          (url-hexify-string (car p))
-                                          (url-hexify-string (cdr p))))
-                                params "&")))))
-
-(cl-defmethod gt-tts ((engine gt-google-engine) text lang)
-  (let ((urls (gt-google-tts-gen-urls engine text lang))
-        (speaker (split-string gt-tts-speaker)))
-    (with-temp-message "Speaking..."
-      (gt-tts-try-interrupt-playing-process)
-      (apply #'call-process (car speaker) nil nil nil (append (cdr speaker) urls)))))
+           with total = (length texts)
+           for c in texts
+           for i from 0
+           for ps = `(("ie"      . "UTF-8")
+                      ("client"  . "gtx")
+                      ("prev"    . "input")
+                      ("tl"      . ,lang)
+                      ("q"       . ,(string-trim c))
+                      ("total"   . ,total)
+                      ("idx"     . ,i)
+                      ("textlen" . ,(length c))
+                      ("tk"      . ,(gt-google-tkk (oref engine token) c)))
+           for url = (format "%s/translate_tts?%s"
+                             (or (oref engine host) gt-google-host)
+                             (mapconcat (lambda (p)
+                                          (format "%s=%s" (url-hexify-string (car p)) (url-hexify-string (format "%s" (cdr p)))))
+                                        ps "&"))
+           do (gt-play-audio url 'wait)))
 
 
 ;;; Parser
@@ -203,67 +209,69 @@ Code from `google-translate', maybe improve it someday."
 ;; detail-mode, use as default
 
 (cl-defmethod gt-parse ((parser gt-google-parser) task)
-  (with-slots (res meta) task
-    (let* ((json        (gt-resp-to-json parser res))
-           (brief       (gt-result--brief parser json))
-           (sphonetic   (gt-result--sphonetic parser json))
-           (tphonetic   (gt-result--tphonetic parser json))
-           (details     (gt-result--details parser json))
-           (definitions (gt-result--definitions parser json))
-           (suggestion  (gt-result--suggestion parser json))
-           (suggestionp (> (length suggestion) 0)) sp)
-      (cl-flet ((phonetic (ph)
-                  (if (and (or definitions definitions) (> (length ph) 0))
-                      (propertize (format " [%s]" ph) 'face 'gt-google-buffer-phonetic-face)
-                    ""))
-                (headline (line)
-                  (propertize (format "[%s]\n" line) 'face 'gt-google-buffer-headline-face)))
-        (with-temp-buffer
-          ;; suggestion
-          (when suggestionp
-            (insert (propertize "Do you mean:" 'face 'gt-google-buffer-suggestion-desc-face) " "
-                    (propertize suggestion 'face 'gt-google-buffer-suggestion-text-face) "?\n\n"))
-          ;; phonetic & translate
-          (if (or details definitions)
-              (progn
-                (insert (if suggestionp
-                            suggestion
-                          (setq sp (point))
-                          (substring-no-properties (oref task text))))
-                (insert (phonetic sphonetic) " ")
-                (insert (propertize brief 'face 'gt-google-buffer-brief-result-face))
-                (insert (phonetic tphonetic) "\n\n"))
-            (insert brief))
-          ;; details
-          (when details
-            (insert (headline "Details"))
-            (cl-loop for (label . items) in details
-                     unless (= 0 (length label))
-                     do (insert (format "\n%s:\n" label))
-                     do (cl-loop with index = 0
-                                 for trans in items
-                                 do (insert
-                                     (format "%2d. " (cl-incf index))
-                                     (car trans)
-                                     " (" (mapconcat #'identity (cdr trans) ", ")  ")"
-                                     "\n")))
-            (insert "\n"))
-          ;; definitions
-          (when definitions
-            (insert (headline "Definitions"))
-            (cl-loop for (label . items) in definitions
-                     unless (= 0 (length label))
-                     do (insert (format "\n%s:\n" label))
-                     do (cl-loop with index = 0
-                                 for (exp . eg) in items
-                                 do (insert (format "%2d. " (cl-incf index)) exp)
-                                 when (> (length eg) 0)
-                                 do (insert
-                                     "\n    > "
-                                     (propertize (or eg "") 'face 'gt-google-buffer-detail-demo-face))
-                                 do (insert "\n"))))
-          ;; at last, return
-          (setf res (buffer-string) meta (append (list :sp sp) meta)))))))
+  (with-slots (res translator) task
+    (let* ((json (gt-resp-to-json parser res))
+           (brief-result (gt-result--brief parser json)))
+      (if (cdr (oref translator text)) ; multi-parts
+          (setf res (string-trim (gt-result--brief parser json) "\n+"))
+        (let* ((sphonetic    (gt-result--sphonetic parser json))
+               (tphonetic    (gt-result--tphonetic parser json))
+               (details      (gt-result--details parser json))
+               (definitions  (gt-result--definitions parser json))
+               (suggestion   (gt-result--suggestion parser json))
+               (suggestionp  (> (length suggestion) 0)) pt)
+          (cl-flet ((phonetic (ph)
+                      (if (and (or definitions definitions) (> (length ph) 0))
+                          (propertize (format " [%s]" ph) 'face 'gt-google-buffer-phonetic-face)
+                        ""))
+                    (headline (line)
+                      (propertize (format "[%s]\n" line) 'face 'gt-google-buffer-headline-face)))
+            (with-temp-buffer
+              ;; suggestion
+              (when suggestionp
+                (insert (propertize "Do you mean:" 'face 'gt-google-buffer-suggestion-desc-face) " "
+                        (propertize suggestion 'face 'gt-google-buffer-suggestion-text-face) "?\n\n"))
+              ;; phonetic & translate
+              (if (or details definitions)
+                  (progn
+                    (insert (if suggestionp suggestion
+                              (setq pt (point))
+                              (substring-no-properties (oref task text))))
+                    (insert (phonetic sphonetic) " ")
+                    (insert (propertize brief-result 'face 'gt-google-buffer-brief-result-face))
+                    (insert (phonetic tphonetic) "\n\n"))
+                (insert brief-result))
+              ;; details
+              (when details
+                (insert (headline "Details"))
+                (cl-loop for (label . items) in details
+                         unless (= 0 (length label))
+                         do (insert (format "\n%s:\n" label))
+                         do (cl-loop with index = 0
+                                     for trans in items
+                                     do (insert
+                                         (format "%2d. " (cl-incf index))
+                                         (car trans)
+                                         " (" (mapconcat #'identity (cdr trans) ", ")  ")"
+                                         "\n")))
+                (insert "\n"))
+              ;; definitions
+              (when definitions
+                (insert (headline "Definitions"))
+                (cl-loop for (label . items) in definitions
+                         unless (= 0 (length label))
+                         do (insert (format "\n%s:\n" label))
+                         do (cl-loop with index = 0
+                                     for (exp . eg) in items
+                                     do (insert (format "%2d. " (cl-incf index)) exp)
+                                     when (> (length eg) 0)
+                                     do (insert
+                                         "\n    > "
+                                         (propertize (or eg "") 'face 'gt-google-buffer-detail-demo-face))
+                                     do (insert "\n"))))
+              ;; at last, return
+              (add-text-properties (point-min) (point-max) (list 'gt-mark pt 'gt-brief brief-result))
+              (setf res (buffer-string)))))))))
 
 ;; summary-mode
 

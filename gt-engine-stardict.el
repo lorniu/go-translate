@@ -113,11 +113,8 @@
          (engine (and task (oref task engine)))
          (dicts (and engine (gt-stardict-list-dicts engine))))
     (when (= (length dicts) 0) (user-error "No dict found, nothing can do"))
-    (let ((dict (completing-read "Dictionary to search: "
-                                 (lambda (input pred action)
-                                   (if (eq action 'metadata)
-                                       `(metadata (display-sort-function . ,#'identity))
-                                     (complete-with-action action (cons 'ALL dicts) input pred)))
+    (let ((dict (completing-read "Dictionary to use: "
+                                 (gt-make-completion-table (cons 'ALL dicts))
                                  nil t nil nil (oref engine dict))))
       (oset engine dict (unless (string= dict "ALL") dict))
       (oset gt-buffer-render-translator keep t)
@@ -125,7 +122,7 @@
 
 (cl-defgeneric gt-stardict-pretty-definition (dictionary definition)
   "Try to pretty the DEFINITION part of DICTIONARY for output."
-  (:method ((dictionary (eql '朗道)) definition)
+  (:method ((_ (eql '朗道)) definition)
            (with-temp-buffer
              (insert definition)
              ;; phonetic

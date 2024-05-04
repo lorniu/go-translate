@@ -396,10 +396,13 @@ Display the translation results with a new buffer. This is a very general way of
 In the result buffer, there are many shortcut keys (overview through =?=), such as:
 - Switch languages via =t=
 - Switch multi-language mode via =T=
-- TTS via =y=
 - Clear caches with =C=
 - Refresh via =g=
 - Quit via =q=
+
+Alternatively, play speech via =y= (command =gt-do-speak=). If the active region exists, then only
+speak current selection content. TTS requires that the engine have implemented =gt-speak= method.
+Command =gt-do-speak= can use anywhere else, then it will try to speak text via TTS service of system.
 
 You can set the buffer window through =buffer-name/window-config/split-threshold=:
 #+begin_src emacs-lisp

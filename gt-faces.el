@@ -60,11 +60,13 @@
 
 (defface gt-buffer-render-source-face
   '((((background light)) :background "ivory")
-    (((background dark)) :foreground "darkgray" :weight light :slant italic))
+    (((background dark)) :background "gray20" :foreground "gray" :weight light))
   "Used in the buffer's source text."
   :group 'go-translate-faces)
 
-(defface gt-buffer-render-inline-prefix-face '((t :height 0.8 :foreground "grey"))
+(defface gt-buffer-render-inline-prefix-face
+  '((((background light)) :height 0.8 :foreground "grey")
+    (((background dark)) :height 0.8 :foreground "grey30"))
   "Used in the buffer's inline prefix."
   :group 'go-translate-faces)
 

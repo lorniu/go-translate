@@ -38,6 +38,9 @@
 
 (require 'gt-extension)
 
+(defvar gt-text-utilities `(base64 rot13 qrcode speak ,@(secure-hash-algorithms))
+  "List of available targets for `gt-text-utility-engine'.")
+
 (defclass gt-text-utility (gt-translator) ())
 
 (defclass gt-text-utility-engine (gt-engine)
@@ -78,9 +81,6 @@
 
 
 
-(defvar gt-text-utilities `(base64 rot13 qrcode speak ,@(secure-hash-algorithms))
-  "List of available targets for `gt-text-utility-engine'.")
-
 (cl-defgeneric gt-text-util (target text)
   "Dispatch to different TEXT utility methods for different TARGET."
   (:method ((_ (eql 'base64)) text) (base64-encode-string text t))
@@ -95,15 +95,7 @@
   (propertize str
               'display " click to speak... "
               'pointer 'hand
-              'keymap (let ((map (make-sparse-keymap)))
-                        (define-key map [mouse-1]
-                                    (lambda (e)
-                                      (interactive "e")
-                                      (let ((s (buffer-substring
-                                                (posn-point (event-start e))
-                                                (posn-point (event-end e)))))
-                                        (gt-speak-locally s))))
-                        map)
+              'keymap (gt-simple-keymap [mouse-1] (lambda () (interactive) (gt-speak 'interact str t)))
               'face '(:box t)
               'mouse-face '(:reverse-video t :inherit font-lock-warning-face)))
 

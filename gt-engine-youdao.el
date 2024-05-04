@@ -32,7 +32,7 @@
 ;;
 ;; > 这里为有道实现了两个引擎：
 ;; > 1. `gt-youdao-dict-engine'，基于网页翻译接口，具备基本的翻译能力
-;; > 2. `gt-youdao-suggest-engine', 基于网易提供的 API 接口，用于展示输入单词的同义词及相关词汇
+;; > 2. `gt-youdao-suggest-engine', 用于展示输入单词的同义词及相关词汇
 ;; >
 ;; > 另外，有道还提供 API 接口，罢了，要收费的。
 
@@ -47,18 +47,23 @@
 
 (defclass gt-youdao-dict-engine (gt-engine)
   ((tag     :initform '有道词典)
-   (url     :initform "https://dict.youdao.com/result?word=%s&lang=%s")
+   (url     :initform "https://dict.youdao.com/result?lang=%s&word=%s")
    (parse   :initform (gt-youdao-dict-parser))))
 
 (cl-defmethod gt-translate ((engine gt-youdao-dict-engine) task next)
-  (with-slots (text src tgt res meta) task
-    (let* ((lang (cond ((string-equal src "zh") tgt)
-                       ((string-equal tgt "zh") src)
+  (with-slots (text src tgt res meta translator) task
+    (let* ((lang (cond ((equal src 'zh) tgt)
+                       ((equal tgt 'zh) src)
                        (t (user-error "只支持中文跟其他语言之间的翻译"))))
-           (url (format (oref engine url) (url-hexify-string text) (url-hexify-string lang))))
-      (setf meta (list :url url))
+           (url (if (cdr (oref translator text))
+                    (user-error "不支持分段翻译")
+                  (format (oref engine url)
+                          (url-hexify-string (format "%s" lang))
+                          (url-hexify-string text)))))
       (gt-request :url url
-                  :done (lambda (raw) (setf res (gt-parse-html-dom raw)) (funcall next task))
+                  :done (lambda (raw)
+                          (setf res (gt-parse-html-dom raw) meta url)
+                          (funcall next task))
                   :fail (lambda (err) (gt-fail task err))))))
 
 (defun gt-youdao-dict--extract (dom)
@@ -83,8 +88,13 @@
           :exam-type exam-type :word-wfs word-wfs)))
 
 (defun gt-youdao-dict--filter (result)
-  "对结果进行某些美化。"
+  "对 RESULT 进行某些美化。"
   (string-replace "】" "]" (string-replace "【" "[" result)))
+
+(defun gt-youdao-dict--tts-url (word &optional lang)
+  (format "http://dict.youdao.com/dictvoice?audio=%s&type=%s"
+          (url-hexify-string word)
+          (if (member lang '("英" 1 "1")) 1 0)))
 
 (cl-defmethod gt-parse ((_ gt-youdao-dict-parser) task)
   (with-slots (res meta) task
@@ -97,7 +107,11 @@
                                   (propertize (caar .phonetic) 'face 'gt-youdao-dict-phonetic-face)
                                 (mapconcat (lambda (p)
                                              (concat (propertize (car p) 'face 'gt-youdao-dict-label-face) " "
-                                                     (propertize (cdr p) 'face 'gt-youdao-dict-phonetic-face)))
+                                                     (propertize (cdr p)
+                                                                 'face 'gt-youdao-dict-phonetic-face
+                                                                 'mouse-face 'bold
+                                                                 'gt-tts-url (gt-youdao-dict--tts-url (oref task text) (car p))
+                                                                 'keymap (gt-simple-keymap [mouse-1] #'gt-do-speak))))
                                            .phonetic "  "))
                               'display '(height 0.7))
                   "\n\n"))
@@ -123,7 +137,9 @@
         (when-let (et (and .exam-type (mapconcat #'identity .exam-type " / ")))
           (insert (propertize et 'face 'gt-youdao-dict-phonetic-face 'display '(height 0.7))))
         ;; 返回
-        (setf res (buffer-string))))))
+        (setf res (if (or .exp-ce .exp-ec)
+                      (propertize (buffer-string) 'gt-url meta)
+                    (buffer-string)))))))
 
 
 ;;; 有道同义词
@@ -131,21 +147,23 @@
 (defclass gt-youdao-suggest-parser (gt-parser) ())
 
 (defclass gt-youdao-suggest-engine (gt-engine)
-  ((tag     :initform '有道同义词)
-   (url     :initform "https://dict.youdao.com/suggest?q=%s&num=%s&doctype=json")
-   (limit   :initform 9 :initarg :limit)
-   (parse   :initform (gt-youdao-suggest-parser))))
+  ((tag       :initform '有道同义词)
+   (url       :initform "https://dict.youdao.com/suggest?q=%s&num=%s&doctype=json")
+   (limit     :initform 9 :initarg :limit)
+   (delimiter :initform nil)
+   (parse     :initform (gt-youdao-suggest-parser))))
 
 (cl-defmethod gt-translate ((engine gt-youdao-suggest-engine) task next)
-  (with-slots (text src tgt res meta) task
-    (let ((url (format (oref engine url) (url-hexify-string text) (oref engine limit))))
-      (setf meta (list :url url))
+  (with-slots (text res meta) task
+    (when (cdr text)
+      (user-error "不支持一次翻译多个单词或句子"))
+    (let ((url (format (oref engine url) (url-hexify-string (car text)) (oref engine limit))))
       (gt-request :url url
-                  :done (lambda (raw) (setf res raw) (funcall next task))
+                  :done (lambda (raw) (setf res raw meta url) (funcall next task))
                   :fail (lambda (err) (gt-fail task err))))))
 
 (cl-defmethod gt-parse ((_ gt-youdao-suggest-parser) task)
-  (with-slots (res) task
+  (with-slots (res meta) task
     (let ((json (json-read-from-string res)))
       (unless (= (alist-get 'code (alist-get 'result json)) 200)
         (user-error (alist-get 'msg (alist-get 'result json))))
@@ -163,7 +181,7 @@
                                             (mapconcat (lambda (v) (format "%s" v)) gt-word-classes "\\|"))
                                     nil t)
             (put-text-property (match-beginning 0) (match-end 0) 'face 'gt-youdao-suggest-cixing-face))
-          (setf res (buffer-string)))))))
+          (setf res (propertize (buffer-string) 'gt-url meta)))))))
 
 (provide 'gt-engine-youdao)
 

@@ -28,9 +28,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'url)
 (require 'json)
-(require 'text-property-search)
 (require 'gt-core)
 (require 'gt-faces)
 
@@ -185,35 +183,24 @@ Notice, this can be overrided by `window-config' slot of render instance."
     (setf target nil keep t)
     (gt-start gt-buffer-render-translator)))
 
-(defun gt-buffer-render--speak-current ()
-  "Speak current text with current engine.
-When current-prefix is not nil, speak source text instead of text under point."
+(defun gt-buffer-render--browser ()
   (interactive)
-  (if-let (task (get-char-property (point) 'gt-task))
-      (with-slots (text target) gt-buffer-render-translator
-        (with-slots (engine res) task
-          (let ((part (or (get-char-property (point) 'gt-part) 0)) text lang)
-            (if current-prefix-arg
-                (setq text (nth part text) lang (car target))
-              (if res
-                  (setq text (nth part (gt-ensure-list res)) lang (nth part (cdr target)))
-                (user-error "[TTS] Current translate is not success, TTS is invalid")))
-            (gt-log 'tts (format "Speaking '%s' to '%s'..." text lang))
-            (gt-do-tts text lang (oref task engine)))))
-    (message "[TTS] No engine found at point")))
+  (if-let (url (get-char-property (point) 'gt-url))
+      (progn (browse-url url)
+             (message "Opening %s... Done!" url))
+    (message "No url found on current result.")))
 
-(defun gt-buffer-render--open-as-url ()
+(defun gt-buffer-render--delete-cache ()
   (interactive)
-  (when-let ((task (get-char-property (point) 'gt-task)))
-    (if-let ((url (plist-get (oref task meta) :url)))
-        (progn (browse-url url)
-               (message "Opening %s... Done!" url))
-      (message "No url found on current result."))))
+  (when-let ((task (get-pos-property (point) 'gt-task))
+             (key (gt-cache-key task (or (get-pos-property (point) 'gt-part) 0))))
+    (gt-cache-set gt-default-cacher key nil)
+    (message "Delete %s from cacher" key)))
 
 (defun gt-buffer-render--keyboard-quit ()
   (interactive)
   (unwind-protect
-      (gt-tts-try-interrupt-playing-process)
+      (gt-interrupt-speak-process)
     (keyboard-quit)))
 
 (defun gt-buffer-render--show-tips ()
@@ -239,33 +226,32 @@ When current-prefix is not nil, speak source text instead of text under point."
 This can be a number as visible length or a function with source text
 as argument that return a length.")
 
-(defun gt-buffer-render--insert-source-text (text)
+(defun gt-buffer-render--format-source-text (text)
   "Propertize and insert the source TEXT into render buffer."
-  (setq text (string-trim text "\n+"))
-  (let ((beg (point)) end
-        (limit (if (functionp gt-buffer-render-source-text-limit)
-                   (funcall gt-buffer-render-source-text-limit text)
-                 gt-buffer-render-source-text-limit)))
-    (insert (substring-no-properties text))
-    (when (and limit (> (- (setq end (point)) beg) limit))
-      (save-excursion
-        (goto-char (+ beg limit))
-        (when (numberp gt-buffer-render-source-text-limit)
-          (if (< (- (save-excursion (skip-syntax-forward "w") (point)) (point)) 5)
-              (skip-syntax-forward "w")
-            (if (< (- (point) (save-excursion (skip-syntax-backward "w") (point))) 5)
-                (skip-syntax-backward "w"))))
-        (let ((map (make-sparse-keymap))
-              (ov (make-overlay (point) end nil t nil)))
-          (cl-flet ((show () (interactive) (mapc (lambda (ov) (delete-overlay ov)) (overlays-at (point)))))
-            (define-key map [return] #'show)
-            (define-key map [mouse-1] #'show))
-          (overlay-put ov 'display "...")
-          (overlay-put ov 'keymap map)
-          (overlay-put ov 'pointer 'hand)
-          (overlay-put ov 'help-echo "Click to unfold the text"))))
-    (put-text-property beg end 'face 'gt-buffer-render-source-face)
-    (insert "\n\n")))
+  (with-temp-buffer
+    (setq text (string-trim text "\n+"))
+    (let ((beg (point)) end
+          (limit (if (functionp gt-buffer-render-source-text-limit)
+                     (funcall gt-buffer-render-source-text-limit text)
+                   gt-buffer-render-source-text-limit)))
+      (insert (substring-no-properties text))
+      (when (and limit (> (- (setq end (point)) beg) limit))
+        (save-excursion
+          (goto-char (+ beg limit))
+          (when (numberp gt-buffer-render-source-text-limit)
+            (if (< (- (save-excursion (skip-syntax-forward "w") (point)) (point)) 5)
+                (skip-syntax-forward "w")
+              (if (< (- (point) (save-excursion (skip-syntax-backward "w") (point))) 5)
+                  (skip-syntax-backward "w"))))
+          (let ((ov (make-overlay (point) end nil t nil)))
+            (cl-flet ((show () (interactive) (mapc (lambda (ov) (delete-overlay ov)) (overlays-at (point)))))
+              (overlay-put ov 'display "...")
+              (overlay-put ov 'keymap (gt-simple-keymap [return] #'show [mouse-1] #'show))
+              (overlay-put ov 'pointer 'hand)
+              (overlay-put ov 'help-echo "Click to unfold the text")))))
+      (put-text-property beg end 'face 'gt-buffer-render-source-face)
+      (insert "\n\n"))
+    (buffer-string)))
 
 (defun gt-buffer-render-init (buffer render translator)
   "Init BUFFER for RENDER of TRANSLATOR."
@@ -279,7 +265,8 @@ as argument that return a length.")
       (setq-local cursor-in-non-selected-windows nil)
       (setq-local gt-buffer-render-translator translator)
       ;; headline
-      (gt-header render translator (unless (cdr engines) (oref (car engines) tag)))
+      (let ((engines (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))))
+        (gt-header render translator (unless (cdr engines) (oref (car engines) tag))))
       ;; content
       (let ((inhibit-read-only t)
             (ret (gt-extract render translator)))
@@ -287,10 +274,11 @@ as argument that return a length.")
         (newline)
         (save-excursion
           (unless (cdr text) ; single part
-            (gt-buffer-render--insert-source-text (car text)))
+            (let ((c (gt-buffer-render--format-source-text (car text))))
+              (insert (if (cdr tasks) c (propertize c 'gt-task (car tasks))))))
           (cl-loop for c in text
                    for i from 0
-                   if (cdr text) do (gt-buffer-render--insert-source-text c) ; multi parts
+                   if (cdr text) do (insert (gt-buffer-render--format-source-text c)) ; multi parts
                    do (cl-loop for tr in ret
                                for res = (propertize "Loading..."
                                                      'face 'gt-buffer-render-loading-face
@@ -324,8 +312,10 @@ as argument that return a length.")
           (setq bds (nreverse bds))
           (goto-char (point-min))
           ;; delete source if necessary
-          (when (and (not (cdr ret)) (plist-get (oref (car tasks) meta) :sp))
-            (delete-region (point) (progn (forward-line 2) (point))))
+          (when (and (not (cdr ret))
+                     (get-pos-property 1 'gt-mark (car (gt-ensure-list (plist-get (car ret) :result)))))
+            (skip-chars-forward "\n")
+            (delete-region (point) (progn (end-of-line) (skip-chars-forward "\n") (point))))
           ;; output results in bounds
           (cl-loop for _ in text
                    for i from 0
@@ -366,10 +356,11 @@ TAG is extra message show in the middle if not nil."
 (cl-defmethod gt-keybinds ((_ gt-buffer-render) _translator)
   "Define keybinds for `gt-buffer-render-local-map'."
   (gt-buffer-render-key ("t" "Cycle Next")        #'gt-buffer-render--cycle-next)
-  (gt-buffer-render-key ("T" "Toggle Multiple")   #'gt-buffer-render--toggle-polyglot)
-  (gt-buffer-render-key ("y" "TTS")               #'gt-buffer-render--speak-current)
-  (gt-buffer-render-key ("O" "Open as URL")       #'gt-buffer-render--open-as-url)
-  (gt-buffer-render-key ("C" "Clean Cache")       #'gt-cache-clear-all)
+  (gt-buffer-render-key ("T" "Toggle Polyglot")   #'gt-buffer-render--toggle-polyglot)
+  (gt-buffer-render-key ("y" "TTS")               #'gt-do-speak)
+  (gt-buffer-render-key ("O" "Browser")           #'gt-buffer-render--browser)
+  (gt-buffer-render-key ("c" "Del Cache")         #'gt-buffer-render--delete-cache)
+  (gt-buffer-render-key ("C")                     #'gt-purge-cache)
   (gt-buffer-render-key ("g" "Refresh")           #'gt-buffer-render--refresh)
   (gt-buffer-render-key ("n")                     #'next-line)
   (gt-buffer-render-key ("p")                     #'previous-line)
@@ -402,7 +393,7 @@ TAG is extra message show in the middle if not nil."
       (display-buffer buf (or window-config gt-buffer-render-window-config)))))
 
 (cl-defmethod gt-output ((render gt-buffer-render) translator)
-  (when-let ((buf (get-buffer (or (oref render buffer-name) gt-buffer-render-buffer-name))))
+  (when-let (buf (get-buffer (or (oref render buffer-name) gt-buffer-render-buffer-name)))
     (gt-buffer-render-output buf render translator)
     (when (= (oref translator state) 3)
       (if gt-buffer-render-follow-p
@@ -476,7 +467,7 @@ Manually close the frame with `q'.")
         (gt-buffer-render-key ("q" "Close") (posframe-delete buf))))))
 
 (cl-defmethod gt-output ((render gt-posframe-pop-render) translator)
-  (when-let ((buf (get-buffer gt-posframe-pop-render-buffer)))
+  (when-let (buf (get-buffer gt-posframe-pop-render-buffer))
     (gt-buffer-render-output buf render translator)
     (posframe-refresh buf)
     (add-hook 'post-command-hook #'gt-posframe-render-auto-close-handler)))
@@ -526,7 +517,7 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
                              :poshandler (unless position gt-posframe-pin-render-poshandler)))))
     (set-frame-parameter gt-posframe-pin-render-frame 'drag-internal-border t)
     (set-frame-parameter gt-posframe-pin-render-frame 'drag-with-header-line t)
-    (when-let ((color (or (oref render fri-color) gt-pin-posframe-fringe-color)))
+    (when-let (color (or (oref render fri-color) gt-pin-posframe-fringe-color))
       (set-face-background 'fringe color  gt-posframe-pin-render-frame)))
   ;; render
   (gt-buffer-render-init gt-posframe-pin-render-buffer render translator)
@@ -739,7 +730,7 @@ The value can be overrided by `type' slot of render."
 
 (defvar gt-overlay-render-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "<mouse-1>") #'gt-overlay-render-delete-overlays)
+    (define-key map (kbd "<mouse-1>") #'gt-delete-render-overlays)
     (define-key map (kbd "<mouse-3>") #'gt-overlay-render-save-to-kill-ring)
     map)
   "Keymap used in overlay render.")
@@ -758,7 +749,7 @@ If END is nil, return the overlays at BEG."
                           (overlays-in beg (point)))
                       (overlays-at beg))))
 
-(defun gt-overlay-render-delete-overlays (beg &optional end)
+(defun gt-delete-render-overlays (beg &optional end)
   "Delete overlays made by Overlay-Render in the region from BEG to END.
 If called interactively, delete overlays around point or in region. With
 `current-prefix-arg' non nil, delete all overlays in the buffer."
@@ -846,7 +837,7 @@ Otherwise, join the results use the default logic."
                                    (intern (completing-read "Display with overlay as: " types nil t))))
                    for (beg . end) in (cdr bounds)
                    for i from 0
-                   do (gt-overlay-render-delete-overlays beg end)
+                   do (gt-delete-render-overlays beg end)
                    for src = (buffer-substring beg end)
                    do (goto-char end)
                    for fres = (gt-overlay-render-format

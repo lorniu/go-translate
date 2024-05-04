@@ -28,131 +28,78 @@
 
 (require 'gt-extension)
 
+(defgroup go-translate-bing nil
+  "Configs for Bing engine."
+  :group 'go-translate)
+
+
+
 (defclass gt-bing-parser (gt-parser) ())
 
 (defclass gt-bing-engine (gt-engine)
   ((tag       :initform 'Bing)
-   (base-url  :initform "https://www.bing.com")
-   (sub-url   :initform "/ttranslatev3")
-
-   (tld-url   :initform nil)
+   (host      :initform "https://www.bing.com")
+   (host-tld  :initform nil)
    (ig        :initform nil)
    (key       :initform nil)
    (token     :initform nil)
    (last-time :initform nil)
    (expired-time :initform (* 30 60))
-
-   (ttsk-url  :initform "/tfetspktok")
-   (tts-url   :initform "https://%s.tts.speech.microsoft.com/cognitiveservices/v1")
-   (tts-tpl   :initform "<speak version='1.0' xml:lang='%s'><voice xml:lang='%s' xml:gender='Female' name='%s'><prosody rate='-20.00%%'>%s</prosody></voice></speak>")
-
    (parse     :initform (gt-bing-parser))))
 
 
-;;; Engine
+;;; Translate
 
-(defvar gt-bing-extra-langs-mapping '(("zh" . "zh-Hans")))
+(defvar gt-bing-extra-langs-mapping '((zh . "zh-Hans")))
 
 (defvar gt-bing-token-maybe-invalid nil)
 
 (defun gt-bing-get-lang (lang)
   (or (cdr-safe (assoc lang gt-bing-extra-langs-mapping)) lang))
 
-(defun gt-bing-token-available-p (engine)
-  (with-slots (token key ig last-time expired-time) engine
-    (and token key ig last-time
-         (not gt-bing-token-maybe-invalid)
-         (< (- (time-to-seconds) last-time) expired-time))))
-
-(defun gt-bing-with-token (engine done fail)
+(defun gt-bing-with-token (engine done)
   (declare (indent 1))
-  (with-slots (token key ig base-url) engine
-    (if (gt-bing-token-available-p engine)
+  (with-slots (ig key token host host-tld last-time expired-time) engine
+    (if (and token key ig last-time (not gt-bing-token-maybe-invalid)
+             (< (- (time-to-seconds) last-time) expired-time))
         (funcall done)
-      (gt-request :url (concat base-url "/translator")
+      (gt-request :url (concat host "/translator")
                   :done (lambda (raw)
                           (with-temp-buffer
                             (insert raw)
                             (goto-char (point-min))
-                            (let (key token ig tld)
-                              (re-search-forward "curUrl=.*/\\([a-z]+\\.bing.com\\)")
-                              (setq tld (match-string 1))
-                              (re-search-forward "\"ig\":\"\\([^\"]+\\).*params_AbusePreventionHelper = \\[\\([0-9]+\\),\"\\([^\"]+\\)")
-                              (setq ig (match-string 1) key (match-string 2) token (match-string 3))
-                              (oset engine ig ig)
-                              (oset engine key key)
-                              (oset engine token token)
-                              (oset engine last-time (time-to-seconds))
-                              (oset engine tld-url (concat "https://" tld))
-                              (setq gt-bing-token-maybe-invalid nil)
-                              (gt-log 'bing (format "url: %s\nkey: %s\ntoken: %s\nig: %s" tld key token ig))
-                              (funcall done))))
-                  :fail fail))))
+                            (re-search-forward "IG:\"\\([A-Za-z0-9]+\\)\"")
+                            (setf ig (match-string 1))
+                            (re-search-forward "curUrl=\"\\(http[a-z]*\\).*?\\([a-zA-Z]+\\.bing.com\\)")
+                            (setf host-tld (concat (match-string 1) "://" (match-string 2)))
+                            (re-search-forward "var params_AbusePreventionHelper = \\[\\([0-9]+\\), *\"\\([^\"]+\\)")
+                            (setf key (match-string 1) token (match-string 2))
+                            (setf last-time (time-to-seconds))
+                            (setq gt-bing-token-maybe-invalid nil)
+                            (gt-log 'bing (format "url: %s\nkey: %s\ntoken: %s\nig: %s" host-tld key token ig))
+                            (funcall done)))
+                  :fail (lambda (err) (user-error "[BING] Get Token failed. %s" err))))))
 
 (cl-defmethod gt-translate ((engine gt-bing-engine) task next)
   (gt-bing-with-token engine
     (lambda ()
       (with-slots (text src tgt res) task
-        (with-slots (tld-url sub-url token key ig) engine
-          (gt-request :url (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.1" tld-url sub-url ig)
+        (with-slots (host-tld ig key token) engine
+          (gt-request :url (format "%s/ttranslatev3?isVertical=1&IID=translator.5022.1&IG=%s" host-tld ig)
                       :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                      :data `(("fromLang" . ,(gt-bing-get-lang src))
-                              ("to"       . ,(gt-bing-get-lang tgt))
-                              ("text"     . ,text)
-                              ("key"      . ,key)
-                              ("token"    . ,token))
-                      :done (lambda (raw) (setf res raw) (funcall next task))
+                      :data    `(("fromLang" . ,(gt-bing-get-lang src))
+                                 ("to"       . ,(gt-bing-get-lang tgt))
+                                 ("text"     . ,text)
+                                 ("key"      . ,key)
+                                 ("token"    . ,token))
+                      :done (lambda (raw)
+                              (setf res raw)
+                              (funcall next task))
                       :fail (lambda (err)
-                              (gt-fail task (pcase (car-safe (cdr-safe err))
-                                              (429 "[429] Too many requests! Please try later")
-                                              (_ err))))))))
-    (lambda (err)
-      (gt-fail task (cons "Bing failed to take token:" (gt-ensure-list err))))))
-
-
-;;; TTS
-
-(defvar gt-bing-tts-langs-mapping '(("zh" . ("zh-CN" . "zh-CN-XiaoxiaoNeural"))
-                                    ("en" . ("en-US" . "en-US-AriaNeural"))
-                                    ("fr" . ("fr-CA" . "fr-CA-SylvieNeural"))
-                                    ("de" . ("de-DE" . "de-DE-KatjaNeural"))))
-
-(defun gt-bing-tts-payload (engine lang text)
-  (with-slots (tts-tpl) engine
-    (let (l n (mt (assoc lang gt-bing-tts-langs-mapping)))
-      (if mt (setq l (cadr mt) n (cddr mt))
-        (user-error "Add the mapping of your language into `gt-bing-tts-langs-mapping' :)"))
-      (format tts-tpl l l n (encode-coding-string text 'utf-8)))))
-
-(cl-defmethod gt-tts ((engine gt-bing-engine) text lang)
-  (message "Requesting from bing.com...")
-  (gt-bing-with-token engine
-    (lambda ()
-      (with-slots (tld-url sub-url token key ig parse ttsk-url tts-url tts-tpl) engine
-        (gt-request :url (format "%s%s?isVertical=1&IG=%s&IID=translator.5022.2" tld-url ttsk-url ig)
-                    :headers '(("content-type" . "application/x-www-form-urlencoded"))
-                    :data `(("token" . ,token) ("key" . ,key))
-                    :done (lambda (raw)
-                            (let* ((json (json-read-from-string raw))
-                                   (token (cdr (assoc 'token json)))
-                                   (region (cdr (assoc 'region json))))
-                              (gt-log 'bing-tts (format "token: %s\nregion: %s" token region))
-                              (gt-request :url (format tts-url region)
-                                          :data (gt-bing-tts-payload engine lang text)
-                                          :headers `(("content-type" . "application/ssml+xml")
-                                                     ("authorization" . ,(format "Bearer %s" token))
-                                                     ("x-microsoft-outputformat" . "audio-16khz-32kbitrate-mono-mp3"))
-                                          :done (lambda (raw)
-                                                  (with-temp-buffer
-                                                    (insert raw)
-                                                    (gt-tts-speak-buffer-data)))
-                                          :fail (lambda (err)
-                                                  (message "[BING-TTS] error when try to play: %s" err)))))
-                    :fail (lambda (err) (message "[BING-TTS] error in request, %s" err)))))
-    (lambda (err) (message "[BING-TTS] Failed to get token (%s)" err))))
-
-
-;;; Parser
+                              (gt-fail task
+                                (pcase (car-safe (cdr-safe err))
+                                  (429 "[429] Too many requests! Please try later")
+                                  (_ err))))))))))
 
 (cl-defmethod gt-parse ((_ gt-bing-parser) task)
   (with-slots (res err) task
@@ -162,6 +109,93 @@
       (setq gt-bing-token-maybe-invalid t) ; refresh token when error occurred
       (setf err res)
       (error "error %s" res))))
+
+
+;;; Text to Speech
+
+(defcustom gt-bing-tts-speed 1.0
+  "Playing speed of TTS audio, 1.0 is normal speed."
+  :type 'number
+  :group 'go-translate-bing)
+
+(defvar gt-bing-tts-mapping '((zh . ("zh-CN" "Female" "zh-CN-XiaoxiaoNeural"))
+                              (en . ("en-US" "Female" "en-US-AriaNeural"))
+                              (af . ("af-ZA" "Female" "af-ZA-AdriNeural"))
+                              (am . ("am-ET" "Female" "am-ET-MekdesNeural"))
+                              (ar . ("ar-SA" "Male" "ar-SA-HamedNeural"))
+                              (bn . ("bn-IN" "Female" "bn-IN-TanishaaNeural"))
+                              (bg . ("bg-BG" "Male" "bg-BG-BorislavNeural"))
+                              (ca . ("ca-ES" "Female" "ca-ES-JoanaNeural"))
+                              (cs . ("cs-CZ" "Male" "cs-CZ-AntoninNeural"))
+                              (cy . ("cy-GB" "Female" "cy-GB-NiaNeural"))
+                              (da . ("da-DK" "Female" "da-DK-ChristelNeural"))
+                              (de . ("de-DE" "Female" "de-DE-KatjaNeural"))
+                              (el . ("el-GR" "Male" "el-GR-NestorasNeural"))
+                              (es . ("es-ES" "Female" "es-ES-ElviraNeural"))
+                              (et . ("et-EE" "Female" "et-EE-AnuNeural"))
+                              (fa . ("fa-IR" "Female" "fa-IR-DilaraNeural"))
+                              (fi . ("fi-FI" "Female" "fi-FI-NooraNeural"))
+                              (fr . ("fr-FR" "Female" "fr-FR-DeniseNeural"))
+                              (ga . ("ga-IE" "Female" "ga-IE-OrlaNeural"))
+                              (gu . ("gu-IN" "Female" "gu-IN-DhwaniNeural"))
+                              (he . ("he-IL" "Male" "he-IL-AvriNeural"))
+                              (hi . ("hi-IN" "Female" "hi-IN-SwaraNeural"))
+                              (hr . ("hr-HR" "Male" "hr-HR-SreckoNeural"))
+                              (hu . ("hu-HU" "Male" "hu-HU-TamasNeural"))
+                              (id . ("id-ID" "Male" "id-ID-ArdiNeural"))
+                              (is . ("is-IS" "Female" "is-IS-GudrunNeural"))
+                              (it . ("it-IT" "Male" "it-IT-DiegoNeural"))
+                              (ja . ("ja-JP" "Female" "ja-JP-NanamiNeural"))
+                              (kk . ("kk-KZ" "Female" "kk-KZ-AigulNeural"))
+                              (km . ("km-KH" "Female" "km-KH-SreymomNeural"))
+                              (kn . ("kn-IN" "Female" "kn-IN-SapnaNeural"))
+                              (ko . ("ko-KR" "Female" "ko-KR-SunHiNeural"))
+                              (lo . ("lo-LA" "Female" "lo-LA-KeomanyNeural"))
+                              (lv . ("lv-LV" "Female" "lv-LV-EveritaNeural"))
+                              (lt . ("lt-LT" "Female" "lt-LT-OnaNeural"))
+                              (mk . ("mk-MK" "Female" "mk-MK-MarijaNeural"))
+                              (ml . ("ml-IN" "Female" "ml-IN-SobhanaNeural"))
+                              (mr . ("mr-IN" "Female" "mr-IN-AarohiNeural"))
+                              (ms . ("ms-MY" "Male" "ms-MY-OsmanNeural"))
+                              (mt . ("mt-MT" "Female" "mt-MT-GraceNeural"))
+                              (my . ("my-MM" "Female" "my-MM-NilarNeural"))
+                              (nl . ("nl-NL" "Female" "nl-NL-ColetteNeural"))
+                              (nb . ("nb-NO" "Female" "nb-NO-PernilleNeural"))
+                              (pl . ("pl-PL" "Female" "pl-PL-ZofiaNeural"))
+                              (ps . ("ps-AF" "Female" "ps-AF-LatifaNeural"))
+                              (pt . ("pt-BR" "Female" "pt-BR-FranciscaNeural"))
+                              (ro . ("ro-RO" "Male" "ro-RO-EmilNeural"))
+                              (ru . ("ru-RU" "Female" "ru-RU-DariyaNeural"))
+                              (sk . ("sk-SK" "Male" "sk-SK-LukasNeural"))
+                              (sl . ("sl-SI" "Male" "sl-SI-RokNeural"))
+                              (sv . ("sv-SE" "Female" "sv-SE-SofieNeural"))
+                              (ta . ("ta-IN" "Female" "ta-IN-PallaviNeural"))
+                              (te . ("te-IN" "Male" "te-IN-ShrutiNeural"))
+                              (th . ("th-TH" "Male" "th-TH-NiwatNeural"))
+                              (tr . ("tr-TR" "Female" "tr-TR-EmelNeural"))
+                              (uk . ("uk-UA" "Female" "uk-UA-PolinaNeural"))
+                              (ur . ("ur-IN" "Female" "ur-IN-GulNeural"))
+                              (uz . ("uz-UZ" "Female" "uz-UZ-MadinaNeural"))
+                              (vi . ("vi-VN" "Male" "vi-VN-NamMinhNeural"))
+                              (yue . ("zh-HK" "Female" "zh-HK-HiuGaaiNeural"))))
+
+(cl-defmethod gt-bing-tts-payload (lang text)
+  (let ((lm (assoc lang gt-bing-tts-mapping)))
+    (unless lm (user-error "Add the mapping of your language into `gt-bing-tts-langs-mapping' :)"))
+    (format "<speak version='1.0' xml:lang='%s'><voice xml:lang='%s' xml:gender='%s' name='%s'><prosody rate='%s'>%s</prosody></voice></speak>"
+            (cadr lm) (caddr lm) (cadr lm) (cadddr lm)
+            gt-bing-tts-speed (encode-coding-string text 'utf-8))))
+
+(cl-defmethod gt-speak ((engine gt-bing-engine) text lang)
+  (with-slots (host host-tld ig key token) engine
+    (message "Requesting from %s for %s..." (or host-tld host) lang)
+    (gt-bing-with-token engine
+      (lambda ()
+        (gt-request :url (format "%s/tfettts?isVertical=1&IID=translator.5022.2&IG=%s" host-tld ig)
+                    :headers '(("content-type" . "application/x-www-form-urlencoded"))
+                    :data `(("token" . ,token) ("key" . ,key) ("ssml" . ,(gt-bing-tts-payload lang text)))
+                    :done #'gt-play-audio
+                    :fail (lambda (err) (message "[BING-TTS] error in request, %s" err)))))))
 
 (provide 'gt-engine-bing)
 
