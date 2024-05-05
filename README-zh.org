@@ -3,7 +3,7 @@
 这是一个翻译框架，其主要特点是高度可配置性和高度可扩展性。
 
 作为一个翻译框架，它有很多优点:
-- 支持多种翻译引擎，比如 Bing, Google, DeepL, 有道词典/近义词, StarDict 等
+- 支持多种翻译引擎，比如 ChatGPT, Bing, Google, DeepL, 有道词典/近义词, StarDict 等
 - 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
@@ -201,13 +201,14 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 - =gt-deepl-engine=, DeepL 翻译
 - =gt-bing-engine=, 微软翻译
 - =gt-google-engine/gt-google-rpc-engine=, Google 翻译
+- =gt-chatgpt-engine=, 使用 ChatGPT 进行翻译
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词。主要用于中英互译
 - =gt-stardict-engine=, StarDict，支持外挂字典，可以用于离线翻译
 
 通过 =:engines= 为翻译器指定引擎。一个翻译器可以有一个或多个引擎，也可以指定一个返回引擎列表的函数:
 #+begin_src emacs-lisp
   (gt-translator :engines (gt-google-engine))
-  (gt-translator :engines (list (gt-google-engine) (gt-deepl-engine)))
+  (gt-translator :engines (list (gt-google-engine) (gt-deepl-engine) (gt-chatgpt-engine)))
   (gt-translator :engines (lambda () (gt-google-engine)))
 #+end_src
 
@@ -402,6 +403,39 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
    #+begin_example
    machine api.deepl.com login auth-key password ***
    #+end_example
+
+*** gt-chatgpt-engine
+
+ChatGPT 需要 apikey 才能正常使用:
+#+begin_src emacs-lisp
+  (setq gt-chatgpt-host "your-host")
+  (setq gt-chatgpt-key "your-key") ; 推荐放入 .authinfo 中
+  (setq gt-chatgpt-model "gpt-3.5-turbo")
+#+end_src
+
+可以自定义翻译的 prompt。比如:
+#+begin_src emacs-lisp
+  (setq gt-chatgpt-user-prompt-template
+        (lambda (text lang)
+          (format "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s"
+                  (alist-get lang gt-lang-codes) text)))
+#+end_src
+
+甚至可以基于其它自定义 Prompt，借助 ChatGPT 完成其他任务。比如下面的命令用于润色句子:
+#+begin_src emacs-lisp
+  (defun my-command-polish-using-ChatGPT ()
+    (interactive)
+    (let ((gt-chatgpt-system-prompt "你是一个优秀的网文写手")
+          (gt-chatgpt-user-prompt-template (lambda (text _)
+                                             (read-string
+                                              "Prompt: "
+                                              (format "润色句子，要求只返回生成的句子: %s" text)))))
+      (gt-start (gt-translator
+                 :engines (gt-chatgpt-engine :cache nil)
+                 :render (gt-insert-render)))))
+#+end_src
+
+另外，可以通过 =gt-do-speak= 尝试其语音播报。
 
 *** gt-buffer-render
 

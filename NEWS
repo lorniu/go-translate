@@ -1,3 +1,6 @@
+Version 3.0.4
+  - Add new engine `gt-engine-chatgpt`.
+
 Version 3.0.3
   - Add component `gt-text-utility`, integrated text encode/decode, qrcode and others
 

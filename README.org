@@ -15,7 +15,7 @@ This is a translation framework on Emacs, with high configurability and extensib
 [[README-zh.org][点击查看《中文版文档》]]
 
 As a translation framework, it offers many advantages:
-- Supports multiple translation engines, including Bing, Google, DeepL, YoudaoDict, StarDict and more.
+- Supports multiple translation engines, including ChatGPT, Bing, Google, DeepL, YoudaoDict, StarDict and more.
 - Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others.
 - Flexible retrieval of content and language for translation, with the help of the built-in Taker component.
 - Support for word and sentence translation, as well as translation of multiple paragraphs. It can use multiple engines concurrently to translate multiple paragraphs into multiple languages.
@@ -210,13 +210,14 @@ The built-in Engine implementations are:
 - =gt-deepl-engine=, DeepL Translate
 - =gt-bing-engine=, Bing Translate
 - =gt-google-engine/gt-google-rpc-engine=, Google Translate
+- =gt-chatgpt-engine=, translate with ChatGPT
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道翻译，有道近义词
 - =gt-stardict-engine=, StarDict，for offline translate
 
 Specify engines for translator via =:engines=. A translator can have one or more engines, or you can specify a function that returns the engines:
 #+begin_src emacs-lisp
   (gt-translator :engines (gt-google-engine))
-  (gt-translator :engines (list (gt-google-engine) (gt-deepl-engine)))
+  (gt-translator :engines (list (gt-google-engine) (gt-deepl-engine) (gt-chatgpt-engine)))
   (gt-translator :engines (lambda () (gt-google-engine)))
 #+end_src
 
@@ -388,6 +389,38 @@ The =auth-key= can then be set in the following ways:
    #+begin_example
    machine api.deepl.com login auth-key password ***
    #+end_example
+
+*** gt-chatgpt-engine
+
+Please obtained the apikey through the official website first.
+#+begin_src emacs-lisp
+  (setq gt-chatgpt-key "apikey") ; recommend to put into .authinfo
+  (setq gt-chatgpt-model "gpt-3.5-turbo")
+#+end_src
+
+Custom the translation prompt as you wish:
+#+begin_src emacs-lisp
+  (setq gt-chatgpt-user-prompt-template
+        (lambda (text lang)
+          (format "Translate text to %s and return the first word. Text is: \n%s"
+                  (alist-get lang gt-lang-codes) text)))
+#+end_src
+
+Even can custom the prompt for other tasks. For example, for polish sentence:
+#+begin_src emacs-lisp
+  (defun my-command-polish-using-ChatGPT ()
+    (interactive)
+    (let ((gt-chatgpt-system-prompt "You are a writer")
+          (gt-chatgpt-user-prompt-template (lambda (text _)
+                                             (read-string
+                                              "Prompt: "
+                                              (format "Polish the sentence below: %s" text)))))
+      (gt-start (gt-translator
+                 :engines (gt-chatgpt-engine :cache nil)
+                 :render (gt-insert-render)))))
+#+end_src
+
+After all, try text to speech with command =gt-do-speak=.
 
 *** gt-buffer-render
 

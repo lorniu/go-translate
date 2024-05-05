@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.3
+;; Version: 3.0.4
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -29,7 +29,7 @@
 
 ;; Translation framework on Emacs, with high configurability and extensibility.
 ;;
-;;  - Support multiple translation engines, such as Google, Bing, deepL, StarDict.
+;;  - Support multiple translation engines, such as Google, Bing, DeepL, ChatGPT...
 ;;  - With variety of output styles, such as Buffer, Overlay, Childframe and so on.
 ;;  - With a flexible taker for easy retrieval of translated content and targets.
 ;;  - Support multiple paragraphs/parts and multi-language translation.
@@ -68,6 +68,7 @@
 (require 'gt-engine-deepl)
 (require 'gt-engine-stardict)
 (require 'gt-engine-youdao)
+(require 'gt-engine-chatgpt)
 (require 'gt-engine-echo)
 (require 'gt-text-utility)
 
@@ -125,6 +126,7 @@ of `gt-default-translator' at any time in `gt-do-setup'."
       (DeepL                . ,(gt-deepl-engine))
       (Google               . ,(gt-google-engine))
       (GoogleRPC            . ,(gt-google-rpc-engine))
+      (ChatGPT              . ,(gt-chatgpt-engine))
       (Youdao-Dict          . ,(gt-youdao-dict-engine))
       (Youdao-Suggest       . ,(gt-youdao-suggest-engine))
       (StarDict             . ,(gt-stardict-engine))
@@ -176,7 +178,10 @@ of `gt-default-translator' at any time in `gt-do-setup'."
   (lambda ()
     `((default . ,(gt-translator :taker   (cdar (gt-ensure-plain gt-preset-takers))
                                  :engines (cdar (gt-ensure-plain gt-preset-engines))
-                                 :render  (cdar (gt-ensure-plain gt-preset-renders))))))
+                                 :render  (cdar (gt-ensure-plain gt-preset-renders))))
+      (Text-Utility . ,(gt-text-utility
+                        :taker (gt-taker :pick nil)
+                        :render (gt-buffer-render)))))
   "Preset translators.
 
 It is an alist or a function return the alist, which the value is a valid
