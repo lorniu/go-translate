@@ -47,6 +47,20 @@
 
 ;;; Components and Variables
 
+(defclass gt-single ()
+  ((insts :allocation :class :initform nil))
+  :abstract t
+  :documentation "Only create one instance for same slots.")
+
+(cl-defmethod make-instance ((class (subclass gt-single)) &rest slots)
+  (if-let* ((key (sha1 (format "%s" slots)))
+            (insts (oref-default class insts))
+            (old (cdr-safe (assoc key insts))))
+      old
+    (let ((inst (cl-call-next-method)))
+      (prog1 inst
+        (oset-default class insts `((,key . ,inst) ,@insts))))))
+
 (defclass gt-task ()
   ((text
     :initarg :text
@@ -99,7 +113,7 @@
 Its life cycle is in one translation. It is created by translator, then derived
 to engines for result, at last extracted by render for output.")
 
-(defclass gt-taker ()
+(defclass gt-taker (gt-single)
   ((text
     :initarg :text
     :type (or function symbol string)
@@ -147,7 +161,7 @@ Or use the default value or corresponding variables as:
 
 Then use the taker in the translator and start your translation.")
 
-(defclass gt-parser ()
+(defclass gt-parser (gt-single)
   ((tag
     :initarg :tag
     :initform nil
@@ -158,7 +172,7 @@ Then use the taker in the translator and start your translation.")
 to a user-friendly string. One engine can have different parsers, but can only
 use one of them at a time.")
 
-(defclass gt-engine ()
+(defclass gt-engine (gt-single)
   ((tag
     :initarg :tag
     :type (or string symbol)
@@ -206,7 +220,7 @@ be passed to the engine, and a translated string list is expected.
 Also in some cases, you should turn the cache off by setting `no-cache' to t."
   :abstract t)
 
-(defclass gt-render ()
+(defclass gt-render (gt-single)
   ((output
     :initarg :output
     :initform nil
@@ -342,12 +356,6 @@ The start a translation, call `gt-start' on a translator instance like this:
                    :render (gt-buffer-render)))
 
 That is: 1) define the translator 2) executable `gt-start'.")
-
-(cl-defgeneric gt-init (object &rest _args)
-  "Initialization for OBJECT.")
-
-(cl-defgeneric gt-valid (object &rest _args)
-  "Validate OBJECT, return t if it's available.")
 
 (defconst gt-lang-codes
   '((en . "English")
@@ -495,6 +503,12 @@ That is: 1) define the translator 2) executable `gt-start'.")
 (defvar gt-current-command nil)
 
 (defvar gt-current-translator nil)
+
+(cl-defgeneric gt-init (object &rest _args)
+  "Initialization for OBJECT.")
+
+(cl-defgeneric gt-valid (object &rest _args)
+  "Validate OBJECT, return t if it's available.")
 
 
 ;;; Utility
@@ -788,7 +802,7 @@ TAG is a label for message being logged."
 
 ;; generic
 
-(defun gt-cacher-config-bark ()
+(defun gt-cacher-barking ()
   (unless gt-default-cacher
     (user-error "Make sure `gt-default-cacher' is properly configured. eg:\n
  (setq gt-default-cacher (gt-memory-cacher))")))
@@ -796,12 +810,12 @@ TAG is a label for message being logged."
 (cl-defgeneric gt-cache-get (_cacher _key &rest _)
   "Query result of KEY from CACHER."
   (:argument-precedence-order _key _cacher)
-  (gt-cacher-config-bark))
+  (gt-cacher-barking))
 
 (cl-defgeneric gt-cache-set (_cacher _key &rest _)
   "Save result of KEY to CACHER."
   (:argument-precedence-order _key _cacher)
-  (gt-cacher-config-bark))
+  (gt-cacher-barking))
 
 (cl-defgeneric gt-cache-purge (cacher &optional only-expired)
   "Purge the storage of CACHER.
@@ -809,7 +823,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 ;; implement of caching in memory
 
-(defclass gt-memory-cacher (gt-cacher) ())
+(defclass gt-memory-cacher (gt-cacher gt-single) ())
 
 (cl-defmethod gt-cache-get ((cacher gt-memory-cacher) key)
   (with-slots (storage expired) cacher
@@ -876,7 +890,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
   "Purge storage of CACHER."
   (interactive (list gt-default-cacher))
   (when (y-or-n-p (format "Purge all caches from %s now?" (eieio-object-class cacher)))
-    (gt-cacher-config-bark)
+    (gt-cacher-barking)
     (gt-cache-purge (or cacher gt-default-cacher))
     (message "Cache purged.")))
 
@@ -885,12 +899,12 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 (defvar gt-default-http-client nil)
 
-(defclass gt-http-client ()
+(defclass gt-http-client (gt-single)
   ((user-agent :initarg :user-agent :initform nil :type (or string null)))
   "Used to send a request and get the response."
   :abstract t)
 
-(cl-defgeneric gt-request (http-client &key url done fail data headers)
+(cl-defgeneric gt-request (http-client &key url done fail data headers cache)
   "Send HTTP request using the given HTTP-CLIENT.
 
 Optional keyword arguments:
@@ -898,32 +912,39 @@ Optional keyword arguments:
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
   - DATA: The data to include in the request.
-  - HEADERS: Additional headers to include in the request."
-  (:method (&key url done fail data headers)
+  - HEADERS: Additional headers to include in the request.
+  - CACHE: enable get and set results in cache for current request"
+  (:method (&key url done fail data headers cache)
            (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
              (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
-                 (let ((tag (format "%s" (eieio-object-class client)))
-                       (data (gt-format-params data)))
-                   (gt-log tag
-                     (format "> %s" client)
-                     (format "> %s" url)
-                     (if headers (format "> HEADER: %s" headers))
-                     (if data (format "> DATA:   %s" data)))
-                   (gt-request client
-                               :url url
-                               :headers headers
-                               :data data
-                               :done (lambda (raw)
-                                       (gt-log tag (format "✓ %s" url))
-                                       (condition-case err
-                                           (funcall done raw)
-                                         (error
-                                          (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
-                                          (funcall fail err))))
-                               :fail (lambda (status)
-                                       (gt-log tag (format "Request fail! (%s) %s" url status))
-                                       (if fail (funcall fail status)
-                                         (signal (car status) (cdr status))))))
+                 (let* ((tag (format "%s" (eieio-object-class client)))
+                        (data (gt-format-params data))
+                        (ckey (sha1 (format "%s%s" url data)))
+                        (donefn (lambda (raw)
+                                  (gt-log tag (format "✓ %s" url))
+                                  (when cache ; cache the result for url if :cache exist
+                                    (let ((gt-cache-alive-time (if (numberp cache) cache gt-cache-alive-time)))
+                                      (gt-cache-set gt-default-cacher ckey raw)))
+                                  (condition-case err
+                                      (funcall done raw)
+                                    (error
+                                     (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
+                                     (funcall fail err)))))
+                        (failfn (lambda (status)
+                                  (gt-log tag (format "Request fail! (%s) %s" url status))
+                                  (if fail (funcall fail status)
+                                    (signal (car status) (cdr status))))))
+                   (if-let (r (and cache (gt-cache-get gt-default-cacher ckey)))
+                       (progn
+                         (gt-log 'cacher (format "Find %s in cache..." ckey))
+                         (funcall donefn r))
+                     (gt-log tag
+                       (format "> %s\n> %s" client url)
+                       (if headers (format "> HEADER: %s" headers))
+                       (if data (format "> DATA:   %s" data)))
+                     (gt-request client
+                                 :url url :headers headers :data data
+                                 :done donefn :fail failfn)))
                (funcall fail "Make sure `gt-default-http-client' is available. eg:\n
  (setq gt-default-http-client (gt-url-http-client))\n\n\n")))))
 
@@ -1533,6 +1554,7 @@ If WAIT is not nil, play after current process finished."
         (let ((buf (current-buffer)) state)
           (if (string-prefix-p "http" data)
               (progn (gt-request :url data
+                                 :cache 10
                                  :done (lambda (raw)
                                          (setq state 'done)
                                          (with-current-buffer buf (insert raw)))

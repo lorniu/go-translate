@@ -148,7 +148,8 @@ alloy, echo, fable, onyx, nova, or shimmer."
                          (model . ,gt-chatgpt-tts-model)
                          (speed . ,gt-chatgpt-tts-speed)
                          (voice . ,gt-chatgpt-tts-voice)))
-                :done #'gt-play-audio)))
+                :done #'gt-play-audio
+                :cache (length text))))
 
 (provide 'gt-engine-chatgpt)
 

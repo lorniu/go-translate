@@ -319,23 +319,22 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 
 若想让不同请求走不同代理，可以仿照下面方式设置:
 #+begin_src emacs-lisp
-  (setq my-client-1 (gt-url-http-client))
-  (setq my-client-2 (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
-  (setq my-client-3 (gt-plz-http-client))
-  (setq my-client-4 (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
-
   (setq gt-default-http-client
         (lambda (host)
           (if (string-match-p "google\\|deepl\\|openai" host)
-              my-client-4 my-client-3)))
+              (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
+            (gt-plz-http-client))))
 
   (setq gt-default-http-client
         (lambda (host)
-          (let ((plz? (require 'plz nil t))
-                (proxy? (string-match-p "google\\|deepl\\|openai" host)))
-            (if plz?
-                (if proxy? my-client-4 my-client-3)
-              (if proxy? my-client-2 my-client-1)))))
+          (let ((proxy? (string-match-p "google\\|deepl\\|openai" host)))
+            (if (require 'plz nil t)
+                (if proxy?
+                    (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
+                  (gt-plz-http-client))
+              (if proxy?
+                  (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999")))
+                (gt-url-http-client))))))
 #+end_src
 
 *** gt-taker

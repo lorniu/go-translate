@@ -194,6 +194,7 @@
         (gt-request :url (format "%s/tfettts?isVertical=1&IID=translator.5022.2&IG=%s" host-tld ig)
                     :headers '(("content-type" . "application/x-www-form-urlencoded"))
                     :data `(("token" . ,token) ("key" . ,key) ("ssml" . ,(gt-bing-tts-payload lang text)))
+                    :cache (length text)
                     :done #'gt-play-audio
                     :fail (lambda (err) (message "[BING-TTS] error in request, %s" err)))))))
 
