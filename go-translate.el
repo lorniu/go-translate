@@ -282,7 +282,6 @@ will be used as the default translator."
     (gt-ensure-default-translator)
     (message "Switch default translator to: %s" name)))
 
-;;;###autoload
 (transient-define-prefix gt-do-setup ()
   :transient-non-suffix #'transient--do-exit
   [:description
