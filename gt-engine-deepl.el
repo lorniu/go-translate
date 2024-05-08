@@ -48,8 +48,8 @@
               :initarg :pro
               :documentation "Set t when use PRO version.")
 
-   (key       :initform 'auth-key
-              :initarg :key
+   (auth-key  :initform 'auth-key
+              :initarg :auth-key
               :documentation "The auth-key of DeepL.
 You can also put it into .authinfo file as:
   machine api.deepl.com login auth-key password ***")))
@@ -118,21 +118,21 @@ Mainly fill the text to suitable length."
 Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
 
 (cl-defmethod gt-ensure-key ((engine gt-deepl-engine))
-  (with-slots (key) engine
-    (unless (stringp key)
-      (if-let (auth-key (gt-lookup-password
-                         :user (if key (format "%s" key) "auth-key")
+  (with-slots (auth-key) engine
+    (unless (stringp auth-key)
+      (if-let (auth-key-from-authinfo (gt-lookup-password
+                         :user (if auth-key (format "%s" auth-key) "auth-key")
                          :host "api.deepl.com"))
-          (setf key auth-key)
+          (setf auth-key auth-key-from-authinfo)
         (user-error "You should provide a auth-key for gt-deepl-engine")))))
 
 (cl-defmethod gt-translate ((engine gt-deepl-engine) task next)
   (gt-ensure-key engine)
   (with-slots (text src tgt res) task
-    (with-slots (host host-free path pro key) engine
+    (with-slots (host host-free path pro auth-key) engine
       (gt-request :url (concat (if pro host host-free) path)
                   :headers `(("Content-Type"    . "application/x-www-form-urlencoded;charset=UTF-8")
-                             ("Authorization"   . ,(concat "DeepL-Auth-Key " key)))
+                             ("Authorization"   . ,(concat "DeepL-Auth-Key " auth-key)))
                   :data    `(("text"            . ,(gt-deepl-fill-input text))
                              ("target_lang"     . ,(gt-deepl-get-lang tgt))
                              ,(if-let (src (gt-deepl-get-lang src)) `("source_lang" . ,src))
