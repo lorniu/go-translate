@@ -283,6 +283,7 @@ will be used as the default translator."
     (message "Switch default translator to: %s" name)))
 
 (transient-define-prefix gt-do-setup ()
+  "Setup `gt-default-translator' in user interface provided by transient."
   :transient-non-suffix #'transient--do-exit
   [:description
    (lambda ()
@@ -294,7 +295,6 @@ will be used as the default translator."
    [("e"  "Set engines..." gt-set-engines :transient t)]
    [("r"  "Set render..."  gt-set-render  :transient t)]
    [("c"  "Switch preset translator..." gt-switch-translator)]]
-  "Setup `gt-default-translator' in user interface provided by transient."
   (interactive)
   (gt-ensure-default-translator)
   (transient-setup 'gt-do-setup))
