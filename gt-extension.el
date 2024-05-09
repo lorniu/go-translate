@@ -631,10 +631,8 @@ Otherwise, join the results use the default logic."
           (setq res (concat (if (or (string-match-p "\n" res) (and (not (gt-word-p nil src)) (eolp))) "\n" " ") res)))
         (gt-face-lazy res rface)))))
 
-(cl-defmethod gt-init ((render gt-insert-render) translator)
-  (with-slots (bounds state) translator
-    (unless bounds
-      (error "%s only works for buffer bounds, abort" (eieio-object-class render)))
+(cl-defmethod gt-init ((_ gt-insert-render) translator)
+  (with-slots (bounds) translator
     (unless (buffer-live-p (car bounds))
       (error "Source buffer is unavailable, abort"))
     (when (with-current-buffer (car bounds) buffer-read-only)
@@ -659,9 +657,12 @@ Otherwise, join the results use the default logic."
                                        (intern (completing-read "Insert text as: " types nil t))))
                        with hash = (when (and (eq type 'replace) (not (buffer-modified-p)))
                                      (buffer-hash))
-                       for (beg . end) in bds
-                       for i from 0
-                       for src = (buffer-substring beg end)
+                       for i from 0 below (length (plist-get (car ret) :result))
+                       for (beg . end) = (if bds (pop bds)
+                                           (if (use-region-p)
+                                               (car (region-bounds))
+                                             (cons (point) (point))))
+                       for src = (if bds (buffer-substring beg end) "")
                        for res = (mapcar (lambda (tr) (nth i (plist-get tr :result))) ret)
                        for fres = (progn (goto-char end) (gt-insert-render-format render src res))
                        do (progn (if (eq type 'replace)
@@ -819,7 +820,7 @@ Otherwise, join the results use the default logic."
 
 (cl-defmethod gt-init ((render gt-overlay-render) translator)
   (with-slots (bounds state) translator
-    (unless bounds
+    (unless (cdr bounds)
       (error "%s only works for buffer bounds, abort" (eieio-object-class render)))
     (unless (buffer-live-p (car bounds))
       (error "Source buffer is unavailable, abort"))))

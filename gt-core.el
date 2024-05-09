@@ -1274,7 +1274,7 @@ See type `gt-taker' for more description."
                (when (and (slot-boundp taker 'then) then (gt-functionp then))
                  (funcall then translator)))
              ;; record buffer
-             (if bounds (setf bounds (cons (current-buffer) bounds)))))
+             (setf bounds (cons (current-buffer) bounds))))
   (:method ((taker gt-taker) translator)
            (with-slots (text target keep) translator
              (let ((prompt (and (null text) (null target)
