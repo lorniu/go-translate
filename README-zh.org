@@ -394,7 +394,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 1. 在 engine 定义中直接指定:
 
    #+begin_example
-   (gt-translator :engines (gt-deepl-engine :auth-key "***"))
+   (gt-translator :engines (gt-deepl-engine :key "***"))
    #+end_example
 
 2. 将 auth-key 存进系统的 =.authinfo= 文件中:
@@ -407,9 +407,15 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 
 ChatGPT 需要 apikey 才能正常使用:
 #+begin_src emacs-lisp
-  (setq gt-chatgpt-host "your-host")
-  (setq gt-chatgpt-key "your-key") ; 推荐放入 .authinfo 中
+  ;; 提供 apikey 有很多方式
+  (setq gt-chatgpt-key "YOUR-KEY")
+  (gt-chatgpt-engine :key "YOUR_KEY")
+  (find-file "~/.authinfo") ; api.openai.com login apikey password [YOUR_KEY]
+
+  ;; 其他配置
+  (setq gt-chatgpt-host "YOUR-HOST")
   (setq gt-chatgpt-model "gpt-3.5-turbo")
+  (setq gt-chatgpt-temperature 0.7)
 #+end_src
 
 可以自定义翻译的 prompt。比如:
