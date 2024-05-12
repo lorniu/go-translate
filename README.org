@@ -397,7 +397,7 @@ Please obtained the apikey through the official website first.
   ;; Provide apikey with one of following ways:
   (setq gt-chatgpt-key "YOUR-KEY")
   (gt-chatgpt-engine :key "YOUR_KEY")
-  (find-file "~/.authinfo") ; api.openai.com login apikey password [YOUR_KEY]
+  (find-file "~/.authinfo") ; machine api.openai.com login apikey password [YOUR_KEY]
 
   ;; Others
   (setq gt-chatgpt-model "gpt-3.5-turbo")

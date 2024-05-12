@@ -221,37 +221,54 @@ Notice, this can be overrided by `window-config' slot of render instance."
                    (read-only-mode 1)
                    (use-local-map gt-buffer-render-local-map))))
 
-(defvar gt-buffer-render-source-text-limit 200
+(defun gt-buffer-render--unfold-source-text ()
+  (interactive)
+  (mapc (lambda (ov)
+          (delete-overlay ov))
+        (overlays-at (point))))
+
+(defvar gt-buffer-render-source-text-limit 140
   "Fold some of the source text if it's too long.
 This can be a number as visible length or a function with source text
 as argument that return a length.")
 
-(defun gt-buffer-render--format-source-text (text)
+(defvar gt-buffer-render-source-text-fold-bound-function
+  #'gt-buffer-render-source-text-fold-bound)
+
+(defun gt-buffer-render-source-text-fold-bound ()
+  (when (and (numberp gt-buffer-render-source-text-limit)
+             (> (point-max) gt-buffer-render-source-text-limit))
+    (goto-char (min (point-max) (+ (point-min) gt-buffer-render-source-text-limit)))
+    (move-to-column fill-column)
+    (skip-chars-backward " \t\n")
+    (when-let (bd (bounds-of-thing-at-point 'word))
+      (goto-char (cdr bd)))
+    (when (> (- (point-max) 20) (point))
+      (cons (point) (point-max)))))
+
+(defun gt-buffer-insert-source-text (text)
   "Propertize and insert the source TEXT into render buffer."
-  (with-temp-buffer
-    (setq text (string-trim text "\n+"))
-    (let ((beg (point)) end
-          (limit (if (functionp gt-buffer-render-source-text-limit)
-                     (funcall gt-buffer-render-source-text-limit text)
-                   gt-buffer-render-source-text-limit)))
-      (insert (substring-no-properties text))
-      (when (and limit (> (- (setq end (point)) beg) limit))
-        (save-excursion
-          (goto-char (+ beg limit))
-          (when (numberp gt-buffer-render-source-text-limit)
-            (if (< (- (save-excursion (skip-syntax-forward "w") (point)) (point)) 5)
-                (skip-syntax-forward "w")
-              (if (< (- (point) (save-excursion (skip-syntax-backward "w") (point))) 5)
-                  (skip-syntax-backward "w"))))
-          (let ((ov (make-overlay (point) end nil t nil)))
-            (cl-flet ((show () (interactive) (mapc (lambda (ov) (delete-overlay ov)) (overlays-at (point)))))
-              (overlay-put ov 'display "...")
-              (overlay-put ov 'keymap (gt-simple-keymap [return] #'show [mouse-1] #'show))
-              (overlay-put ov 'pointer 'hand)
-              (overlay-put ov 'help-echo "Click to unfold the text")))))
+  (let* ((text (string-trim text "\n+"))
+         (beg (point))
+         (end (progn (insert (substring-no-properties text)) (point))))
+    (insert "\n\n")
+    (save-excursion
       (put-text-property beg end 'face 'gt-buffer-render-source-face)
-      (insert "\n\n"))
-    (buffer-string)))
+      (put-text-property beg (+ end 2) 'gt-source-text t)
+      (when-let* ((bd (save-restriction
+                        (narrow-to-region beg end)
+                        (funcall gt-buffer-render-source-text-fold-bound-function)))
+                  (ov (make-overlay beg end)))
+        (overlay-put ov 'display
+                     (concat
+                      (propertize (buffer-substring beg (car bd)) 'face 'gt-buffer-render-source-face)
+                      " ..."))
+        (overlay-put ov 'keymap (gt-simple-keymap
+                                 [return] #'gt-buffer-render--unfold-source-text
+                                 [mouse-1] #'gt-buffer-render--unfold-source-text))
+        (overlay-put ov 'pointer 'hand)
+        (overlay-put ov 'help-echo "Click to unfold the text"))
+      (cons beg end))))
 
 (defun gt-buffer-render-init (buffer render translator)
   "Init BUFFER for RENDER of TRANSLATOR."
@@ -273,17 +290,17 @@ as argument that return a length.")
         (erase-buffer)
         (newline)
         (save-excursion
-          (unless (cdr text) ; single part
-            (let ((c (gt-buffer-render--format-source-text (car text))))
-              (insert (if (cdr tasks) c (propertize c 'gt-task (car tasks))))))
+          (unless (cdr text) ;; single part, single task
+            (pcase-let ((`(,beg . ,end) (gt-buffer-insert-source-text (car text))))
+              (put-text-property beg end 'gt-task (car tasks))))
           (cl-loop for c in text
                    for i from 0
-                   if (cdr text) do (insert (gt-buffer-render--format-source-text c)) ; multi parts
+                   if (cdr text) do (gt-buffer-insert-source-text c) ; multi parts
                    do (cl-loop for tr in ret
                                for res = (propertize "Loading..."
                                                      'face 'gt-buffer-render-loading-face
                                                      'gt-result t)
-                               for (prefix task) = (gt-plist-let tr (list .prefix .task))
+                               for (prefix task) = (list (plist-get tr :prefix) (plist-get tr :task))
                                for output = (propertize (concat prefix res "\n\n") 'gt-task task 'gt-part i)
                                do (insert output)))))
       ;; keybinds
@@ -303,6 +320,15 @@ as argument that return a length.")
       (let ((inhibit-read-only t)
             (ret (gt-extract render translator)) bds prop)
         (save-excursion
+          ;; refresh source text
+          (goto-char (point-min))
+          (unless (cdr text)
+            (when-let (prop (text-property-search-forward 'gt-source-text))
+              (delete-region (prop-match-beginning prop) (prop-match-end prop))
+              (unless (get-pos-property 1 'gt-mark (car (gt-ensure-list (plist-get (car ret) :result))))
+                (let ((bd (gt-buffer-insert-source-text (car text))))
+                  (unless (cdr tasks)
+                    (put-text-property (car bd) (cdr bd) 'gt-task (car tasks)))))))
           ;; collect positions
           (goto-char (point-min))
           (while (setq prop (text-property-search-forward 'gt-result t t))
@@ -310,18 +336,12 @@ as argument that return a length.")
                         (set-marker (make-marker) (prop-match-end prop)))
                   bds))
           (setq bds (nreverse bds))
-          (goto-char (point-min))
-          ;; delete source if necessary
-          (when (and (not (cdr ret))
-                     (get-pos-property 1 'gt-mark (car (gt-ensure-list (plist-get (car ret) :result)))))
-            (skip-chars-forward "\n")
-            (delete-region (point) (progn (end-of-line) (skip-chars-forward "\n") (point))))
           ;; output results in bounds
           (cl-loop for _ in text
                    for i from 0
                    do (cl-loop for tr in ret
                                for (beg . end) = (pop bds)
-                               for (res state task) = (gt-plist-let tr (list .result .state .task))
+                               for (res state task) = (list (plist-get tr :result) (plist-get tr :state) (plist-get tr :task))
                                do (goto-char beg)
                                do (when (and (cl-plusp state) (null (get-char-property beg 'gt-done)))
                                     (delete-region beg end)

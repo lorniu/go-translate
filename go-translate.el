@@ -87,6 +87,7 @@
                gt-buffer-render--toggle-polyglot
                gt-buffer-render--delete-cache
                gt-buffer-render--show-tips
+               gt-buffer-render--unfold-source-text
                gt-posframe-render-auto-close-handler
                gt-stardict-switch-dict
                gt-overlay-render-save-to-kill-ring))

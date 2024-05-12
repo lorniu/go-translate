@@ -1803,7 +1803,7 @@ Output to minibuffer by default."
                (setf _taker taker _engines engines _render render))
              (setf version (time-to-seconds) state 0 tasks nil total 0))))
 
-(cl-defmethod gt-init ((translator gt-translator))
+(cl-defmethod gt-init ((translator gt-translator) &rest _)
   "Initialize the components, text and target for TRANSLATOR."
   (gt-log-funcall "init (%s)" translator)
   (with-slots (keep text bounds target version taker engines render _taker _engines _render) translator
@@ -1832,7 +1832,7 @@ Output to minibuffer by default."
   (setq gt-current-command this-command)
   (setq gt-current-translator translator)
   ;; init
-  (gt-init translator)
+  (gt-init translator nil)
   (with-slots (text target version total engines render) translator
     ;; tasks
     (cl-loop for engine in engines

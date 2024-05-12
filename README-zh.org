@@ -410,7 +410,7 @@ ChatGPT 需要 apikey 才能正常使用:
   ;; 提供 apikey 有很多方式
   (setq gt-chatgpt-key "YOUR-KEY")
   (gt-chatgpt-engine :key "YOUR_KEY")
-  (find-file "~/.authinfo") ; api.openai.com login apikey password [YOUR_KEY]
+  (find-file "~/.authinfo") ; machine api.openai.com login apikey password [YOUR_KEY]
 
   ;; 其他配置
   (setq gt-chatgpt-host "YOUR-HOST")
