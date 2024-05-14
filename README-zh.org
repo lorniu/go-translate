@@ -494,6 +494,11 @@ ChatGPT 需要 apikey 才能正常使用:
 这两个 Render 的效果跟 =gt-buffer-render= 类似，只不过它的窗口是浮动的。
 快捷键也是一致的，比如 =q= 表示退出。
 
+可以通过 =:frame-params= 向 posframe 传递任意需要的参数:
+#+begin_src emacs-lisp
+  (gt-posframe-pin-render :frame-params (list :border-width 20 :border-color "red"))
+#+end_src
+
 *** gt-insert-render
 
 将翻译结果插入到当前 buffer。

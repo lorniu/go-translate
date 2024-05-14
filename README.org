@@ -480,6 +480,11 @@ You need to install [[https://github.com/tumashu/posframe][posframe]] before you
 The effect of these two Renders is similar to =gt-buffer-render=, except that the window is floating.
 The shortcut keys are similar too, such as =q= to quit.
 
+You can pass any params to =posframe-show= with =:frame-params=:
+#+begin_src emacs-lisp
+  (gt-posframe-pin-render :frame-params (list :border-width 20 :border-color "red"))
+#+end_src
+
 *** gt-insert-render
 
 Insert the translation results into current buffer.

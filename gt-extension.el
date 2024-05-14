@@ -428,11 +428,13 @@ TAG is extra message show in the middle if not nil."
 ;; implements via package Posframe, you should install it before use this
 
 (defclass gt-posframe-pop-render (gt-buffer-render)
-  ((width       :initarg :width        :initform 100)
-   (height      :initarg :height       :initform 15)
-   (forecolor   :initarg :forecolor    :initform nil)
-   (backcolor   :initarg :backcolor    :initform nil)
-   (padding     :initarg :padding      :initform 12))
+  ((width        :initarg :width        :initform 100)
+   (height       :initarg :height       :initform 15)
+   (forecolor    :initarg :forecolor    :initform nil)
+   (backcolor    :initarg :backcolor    :initform nil)
+   (padding      :initarg :padding      :initform 12)
+   (frame-params :initarg :frame-params :initform nil :type list
+                 :documentation "Other parameters passed to `posframe-show'. Have higher priority."))
   "Pop up a childframe to show the result.
 The frame will disappear when do do anything but focus in it.
 Manually close the frame with `q'.")
@@ -462,23 +464,25 @@ Manually close the frame with `q'.")
     (user-error "To use `gt-posframe-render', you should install and load package `posframe' first")))
 
 (cl-defmethod gt-init ((render gt-posframe-pop-render) translator)
-  (with-slots (width height forecolor backcolor padding) render
+  (with-slots (width height forecolor backcolor padding frame-params) render
     (let ((inhibit-read-only t)
           (buf gt-posframe-pop-render-buffer))
       ;; create
       (unless (buffer-live-p (get-buffer buf))
-        (posframe-show buf
-                       :string "Loading..."
-                       :timeout gt-posframe-pop-render-timeout
-                       :max-width width
-                       :max-height height
-                       :foreground-color (or forecolor gt-pop-posframe-forecolor)
-                       :background-color (or backcolor gt-pop-posframe-backcolor)
-                       :internal-border-width padding
-                       :internal-border-color (or backcolor gt-pop-posframe-backcolor)
-                       :accept-focus t
-                       :position (point)
-                       :poshandler gt-posframe-pop-render-poshandler))
+        (apply #'posframe-show buf
+               (append frame-params
+                       (list
+                        :string "Loading..."
+                        :timeout gt-posframe-pop-render-timeout
+                        :max-width width
+                        :max-height height
+                        :foreground-color (or forecolor gt-pop-posframe-forecolor)
+                        :background-color (or backcolor gt-pop-posframe-backcolor)
+                        :internal-border-width padding
+                        :internal-border-color (or backcolor gt-pop-posframe-backcolor)
+                        :accept-focus t
+                        :position (point)
+                        :poshandler gt-posframe-pop-render-poshandler))))
       ;; render
       (gt-buffer-render-init buf render translator)
       (posframe-refresh buf)
@@ -496,14 +500,16 @@ Manually close the frame with `q'.")
 ;;; [Render] Child-Frame Render (Pin Mode)
 
 (defclass gt-posframe-pin-render (gt-posframe-pop-render)
-  ((width       :initarg :width        :initform 60)
-   (height      :initarg :height       :initform 20)
-   (padding     :initarg :padding      :initform 8)
-   (bd-width    :initarg :bd-width     :initform 1)
-   (bd-color    :initarg :bd-color     :initform nil)
-   (backcolor   :initarg :backcolor    :initform nil)
-   (fri-color   :initarg :fringe-color :initform nil)
-   (position    :initarg :position     :initform nil))
+  ((width        :initarg :width        :initform 60)
+   (height       :initarg :height       :initform 20)
+   (padding      :initarg :padding      :initform 8)
+   (bd-width     :initarg :bd-width     :initform 1)
+   (bd-color     :initarg :bd-color     :initform nil)
+   (backcolor    :initarg :backcolor    :initform nil)
+   (fri-color    :initarg :fringe-color :initform nil)
+   (position     :initarg :position     :initform nil)
+   (frame-params :initarg :frame-params :initform nil :type list
+                 :documentation "Other parameters passed to `posframe-show'. Have higher priority."))
   "Pin the childframe in a fixed position to display the translate result.
 The childframe will not close, until you kill it with `q'.
 Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
@@ -515,26 +521,28 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
 (cl-defmethod gt-init ((render gt-posframe-pin-render) translator)
   (if (and (get-buffer gt-posframe-pin-render-buffer) gt-posframe-pin-render-frame)
       (make-frame-visible gt-posframe-pin-render-frame)
-    (with-slots (width height min-width min-height bd-width forecolor backcolor bd-color padding position) render
+    (with-slots (width height min-width min-height bd-width forecolor backcolor bd-color padding position frame-params) render
       (setq gt-posframe-pin-render-frame
             (let ((inhibit-read-only t))
-              (posframe-show gt-posframe-pin-render-buffer
-                             :string "\nLoading..."
-                             :width width
-                             :height height
-                             :min-width width
-                             :min-height height
-                             :foreground-color (or forecolor gt-pin-posframe-forecolor)
-                             :background-color (or backcolor gt-pin-posframe-backcolor)
-                             :internal-border-width bd-width
-                             :border-color (or bd-color gt-pin-posframe-bdcolor)
-                             :left-fringe padding
-                             :right-fringe padding
-                             :refresh nil
-                             :accept-focus t
-                             :respect-header-line t
-                             :position position
-                             :poshandler (unless position gt-posframe-pin-render-poshandler)))))
+              (apply #'posframe-show gt-posframe-pin-render-buffer
+                     (append frame-params
+                             (list
+                              :string "\nLoading..."
+                              :width width
+                              :height height
+                              :min-width width
+                              :min-height height
+                              :foreground-color (or forecolor gt-pin-posframe-forecolor)
+                              :background-color (or backcolor gt-pin-posframe-backcolor)
+                              :internal-border-width bd-width
+                              :border-color (or bd-color gt-pin-posframe-bdcolor)
+                              :left-fringe padding
+                              :right-fringe padding
+                              :refresh nil
+                              :accept-focus t
+                              :respect-header-line t
+                              :position position
+                              :poshandler (unless position gt-posframe-pin-render-poshandler)))))))
     (set-frame-parameter gt-posframe-pin-render-frame 'drag-internal-border t)
     (set-frame-parameter gt-posframe-pin-render-frame 'drag-with-header-line t)
     (when-let (color (or (oref render fri-color) gt-pin-posframe-fringe-color))
