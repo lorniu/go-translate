@@ -904,17 +904,18 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
   "Used to send a request and get the response."
   :abstract t)
 
-(cl-defgeneric gt-request (http-client &key url done fail data headers cache)
+(cl-defgeneric gt-request (http-client &key url filter done fail data headers cache)
   "Send HTTP request using the given HTTP-CLIENT.
 
 Optional keyword arguments:
   - URL: The URL to send the request to.
+  - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
   - DATA: The data to include in the request.
   - HEADERS: Additional headers to include in the request.
   - CACHE: enable get and set results in cache for current request"
-  (:method (&key url done fail data headers cache)
+  (:method (&key url filter done fail data headers cache)
            (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
              (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
                  (let* ((tag (format "%s" (eieio-object-class client)))
@@ -922,14 +923,15 @@ Optional keyword arguments:
                         (ckey (sha1 (format "%s%s" url data)))
                         (donefn (lambda (raw)
                                   (gt-log tag (format "✓ %s" url))
-                                  (when cache ; cache the result for url if :cache exist
-                                    (let ((gt-cache-alive-time (if (numberp cache) cache gt-cache-alive-time)))
-                                      (gt-cache-set gt-default-cacher ckey raw)))
-                                  (condition-case err
-                                      (funcall done raw)
-                                    (error
-                                     (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
-                                     (funcall fail err)))))
+                                  (when done
+                                    (when cache ; cache the result for url if :cache exist
+                                      (let ((gt-cache-alive-time (if (numberp cache) cache gt-cache-alive-time)))
+                                        (gt-cache-set gt-default-cacher ckey raw)))
+                                    (condition-case err
+                                        (funcall done raw)
+                                      (error
+                                       (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
+                                       (funcall fail err))))))
                         (failfn (lambda (status)
                                   (gt-log tag (format "Request fail! (%s) %s" url status))
                                   (if fail (funcall fail status)
@@ -944,7 +946,7 @@ Optional keyword arguments:
                        (if data (format "> DATA:   %s" data)))
                      (gt-request client
                                  :url url :headers headers :data data
-                                 :done donefn :fail failfn)))
+                                 :filter filter :done donefn :fail failfn)))
                (funcall fail "Make sure `gt-default-http-client' is available. eg:\n
  (setq gt-default-http-client (gt-url-http-client))\n\n\n")))))
 
@@ -965,26 +967,49 @@ Optional keyword arguments:
 
 (defvar url-http-end-of-headers)
 
-(cl-defmethod gt-request ((client gt-url-http-client) &key url done fail data headers)
-  (cl-assert (and url done fail))
-  (let ((inhibit-message t)
-        (message-log-max nil)
-        (url-debug gt-debug-p)
-        (url-user-agent (or (oref client user-agent) gt-user-agent))
-        (url-proxy-services (or (oref client proxy-services) url-proxy-services))
-        (url-request-extra-headers headers)
-        (url-request-method (if data "POST" "GET"))
-        (url-request-data data))
-    (url-retrieve url (lambda (status)
-                        (set-buffer-multibyte t)
-                        (unwind-protect
-                            (if-let (err (or (cdr-safe (plist-get status :error))
-                                             (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                               "Nothing responsed from server")))
-                                (funcall fail err)
-                              (funcall done (buffer-substring-no-properties url-http-end-of-headers (point-max))))
-                          (kill-buffer)))
-                  nil t)))
+(defvar url-http-transfer-encoding)
+
+(defvar gt-url-extra-filter nil)
+
+(defun gt-url-http-extra-filter (beg end len)
+  (when (and gt-url-extra-filter (bound-and-true-p url-http-end-of-headers)
+             (if (equal url-http-transfer-encoding "chunked") (= beg end) ; when delete
+               (= len 0))) ; when insert
+    (save-excursion
+      (save-restriction
+        (narrow-to-region url-http-end-of-headers (point-max))
+        (ignore-errors (funcall gt-url-extra-filter))))))
+
+(cl-defmethod gt-request ((client gt-url-http-client) &key url filter done fail data headers)
+  (cl-assert (and url (or filter done)))
+  (let* ((inhibit-message t)
+         (message-log-max nil)
+         (url-debug gt-debug-p)
+         (url-user-agent (or (oref client user-agent) gt-user-agent))
+         (url-proxy-services (or (oref client proxy-services) url-proxy-services))
+         (url-request-extra-headers headers)
+         (url-request-method (if data "POST" "GET"))
+         (url-request-data data)
+         (url-mime-encoding-string "identity")
+         (buf (url-retrieve
+               url (lambda (status)
+                     (set-buffer-multibyte t)
+                     (remove-hook 'after-change-functions #'gt-url-http-extra-filter t)
+                     (unwind-protect
+                         (if-let (err (or (cdr-safe (plist-get status :error))
+                                          (when (or (null url-http-end-of-headers) (= 1 (point-max)))
+                                            "Nothing responsed from server")))
+                             (if fail (funcall fail err)
+                               (signal 'user-error err))
+                           (when done
+                             (funcall done (buffer-substring-no-properties url-http-end-of-headers (point-max)))))
+                       (kill-buffer)))
+               nil t)))
+    (when (and filter (buffer-live-p buf))
+      (with-current-buffer buf
+        (setq-local gt-url-extra-filter filter)
+        (add-hook 'after-change-functions #'gt-url-http-extra-filter nil t)))
+    (get-buffer-process buf)))
 
 
 ;;; Taker

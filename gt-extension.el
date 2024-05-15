@@ -44,6 +44,8 @@
     :documentation "Extra arguments passed to curl programe.")))
 
 (defvar plz-curl-program)
+(defvar plz-curl-default-args)
+(defvar plz-http-end-of-headers-regexp)
 
 (declare-function plz "ext:plz.el" t t)
 (declare-function plz-error-message "ext:plz.el" t t)
@@ -62,7 +64,8 @@ Or switch http client to `gt-url-http-client' instead:\n
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
     (error "You should have `plz.el' and `curl' installed before using `gt-plz-http-client'")))
 
-(cl-defmethod gt-request ((client gt-plz-http-client) &key url done fail data headers)
+(cl-defmethod gt-request ((client gt-plz-http-client) &key url filter done fail data headers)
+  (cl-assert (and url (or filter done)))
   (let ((plz-curl-default-args
          (if (slot-boundp client 'extra-args)
              (append (oref client extra-args) plz-curl-default-args)
@@ -71,7 +74,19 @@ Or switch http client to `gt-url-http-client' instead:\n
       :headers (cons `("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) headers)
       :body data
       :as 'string
-      :then (lambda (raw) (funcall done raw))
+      :filter (when filter
+                (lambda (proc string)
+                  (with-current-buffer (process-buffer proc)
+                    (save-excursion
+                      (goto-char (point-max))
+                      (insert string)
+                      (goto-char (point-min))
+                      (when (re-search-forward plz-http-end-of-headers-regexp nil t)
+                        (save-restriction
+                          (narrow-to-region (point) (point-max))
+                          (ignore-errors (funcall filter))))))))
+      :then (lambda (raw)
+              (when done (funcall done raw)))
       :else (lambda (err)
               (let ((ret ;; try to compat with error object of url.el, see `url-retrieve' for details
                      (or (plz-error-message err)
@@ -83,7 +98,8 @@ Or switch http client to `gt-url-http-client' instead:\n
                                                 gt-plz-initialize-error-message))))))
                          (when-let (r (plz-error-response err))
                            (list 'http (plz-response-status r) (plz-response-body r))))))
-                (funcall fail ret))))))
+                (if fail (funcall fail ret)
+                  (signal 'user-error ret)))))))
 
 ;; Prefer plz/curl as backend
 
