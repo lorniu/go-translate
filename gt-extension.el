@@ -341,7 +341,7 @@ as argument that return a length.")
           (unless (cdr text)
             (when-let (prop (text-property-search-forward 'gt-source-text))
               (delete-region (prop-match-beginning prop) (prop-match-end prop))
-              (unless (get-pos-property 1 'gt-mark (car (gt-ensure-list (plist-get (car ret) :result))))
+              (unless (get-pos-property 1 'gt-mark (car (ensure-list (plist-get (car ret) :result))))
                 (let ((bd (gt-buffer-insert-source-text (car text))))
                   (unless (cdr tasks)
                     (put-text-property (car bd) (cdr bd) 'gt-task (car tasks)))))))
@@ -929,7 +929,7 @@ It depends on the `alert' package.")
       ;; format
       (dolist (tr ret)
         (let ((prefix (if (cdr ret) (plist-get tr :prefix)))
-              (result (string-join (gt-ensure-list (plist-get tr :result)) "\n")))
+              (result (string-join (ensure-list (plist-get tr :result)) "\n")))
           (push (concat prefix result) lst)))
       ;; output
       (message "")
@@ -1013,7 +1013,7 @@ target, engines and render in the buffer for the following translation."
                   (local-set-key (kbd "C-c C-p") #'cycle-prev-target)
                   (local-set-key (kbd "C-c C-e") #'set-engines)
                   (local-set-key (kbd "C-c C-r") #'set-render)))
-      (let* ((ori (gt-collect-bounds-to-text (gt-ensure-list text)))
+      (let* ((ori (gt-collect-bounds-to-text (ensure-list text)))
              (newtext (gt-read-from-buffer
                        :buffer gt-buffer-prompt-name
                        :initial-contents (or (car ori) "")
@@ -1028,7 +1028,7 @@ target, engines and render in the buffer for the following translation."
         (when (zerop (length (string-trim newtext)))
           (user-error "Text should not be null, abort"))
         (unless (equal ori (list newtext))
-          (setf text (gt-ensure-list newtext)))))))
+          (setf text (ensure-list newtext)))))))
 
 
 ;;; [Taker] pdf-view-mode

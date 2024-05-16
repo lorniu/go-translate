@@ -534,10 +534,6 @@ DATA should be list of (key . value)."
                          (url-hexify-string (format "%s" (or (cdr arg) 1)))))
                (delq nil data) "&")))
 
-(defun gt-ensure-list (object)
-  "Return OBJECT as a list."
-  (if (listp object) object (list object)))
-
 (defun gt-ensure-plain (obj &rest args)
   "Ensure OBJ is non-function and non-symbol.
 If OBJ is a function, call it with ARGS and return the result.
@@ -601,7 +597,7 @@ When `space' in DISPLAY, prepend a space to the STR."
   "Collect the text corresponding to each boundary in BOUNDS."
   (when (consp (car bounds))
     (setq bounds (mapcar (lambda (bd) (buffer-substring (car bd) (cdr bd))) bounds)))
-  (mapcar (lambda (s) (gt-clean-properties s)) (gt-ensure-list bounds)))
+  (mapcar (lambda (s) (gt-clean-properties s)) (ensure-list bounds)))
 
 (defun gt-lookup-password (&rest params)
   "Query password stored in '.authinfo'.
@@ -726,7 +722,7 @@ TEXT, SRC and TGT are translation text and targets.
 This is a generic method, you can extend the V as you wish."
   (cond ((or (null v) (eq v t)) v)
         ((symbolp v)
-         (setq text (gt-ensure-list text))
+         (setq text (ensure-list text))
          (let ((vn (symbol-name v)) (notp nil))
            (when (string-match "^not?-\\(.*\\)" vn) ; text is not-xxx style
              (setq vn (match-string 1 vn))
@@ -862,14 +858,14 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
   "Generate caching key for the Nth text in TASK."
   (with-slots (text src tgt engine parse) task
     (sha1 (format "%s:%s:%s:%s:%s:%s"
-                  (nth (or n 0) (gt-ensure-list text)) src tgt
+                  (nth (or n 0) (ensure-list text)) src tgt
                   (eieio-object-class engine)
                   (eieio-object-class (oref engine parse))
                   (or (oref (gt-bing-engine) salt) "1")))))
 
 (cl-defmethod gt-cache-get (cacher (task gt-task))
   (let ((results (cl-loop
-                  for i from 1 to (length (gt-ensure-list (oref task text)))
+                  for i from 1 to (length (ensure-list (oref task text)))
                   collect (gt-cache-get cacher (gt-cache-key task (1- i))))))
     (when (cl-some #'identity results)
       (gt-log 'render (format "%s: result from cache!" (oref task id))))
@@ -1158,7 +1154,7 @@ default rules to fit your need."
                                   (throw 'gt-langs l) ; hit the one, return directly
                                 (setq srcs (remove l srcs))) ; not the one, exclude it
                            finally (return nil))))))
-    (if hit (gt-ensure-list hit) srcs)))
+    (if hit (ensure-list hit) srcs)))
 
 (cl-defgeneric gt-thing-at-point (thing _mode)
   "Retrieve text at point or from the selected region.
@@ -1225,7 +1221,7 @@ one or more languages."
       (setq langs (mapcar #'intern-soft langs))
     (user-error "At least two languages should be configed, current: %s" langs))
   (let* ((str (string-join (or (gt-collect-bounds-to-text
-                                (gt-ensure-list text))
+                                (ensure-list text))
                                "")))
          (srcs (or (if gt-skip-lang-rules-p langs (gt-langs-maybe str langs))
                    (user-error "Maybe no language match current translation")))
@@ -1266,7 +1262,7 @@ Return the list of bounds or text pieces."
                       (nreverse bds))))))
       (gt-log 'taker (format "pick from text by: %s" thing))
       (let ((mode major-mode)
-            (text (car (gt-ensure-list text))))
+            (text (car (ensure-list text))))
         (if (consp text)
             (ps (car text) (cdr text) mode)
           (with-temp-buffer
@@ -1289,11 +1285,11 @@ See type `gt-taker' for more description."
            (with-slots (text bounds target) translator
              (unless text
                (user-error "Source Text should not be null"))
-             (setf text (gt-ensure-list text))
+             (setf text (ensure-list text))
              (when (consp (car text))
                (setf bounds text)
                (setf text (gt-collect-bounds-to-text text)))
-             (setf target (gt-ensure-list target))
+             (setf target (ensure-list target))
              ;; if `then' slot exists
              (with-slots (then) taker
                (when (and (slot-boundp taker 'then) then (gt-functionp then))
@@ -1329,7 +1325,7 @@ This is non-destructive, return string or string list."
            (let ((text (if (slot-boundp taker 'text)
                            (oref taker text)
                          gt-taker-text)))
-             (gt-ensure-list
+             (ensure-list
               (cond ((symbolp text) (gt-thing-at-point text major-mode))
                     ((gt-functionp text) (funcall text))
                     (t text))))))
@@ -1352,7 +1348,7 @@ This is non-destructive, return the target will be used. If DIR is `next or
   (:method ((taker gt-taker) translator &optional dir)
            (when-let (langs (if (slot-boundp taker 'langs) (oref taker langs) gt-langs))
              (let* ((text (oref translator text))
-                    (tgts (if (car langs) (gt-available-langs (gt-ensure-list langs) text) (cdr langs)))
+                    (tgts (if (car langs) (gt-available-langs (ensure-list langs) text) (cdr langs)))
                     (index (let ((n (cl-position gt-last-target tgts :test #'equal)))
                              (if n (+ n (pcase dir ('next 1) ('prev -1) (_ 0))) 0)))
                     (target (nth (if (>= index (length tgts)) 0 (if (< index 0) (- (length tgts) 1) index)) tgts)))
@@ -1376,7 +1372,7 @@ This is non-destructive, return the target will be used. If DIR is `next or
   (when target
     (format "[%s%s] "
             (if-let (src (car target)) (format "%s > " src) "")
-            (mapconcat (lambda (s) (format "%s" s)) (gt-ensure-list (cdr target)) ", "))))
+            (mapconcat (lambda (s) (format "%s" s)) (ensure-list (cdr target)) ", "))))
 
 (defun gt-prompt-next-target (&optional backwardp)
   "Switch to next target in prompt minibuffer.
@@ -1396,7 +1392,7 @@ If BACKWARDP is not nil then switch to previous one."
            (with-slots (text target) translator
              (when (cdr text)
                (user-error "Multiple text cannot be prompted"))
-             (let* ((ori (gt-collect-bounds-to-text (gt-ensure-list text)))
+             (let* ((ori (gt-collect-bounds-to-text (ensure-list text)))
                     (minibuffer-allow-text-properties t)
                     (newtext (minibuffer-with-setup-hook
                                  (lambda ()
@@ -1505,7 +1501,7 @@ will do the parse and render job. See type `gt-engine' for more description."
                  ;; split with delimiter if possible
                  (when-let (delimiter (and (stringp res) (if (slot-boundp engine 'delimiter) delimiter gt-text-delimiter)))
                    (setf res (mapcar (lambda (item) (string-trim item "\n+")) (split-string res delimiter))))
-                 (setf res (gt-ensure-list res))
+                 (setf res (ensure-list res))
                  ;; run res-hook if possible
                  (when-let (hook (plist-get meta :res-hook))
                    (setf res (funcall hook res))))
@@ -1674,7 +1670,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                              for l in (gt-langs-maybe text (list src tgt)) do (funcall col l text))
                   (when-let (r (nth part text))
                     (funcall col (car target) r))
-                  (when-let (r (and (not err) (or (get-pos-property (point) 'gt-brief) (nth part (gt-ensure-list res)))))
+                  (when-let (r (and (not err) (or (get-pos-property (point) 'gt-brief) (nth part (ensure-list res)))))
                     (funcall col tgt r)))
                 (when items
                   (let* ((cand (completing-read "Text to Speech: " (gt-make-completion-table items)))
@@ -1842,7 +1838,7 @@ Output to minibuffer by default."
     (let ((history-delete-duplicates t))
       (add-to-history 'gt-target-history target 8))
     ;; prepare engines and render
-    (setf engines (gt-ensure-list (gt-ensure-plain _engines)))
+    (setf engines (ensure-list (gt-ensure-plain _engines)))
     (setf render (gt-ensure-plain _render))
     ;; log
     (gt-log 'translator (format "version: %s\ntarget: %s\nbounds: %s\ntext: %s\ntaker: %s, engines: %s, render: %s"

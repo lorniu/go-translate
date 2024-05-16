@@ -51,13 +51,13 @@
 (cl-defmethod gt-reset :after ((translator gt-text-utility) &rest _)
   (with-slots (_engines) translator
     (unless _engines (setf _engines (gt-text-utility-engine)))
-    (setf _engines (gt-ensure-list _engines))
+    (setf _engines (ensure-list _engines))
     (unless (and (not (cdr _engines)) (cl-typep (car _engines) 'gt-text-utility-engine))
       (user-error "%s should use only one gt-text-utility-engine as engine" (eieio-object-class translator)))))
 
 (cl-defmethod gt-target ((taker gt-taker) (_ gt-text-utility) &rest _)
   (let ((tgts (if (slot-boundp taker 'langs)
-                  (gt-ensure-list (oref taker langs))
+                  (ensure-list (oref taker langs))
                 (mapcar #'intern
                         (completing-read-multiple
                          "Utilities (can choose multiple): " gt-text-utilities

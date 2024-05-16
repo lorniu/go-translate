@@ -224,7 +224,7 @@ will be used as the default translator."
                            ,@body)))))
       (list (desc1 taker (cl-flet ((desc2 (slot) (when (slot-boundp taker slot) (format "%s: %s" slot (slot-value taker slot)))))
                            (format "<%s> %s" (eieio-object-class taker) (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", "))))
-            (desc1 engines (mapconcat (lambda (en) (format "%s" (oref en tag))) (gt-ensure-list (gt-ensure-plain engines)) ", "))
+            (desc1 engines (mapconcat (lambda (en) (format "%s" (oref en tag))) (ensure-list (gt-ensure-plain engines)) ", "))
             (desc1 render (format "<%s>" (eieio-object-class (gt-ensure-plain render))))))))
 
 (defun gt-set-taker (&optional translator taker)
