@@ -989,17 +989,18 @@ Optional keyword arguments:
          (url-mime-encoding-string "identity")
          (buf (url-retrieve
                url (lambda (status)
-                     (set-buffer-multibyte t)
-                     (remove-hook 'after-change-functions #'gt-url-http-extra-filter t)
-                     (unwind-protect
-                         (if-let (err (or (cdr-safe (plist-get status :error))
-                                          (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                            "Nothing responsed from server")))
-                             (if fail (funcall fail err)
-                               (signal 'user-error err))
-                           (when done
-                             (funcall done (buffer-substring-no-properties url-http-end-of-headers (point-max)))))
-                       (kill-buffer)))
+                     (let ((cb (current-buffer)))
+                       (set-buffer-multibyte t)
+                       (remove-hook 'after-change-functions #'gt-url-http-extra-filter t)
+                       (unwind-protect
+                           (if-let (err (or (cdr-safe (plist-get status :error))
+                                            (when (or (null url-http-end-of-headers) (= 1 (point-max)))
+                                              "Nothing responsed from server")))
+                               (if fail (funcall fail err)
+                                 (signal 'user-error err))
+                             (when done
+                               (funcall done (buffer-substring-no-properties url-http-end-of-headers (point-max)))))
+                         (kill-buffer cb))))
                nil t)))
     (when (and filter (buffer-live-p buf))
       (with-current-buffer buf
