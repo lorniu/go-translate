@@ -16,7 +16,7 @@ This is a translation framework on Emacs, with high configurability and extensib
 
 As a translation framework, it offers many advantages:
 - Supports multiple translation engines, including ChatGPT, Bing, Google, DeepL, YoudaoDict, StarDict and more.
-- Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others.
+- Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others. With stream output support.
 - Flexible retrieval of content and language for translation, with the help of the built-in Taker component.
 - Support for word and sentence translation, as well as translation of multiple paragraphs. It can use multiple engines concurrently to translate multiple paragraphs into multiple languages.
 - Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience. Support independent proxy configs.
@@ -202,6 +202,7 @@ Finally, the initial text is cut and filtered based on =pick= and =pick-pred=. T
 |-----------+--------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------|
 | parse     | Specify parser                                               | A parser or a function                                                                                                                    |
 | cache     | Configure cache                                              | If set to nil, cache is disabled for the current engine. You can also specify different cachers or cache strategies for different engines |
+| stream    | Whether turn on stream query                                 | Boolean. Works only when engines support stream, for example ChatGPT engine.                                                              |
 | if        | Filter                                                       | Function or literal symbol, used to determine whether the current engine should work for current translation task                         |
 | delimiter | Delimiter                                                    | If not empty, the translation strategy of "join-translate-split" will be adopted                                                          |
 | then      | The logic to be executed after the engine is completed. Hook | A function that takes current task as argument. Can be used to make final modifications to the translate result before rendering          |
@@ -424,6 +425,24 @@ Even can custom the prompt for other tasks. For example, for polish sentence:
       (gt-start (gt-translator
                  :engines (gt-chatgpt-engine :cache nil)
                  :render (gt-insert-render)))))
+#+end_src
+
+It support streaming output with some renders. Examples:
+#+begin_src emacs-lisp
+  ;; Three engines, one with streaming query, two for normal
+  ;; The streaming result can be output with buffer render, posframe render and insert render
+  (setq gt-default-translator
+        (gt-translator :taker (gt-taker :pick nil)
+                       :engines (list (gt-chatgpt-engine :stream t)
+                                      (gt-chatgpt-engine :stream nil)
+                                      (gt-google-engine))
+                       :render (gt-buffer-render)))
+
+  ;; Translate and insert the streaming results to buffer
+  (setq gt-default-translator
+        (gt-translator :taker (gt-taker :pick nil :prompt t)
+                       :engines (gt-chatgpt-engine :stream t)
+                       :render (gt-insert-render)))
 #+end_src
 
 After all, try text to speech with command =gt-do-speak=.

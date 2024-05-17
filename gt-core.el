@@ -82,7 +82,7 @@
     :documentation "Extra data passed in translation.")
    (res
     :initform nil
-    :type (or string list)
+    :type (or string list function)
     :documentation "Translation result.")
    (err
     :initform nil
@@ -90,6 +90,12 @@
    (cache
     :initform nil
     :documentation "Used to temporarily save the data from cache.")
+   (markers
+    :initform nil
+    :documentation "Markers tracking output bounds.")
+   (process
+    :initform nil
+    :documentation "Which process current task running.")
 
    (id
     :initform (gensym "task-")
@@ -186,6 +192,14 @@ use one of them at a time.")
     :initarg :delimiter
     :type (or null string)
     :documentation "The delimiter for multiple paragraphs or parts translation.")
+   (stream
+    :initarg :stream
+    :type boolean
+    :initform nil
+    :documentation "Enable stream support for this engine.
+This effect both engine and render. If this is t, then retrieve results
+part by part. Render supporting stream output should refresh the display
+every time new data arrived.")
    (cache
     :initarg :cache
     :type (or symbol function gt-cacher)
@@ -504,6 +518,8 @@ That is: 1) define the translator 2) executable `gt-start'.")
 
 (defvar gt-current-translator nil)
 
+(defvar-local gt-tracking-marker nil)
+
 (cl-defgeneric gt-init (object &rest _args)
   "Initialization for OBJECT.")
 
@@ -607,6 +623,18 @@ PARAMS contains search keys like :user, :host same as `auth-source-search'."
         (funcall secret)
       secret)))
 
+(defun gt-insert-text-at-marker (str marker &optional end-marker)
+  "Insert STR to position of MARKER.
+If END-MARKER exists, delete the content between the markers first."
+  (with-current-buffer (marker-buffer marker)
+    (let ((inhibit-read-only t))
+      (when end-marker
+        (set-marker-insertion-type end-marker t)
+        (delete-region marker end-marker))
+      (goto-char marker)
+      (deactivate-mark)
+      (save-excursion (insert str)))))
+
 (defun gt-parse-html-dom (str)
   "Parse html STR and return the DOM body."
   (with-temp-buffer
@@ -642,7 +670,7 @@ See gt-tests.el for details."
        ,@body)))
 
 (defun gt-make-completion-table (items &optional order)
-  "Make completion table that ensure ITEMS sort by original order."
+  "Make completion table that ensure ITEMS sort by original ORDER."
   (lambda (input pred action)
     (if (eq action 'metadata)
         `(metadata (category . "go-translate")
@@ -861,7 +889,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
                   (nth (or n 0) (ensure-list text)) src tgt
                   (eieio-object-class engine)
                   (eieio-object-class (oref engine parse))
-                  (or (oref (gt-bing-engine) salt) "1")))))
+                  (or (oref engine salt) "1")))))
 
 (cl-defmethod gt-cache-get (cacher (task gt-task))
   (let ((results (cl-loop
@@ -895,6 +923,10 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 (defvar gt-default-http-client nil)
 
+(defvar-local gt-http-client-stream-abort-flag nil
+  "Used in callback of http filter.
+Set this to non-nil to ignore the following stream progress.")
+
 (defclass gt-http-client (gt-single)
   ((user-agent :initarg :user-agent :initform nil :type (or string null)))
   "Used to send a request and get the response."
@@ -910,7 +942,28 @@ Optional keyword arguments:
   - FAIL: A function to be called when the request fails.
   - DATA: The data to include in the request.
   - HEADERS: Additional headers to include in the request.
-  - CACHE: enable get and set results in cache for current request"
+  - CACHE: enable get and set results in cache for current request.
+
+It should return the process of this request."
+  (:method :around ((client gt-http-client) &key url filter done fail data headers)
+           (cl-assert (and url (or filter done)))
+           (let* ((tag (format "%s" (eieio-object-class client)))
+                  (filterfn (lambda ()
+                              (unless gt-http-client-stream-abort-flag
+                                (condition-case err
+                                    (funcall filter)
+                                  (error
+                                   (setq gt-http-client-stream-abort-flag t)
+                                   (gt-log tag (format "Error in filter: (%s) %s" url err)))))))
+                  (failfn (lambda (status)
+                            (gt-log tag (format "Request fail! (%s) %s" url status))
+                            (if fail (funcall fail status)
+                              (signal (car status) (cdr status))))))
+             (gt-log tag
+               (format "> %s\n> %s" client url)
+               (if headers (format "> HEADER: %s" headers))
+               (if data (format "> DATA:   %s" data)))
+             (cl-call-next-method client :url url :headers headers :data data :filter filterfn :done done :fail failfn )))
   (:method (&key url filter done fail data headers cache)
            (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
              (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
@@ -927,24 +980,14 @@ Optional keyword arguments:
                                         (funcall done raw)
                                       (error
                                        (gt-log tag (format "Request success but fail in callback! (%s) %s" url err))
-                                       (funcall fail err))))))
-                        (failfn (lambda (status)
-                                  (gt-log tag (format "Request fail! (%s) %s" url status))
-                                  (if fail (funcall fail status)
-                                    (signal (car status) (cdr status))))))
+                                       (funcall fail err)))))))
                    (if-let (r (and cache (gt-cache-get gt-default-cacher ckey)))
                        (progn
                          (gt-log 'cacher (format "Find %s in cache..." ckey))
                          (funcall donefn r))
-                     (gt-log tag
-                       (format "> %s\n> %s" client url)
-                       (if headers (format "> HEADER: %s" headers))
-                       (if data (format "> DATA:   %s" data)))
-                     (gt-request client
-                                 :url url :headers headers :data data
-                                 :filter filter :done donefn :fail failfn)))
-               (funcall fail "Make sure `gt-default-http-client' is available. eg:\n
- (setq gt-default-http-client (gt-url-http-client))\n\n\n")))))
+                     (gt-request client :url url :headers headers :data data :filter filter :done donefn :fail fail)))
+               (let ((errmsg "Make sure `gt-default-http-client' is available. eg:\n\n(setq gt-default-http-client (gt-url-http-client))\n\n\n"))
+                 (if fail (funcall fail errmsg) (user-error errmsg)))))))
 
 ;; http client implemented using `url.el'
 
@@ -974,10 +1017,9 @@ Optional keyword arguments:
     (save-excursion
       (save-restriction
         (narrow-to-region url-http-end-of-headers (point-max))
-        (ignore-errors (funcall gt-url-extra-filter))))))
+        (funcall gt-url-extra-filter)))))
 
 (cl-defmethod gt-request ((client gt-url-http-client) &key url filter done fail data headers)
-  (cl-assert (and url (or filter done)))
   (let* ((inhibit-message t)
          (message-log-max nil)
          (url-debug gt-debug-p)
@@ -1206,7 +1248,9 @@ This is a generic method, so you can override it for specific MODE."
            (skip-chars-backward " \t\f"))))
     (setq pt (point))
     (forward-thing thing)
-    (setq end (save-excursion (skip-chars-backward " \r\n\t\f") (point)))
+    (setq end (if (memq thing '(paragraph))
+                  (point)
+                (save-excursion (skip-chars-backward " \r\n\t\f") (point))))
     (when (> end pt) (cons pt end))))
 
 (defun gt-available-langs (langs text)
@@ -1445,8 +1489,10 @@ a symbol or a list."
 
 (cl-defmethod gt-init ((engine gt-engine) task)
   "Preprocessing text in TASK for ENGINE. Try cache first if possible."
-  (gt-log-funcall "init (%s %s)" engine (oref task id))
-  (with-slots (id text res cache render) task
+  (with-slots (id text cache) task
+    (gt-log-funcall "init (%s %s)" engine id)
+    ;; if stream, not cache
+    (if (gt-stream-p engine) (oset engine cache nil))
     ;; query cache first
     (when-let (cacher (car-safe (gt-current-cacher engine task)))
       (setf cache (gt-cache-get cacher task)))
@@ -1467,17 +1513,20 @@ will do the parse and render job. See type `gt-engine' for more description."
   (:method :around ((engine gt-engine) task &optional _next)
            (gt-log-funcall "translate (%s %s)" engine (oref task id))
            (gt-init engine task)
-           (with-slots (id text err res render translator) task
+           (with-slots (id text err res render translator process) task
              (unless (or res err)
                (gt-log 'next (format "%s: %s prepare to translate" id (eieio-object-class engine)))
-               (cl-call-next-method engine task
-                                    (lambda (task)
-                                      (gt-log 'next (format "%s: %s translate success!" id (eieio-object-class engine)))
-                                      (if (equal (oref translator version) (oref task version))
-                                          (condition-case err
-                                              (gt-next engine task)
-                                            (gt-fail task err))
-                                        (gt-log 'next (format "%s: ----- expired -----" id))))))))
+               (let ((ret (cl-call-next-method engine task
+                                               (lambda (task)
+                                                 (gt-log 'next (format "%s: %s translate success!" id (eieio-object-class engine)))
+                                                 (if (equal (oref translator version) (oref task version))
+                                                     (condition-case err
+                                                         (if (gt-stream-p engine)
+                                                             (unless gt-http-client-stream-abort-flag (gt-next-for-stream engine task))
+                                                           (gt-next engine task))
+                                                       (gt-fail task err))
+                                                   (gt-log 'next (format "%s: ----- expired -----" id)))))))
+                 (if (processp ret) (setf process ret))))))
   (:method ((engine gt-engine) _task _next)
            (user-error "Method `gt-translate' of %s is not implement" (eieio-object-class engine))))
 
@@ -1486,6 +1535,10 @@ will do the parse and render job. See type `gt-engine' for more description."
   (:method :before ((parser gt-parser) task)
            (gt-log-funcall "parse (%s %s)" parser (oref task id)))
   (:method ((_ gt-parser) _task) nil))
+
+(cl-defgeneric gt-stream-p (engine)
+  "Whether streaming query is on for ENGINE."
+  nil)
 
 (cl-defgeneric gt-next (_engine task)
   "Chain to the parse and render phase for TASK."
@@ -1523,6 +1576,21 @@ will do the parse and render job. See type `gt-engine' for more description."
                ;; all right, render
                (gt-update-state translator)
                (gt-output (oref translator render) translator)))))
+
+(cl-defgeneric gt-next-for-stream (_engine task)
+  "Output result in TASK to specific marker position directly.
+If the result is a function, invoke it instead of insertion.
+This is used for streaming output of _ENGINE."
+  (:method ((_engine gt-engine) task)
+           (with-slots (markers res) task
+             (if (null markers)
+                 (progn
+                   (setq gt-http-client-stream-abort-flag t)
+                   (message "Stream output is unavailable for current task."))
+               (setf markers (ensure-list markers))
+               (gt-insert-text-at-marker
+                (string-join (ensure-list res) "\n")
+                (car markers) (cdr markers))))))
 
 
 ;;; Text to Speech
@@ -1724,7 +1792,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                                                           (if (cdr engines) (ignore-errors (oref (oref engine parse) tag))))))
                                            (mapconcat (lambda (item) (format "%s" item)) (remove nil lst) ".")))))
                       for result = (pcase state (0 "Loading...") (1 err) (2 res))
-                      collect (list :result result :prefix prefix :state state :task task :tgt tgt) into lst
+                      collect (list :result result :prefix prefix :state state :task task :tgt tgt :stream (gt-stream-p engine)) into lst
                       finally (return ;; sort by target, then by engine
                                (if (cdr tgts)
                                    (cl-loop for tgt in tgts append
@@ -1808,6 +1876,7 @@ Output to minibuffer by default."
                   (or error "")))
       (gt-update-state translator)
       (gt-output render translator))
+    (if gt-debug-p (signal 'error error))
     (gt-log 'next (format "%s: ----- error -----\n%s" id error))))
 
 (cl-defgeneric gt-reset (translator)
@@ -1875,9 +1944,8 @@ Output to minibuffer by default."
     ;; translate
     (if render (gt-init render translator))
     (cl-loop for task in (oref translator tasks)
-             for engine = (oref task engine)
              do (condition-case err
-                    (gt-translate engine task)
+                    (gt-translate (oref task engine) task)
                   (error (gt-fail task err))))))
 
 (provide 'gt-core)

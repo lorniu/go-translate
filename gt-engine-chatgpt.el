@@ -35,14 +35,11 @@
 
 ;;; Components
 
-(defclass gt-chatgpt-parser (gt-parser) ())
-
 (defclass gt-chatgpt-engine (gt-engine)
   ((tag         :initform 'ChatGPT)
    (host        :initarg :host :initform nil)
    (model       :initarg :model :initform nil)
    (temperature :initarg :temperature :initform nil)
-   (parse       :initform (gt-chatgpt-parser))
    (key         :initarg :key :initform 'apikey
                 :documentation "The apikey of ChatGPT.
 Can also put into .authinfo file as:
@@ -83,6 +80,12 @@ When it is function, arguments passed to it should be text and lang."
   :type '(choice string function)
   :group 'go-translate-chatgpt)
 
+(declare-function pulse-momentary-highlight-region "pulse")
+
+(defvar gt-chatgpt-streaming-finished-hook #'pulse-momentary-highlight-region
+  "The logic runs after all streams finished.
+With two arguments BEG and END, which are the marker bounds of the result.")
+
 (cl-defmethod gt-ensure-key ((engine gt-chatgpt-engine))
   (with-slots (host key) engine
     (unless (stringp key)
@@ -95,28 +98,54 @@ When it is function, arguments passed to it should be text and lang."
 
 (cl-defmethod gt-translate ((engine gt-chatgpt-engine) task next)
   (gt-ensure-key engine)
-  (with-slots (text src tgt res) task
-    (with-slots (host key model temperature) engine
+  (with-slots (text src tgt res translator markers) task
+    (with-slots (host key model temperature stream) engine
+      (when (and stream (cdr (oref translator text)))
+        (user-error "Multiple parts not support streaming"))
       (gt-request :url (concat (or host gt-chatgpt-host) "/v1/chat/completions")
                   :headers `(("Content-Type" . "application/json")
-                             ("Authorization" . ,(concat "Bearer " key)))
-                  :data (json-encode
-                         `((model . ,(or model gt-chatgpt-model))
-                           (temperature . ,(or temperature gt-chatgpt-temperature))
-                           (messages . [((role . system)
-                                         (content . ,gt-chatgpt-system-prompt))
-                                        ((role . user)
-                                         (content . ,(if (functionp gt-chatgpt-user-prompt-template)
-                                                         (funcall gt-chatgpt-user-prompt-template text tgt)
-                                                       (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) text))))])))
-                  :done (lambda (raw) (setf res raw) (funcall next task))
+                             ("Authorization" . ,(concat "Bearer " (encode-coding-string key 'utf-8))))
+                  :data (encode-coding-string
+                         (json-encode
+                          `((model . ,(or model gt-chatgpt-model))
+                            (temperature . ,(or temperature gt-chatgpt-temperature))
+                            (stream . ,stream)
+                            (messages . [((role . system)
+                                          (content . ,gt-chatgpt-system-prompt))
+                                         ((role . user)
+                                          (content . ,(if (functionp gt-chatgpt-user-prompt-template)
+                                                          (funcall gt-chatgpt-user-prompt-template text tgt)
+                                                        (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) text))))])))
+                         'utf-8)
+                  :filter (when stream
+                            (lambda ()
+                              (unless gt-tracking-marker
+                                (setq gt-tracking-marker (make-marker))
+                                (set-marker gt-tracking-marker (point-min)))
+                              (goto-char gt-tracking-marker)
+                              (while (re-search-forward "^data: \\({.*}\\]}\\) *$" nil t)
+                                (let* ((json (json-read-from-string (decode-coding-string (match-string 1) 'utf-8)))
+                                       (content (alist-get 'content (alist-get 'delta (let-alist json (aref .choices 0))))))
+                                  (setf res (concat res content))
+                                  (set-marker gt-tracking-marker (point))
+                                  (unless (string-blank-p (concat res))
+                                    (save-excursion (funcall next task)))))
+                              (when (re-search-forward "^data: \\[DONE\\] *$" nil t)
+                                (message "")
+                                (when gt-chatgpt-streaming-finished-hook
+                                  (with-current-buffer (marker-buffer (car markers))
+                                    (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers)))))))
+                  :done (unless stream
+                          (lambda (raw)
+                            (with-slots (res) task
+                              (let* ((json (json-read-from-string raw))
+                                     (str (alist-get 'content (alist-get 'message (let-alist json (aref .choices 0))))))
+                                (setf res str))
+                              (funcall next task))))
                   :fail (lambda (err) (gt-fail task err))))))
 
-(cl-defmethod gt-parse ((_ gt-chatgpt-parser) task)
-  (with-slots (res) task
-    (let* ((json (json-read-from-string res))
-           (str (alist-get 'content (alist-get 'message (let-alist json (aref .choices 0))))))
-      (setf res str))))
+(cl-defmethod gt-stream-p ((engine gt-chatgpt-engine))
+  (oref engine stream))
 
 
 ;;; Text to Speech

@@ -1,3 +1,6 @@
+Version 3.0.5
+  - Add streaming support for ChatGPT engine and Buffer/Posframe/Insert-Render.
+
 Version 3.0.4
   - Add new engine `gt-engine-chatgpt`.
 

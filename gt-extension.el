@@ -65,7 +65,6 @@ Or switch http client to `gt-url-http-client' instead:\n
     (error "You should have `plz.el' and `curl' installed before using `gt-plz-http-client'")))
 
 (cl-defmethod gt-request ((client gt-plz-http-client) &key url filter done fail data headers)
-  (cl-assert (and url (or filter done)))
   (let ((plz-curl-default-args
          (if (slot-boundp client 'extra-args)
              (append (oref client extra-args) plz-curl-default-args)
@@ -84,7 +83,7 @@ Or switch http client to `gt-url-http-client' instead:\n
                       (when (re-search-forward plz-http-end-of-headers-regexp nil t)
                         (save-restriction
                           (narrow-to-region (point) (point-max))
-                          (ignore-errors (funcall filter))))))))
+                          (funcall filter)))))))
       :then (lambda (raw)
               (when done (funcall done raw)))
       :else (lambda (err)
@@ -316,12 +315,20 @@ as argument that return a length.")
                    for i from 0
                    if (cdr text) do (gt-buffer-insert-source-text c) ; multi parts
                    do (cl-loop for tr in ret
+                               for stream = (plist-get tr :stream)
                                for res = (propertize "Loading..."
                                                      'face 'gt-buffer-render-loading-face
-                                                     'gt-result t)
+                                                     'gt-result (if stream 'stream t))
                                for (prefix task) = (list (plist-get tr :prefix) (plist-get tr :task))
                                for output = (propertize (concat prefix res "\n\n") 'gt-task task 'gt-part i)
-                               do (insert output)))))
+                               do (let ((engine (oref task engine)))
+                                    (if (and (gt-stream-p engine) (= i 0)) ; record result bound for stream
+                                        (let ((beg (point)) end)
+                                          (insert output)
+                                          (setq beg (set-marker (make-marker) (+ beg (length prefix))))
+                                          (setq end (set-marker (make-marker) (save-excursion (skip-chars-backward " \t\n") (point))))
+                                          (oset task markers (cons beg end)))
+                                      (insert output)))))))
       ;; keybinds
       (setq gt-buffer-render-local-map (make-sparse-keymap))
       (use-local-map gt-buffer-render-local-map)
@@ -333,11 +340,11 @@ as argument that return a length.")
       (run-hooks 'gt-buffer-render-init-hook))))
 
 (defun gt-buffer-render-output (buffer render translator)
-  "Output TRANSLATOR's retult to BUFFER for RENDER."
+  "Output TRANSLATOR's result to BUFFER for RENDER."
   (with-current-buffer buffer
-    (with-slots (text tasks) translator
-      (let ((inhibit-read-only t)
-            (ret (gt-extract render translator)) bds prop)
+    (let ((inhibit-read-only t)
+          (ret (gt-extract render translator)) bds prop)
+      (with-slots (text tasks) translator
         (save-excursion
           ;; refresh source text
           (goto-char (point-min))
@@ -358,16 +365,14 @@ as argument that return a length.")
           ;; output results in bounds
           (cl-loop for _ in text
                    for i from 0
-                   do (cl-loop for tr in ret
+                   do (cl-loop for tr in (cl-remove-if (lambda (r) (plist-get r :stream)) ret)
                                for (beg . end) = (pop bds)
                                for (res state task) = (list (plist-get tr :result) (plist-get tr :state) (plist-get tr :task))
                                do (goto-char beg)
                                do (when (and (cl-plusp state) (null (get-char-property beg 'gt-done)))
                                     (delete-region beg end)
                                     (insert (propertize (if (consp res) (nth i res) res)
-                                                        'gt-result t 'gt-done t
-                                                        'gt-task task
-                                                        'gt-part i))))))))
+                                                        'gt-result t 'gt-done t 'gt-task task 'gt-part i))))))))
     ;; update states
     (set-buffer-modified-p nil)
     ;; execute the hook if exists
@@ -413,8 +418,10 @@ TAG is extra message show in the middle if not nil."
   (gt-buffer-render-key ("?")                     #'gt-buffer-render--show-tips))
 
 (cl-defmethod gt-extract :around ((render gt-buffer-render) translator)
+  "Decorate prefix and result for buffer render."
   (cl-loop with mpp = (cdr (oref translator text))
-           for tr in (cl-call-next-method render translator)
+           with ret = (cl-call-next-method render translator)
+           for tr in ret
            for (prefix result state) = (gt-plist-let tr (list .prefix (format "%s" .result) .state))
            if (and prefix (or (not (slot-boundp render 'prefix)) (eq (oref render prefix) t)))
            do (plist-put tr :prefix
@@ -704,12 +711,25 @@ Otherwise, join the results use the default logic."
           (setq res (concat (if (or (string-match-p "\n" res) (and (not (gt-word-p nil src)) (eolp))) "\n" " ") res)))
         (gt-face-lazy res rface)))))
 
-(cl-defmethod gt-init ((_ gt-insert-render) translator)
-  (with-slots (bounds) translator
+(cl-defmethod gt-init ((render gt-insert-render) translator)
+  (with-slots (text bounds tasks) translator
     (unless (buffer-live-p (car bounds))
       (error "Source buffer is unavailable, abort"))
     (when (with-current-buffer (car bounds) buffer-read-only)
-      (error "Source buffer is readonly, can not insert"))))
+      (error "Source buffer is readonly, can not insert"))
+    ;; only simple translate allowing streaming output. record bound for it
+    (when (and (not (cdr text)) (not (cdr tasks))
+               (gt-stream-p (oref (car tasks) engine)))
+      (with-slots (markers engine) (car tasks)
+        (let ((type (oref render type))
+              (beg (or (caadr bounds) (point)))
+              (end (or (cdadr bounds) (point))))
+          (pcase type
+            ('after (setq beg (set-marker (make-marker) end)
+                          end (set-marker (make-marker) end)))
+            ('replace (setq beg (set-marker (make-marker) beg)
+                            end (set-marker (make-marker) end))))
+          (setf markers (cons beg end)))))))
 
 (cl-defmethod gt-output ((render gt-insert-render) translator)
   (with-slots (bounds state) translator

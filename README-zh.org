@@ -4,7 +4,7 @@
 
 作为一个翻译框架，它有很多优点:
 - 支持多种翻译引擎，比如 ChatGPT, Bing, Google, DeepL, 有道词典/近义词, StarDict 等
-- 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等
+- 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等。支持流式渲染
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
 - 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好。支持为不同请求设定不同代理
@@ -193,6 +193,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 |-----------+-------------------------------+---------------------------------------------------------------------------------------|
 | parse     | 指定解析器                    | 解析器或函数                                                                          |
 | cache     | 配置缓存                      | 如果设为 nil 则为当前 engine 禁用缓存。也可以为不同 engine 指定不同 cacher 或缓存策略 |
+| stream    | 是否开启 stream 模式          | 只有引擎支持流式 API 这个设置才有用。比如，ChatGPT 引擎                               |
 | if        | 过滤                          | 函数或字面量表达式，用于根据输入的内容决定当前 engine 是否参与当前翻译任务            |
 | delimiter | 分隔符                        | 如果不为空，则采取「连接-翻译-分割」的翻译策略                                        |
 | then      | engine 完成后执行的逻辑，钩子 | 一个以当前 task 为参数的函数。可以用于在渲染之前对返回的内容进行最后一步修改          |
@@ -438,6 +439,24 @@ ChatGPT 需要 apikey 才能正常使用:
       (gt-start (gt-translator
                  :engines (gt-chatgpt-engine :cache nil)
                  :render (gt-insert-render)))))
+#+end_src
+
+可以通过设置 =:stream t= 让引擎返回流式 (stream) 结果，即内容一点点返回并输出。下面是例子:
+#+begin_src emacs-lisp
+  ;; 下面配置了三个引擎，第一个是流式的，另外两个是普通的
+  ;; 其中 Buffer Render, Posframe Render 和 Insert Render 可以进行流式渲染
+  (setq gt-default-translator
+        (gt-translator :taker (gt-taker :pick nil)
+                       :engines (list (gt-chatgpt-engine :stream t)
+                                      (gt-chatgpt-engine :stream nil)
+                                      (gt-google-engine))
+                       :render (gt-buffer-render)))
+
+  ;; 下面配置，将查询的内容一点点插入到 buffer 当前位置
+  (setq gt-default-translator
+        (gt-translator :taker (gt-taker :pick nil :prompt t)
+                       :engines (gt-chatgpt-engine :stream t)
+                       :render (gt-insert-render)))
 #+end_src
 
 另外，可以通过 =gt-do-speak= 尝试其语音播报。
