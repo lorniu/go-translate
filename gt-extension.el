@@ -149,7 +149,7 @@ Notice, this can be overrided by `window-config' slot of render instance."
 
 (defvar gt-buffer-render-buffer-name "*gt-result*")
 
-(defvar gt-buffer-render-evil-leading-key nil "Leading key for keybinds in evil mode.")
+(defvar gt-buffer-render-evil-leading-key "," "Leading key for keybinds in evil mode.")
 
 (defvar-local gt-buffer-render-translator nil)
 (defvar-local gt-buffer-render-keybinding-messages nil)
@@ -163,7 +163,7 @@ Notice, this can be overrided by `window-config' slot of render instance."
      (let ((fn ,(if (member (car-safe (car form)) '(function lambda))
                     `,(car form)
                   `(lambda () (interactive) ,@form))))
-       (if (and (bound-and-true-p evil-mode) (string-prefix-p ,key "<"))
+       (if (bound-and-true-p evil-mode)
            (evil-define-key* 'normal gt-buffer-render-local-map
                              (kbd (concat gt-buffer-render-evil-leading-key
                                           (if gt-buffer-render-evil-leading-key " ") ,key))
