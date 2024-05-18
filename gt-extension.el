@@ -243,6 +243,8 @@ Notice, this can be overrided by `window-config' slot of render instance."
           (delete-overlay ov))
         (overlays-at (point))))
 
+(defvar gt-buffer-render-dislike-source-text nil)
+
 (defvar gt-buffer-render-source-text-limit 140
   "Fold some of the source text if it's too long.
 This can be a number as visible length or a function with source text
@@ -262,7 +264,7 @@ as argument that return a length.")
     (when (> (- (point-max) 20) (point))
       (cons (point) (point-max)))))
 
-(defun gt-buffer-insert-source-text (text)
+(defun gt-buffer-insert-source-text (text &optional fold)
   "Propertize and insert the source TEXT into render buffer."
   (let* ((text (string-trim text "\n+"))
          (beg (point))
@@ -271,19 +273,20 @@ as argument that return a length.")
     (save-excursion
       (put-text-property beg end 'face 'gt-buffer-render-source-face)
       (put-text-property beg (+ end 2) 'gt-source-text t)
-      (when-let* ((bd (save-restriction
-                        (narrow-to-region beg end)
-                        (funcall gt-buffer-render-source-text-fold-bound-function)))
-                  (ov (make-overlay beg end)))
-        (overlay-put ov 'display
-                     (concat
-                      (propertize (buffer-substring beg (car bd)) 'face 'gt-buffer-render-source-face)
-                      " ..."))
-        (overlay-put ov 'keymap (gt-simple-keymap
-                                 [return] #'gt-buffer-render--unfold-source-text
-                                 [mouse-1] #'gt-buffer-render--unfold-source-text))
-        (overlay-put ov 'pointer 'hand)
-        (overlay-put ov 'help-echo "Click to unfold the text"))
+      (when fold
+        (when-let* ((bd (save-restriction
+                          (narrow-to-region beg end)
+                          (funcall gt-buffer-render-source-text-fold-bound-function)))
+                    (ov (make-overlay beg end)))
+          (overlay-put ov 'display
+                       (concat
+                        (propertize (buffer-substring beg (car bd)) 'face 'gt-buffer-render-source-face)
+                        " ..."))
+          (overlay-put ov 'keymap (gt-simple-keymap
+                                   [return] #'gt-buffer-render--unfold-source-text
+                                   [mouse-1] #'gt-buffer-render--unfold-source-text))
+          (overlay-put ov 'pointer 'hand)
+          (overlay-put ov 'help-echo "Click to unfold the text")))
       (cons beg end))))
 
 (defun gt-buffer-render-init (buffer render translator)
@@ -306,7 +309,7 @@ as argument that return a length.")
         (erase-buffer)
         (newline)
         (save-excursion
-          (unless (cdr text) ;; single part, single task
+          (unless (or gt-buffer-render-dislike-source-text (cdr text)) ;; single part, single task
             (pcase-let ((`(,beg . ,end) (gt-buffer-insert-source-text (car text))))
               (put-text-property beg end 'gt-task (car tasks))))
           (cl-loop for c in text
@@ -341,8 +344,8 @@ as argument that return a length.")
           (unless (cdr text)
             (when-let (prop (text-property-search-forward 'gt-source-text))
               (delete-region (prop-match-beginning prop) (prop-match-end prop))
-              (unless (get-pos-property 1 'gt-mark (car (ensure-list (plist-get (car ret) :result))))
-                (let ((bd (gt-buffer-insert-source-text (car text))))
+              (when (or (cdr ret) (not (get-pos-property 1 'gt-mark (car (ensure-list (plist-get (car ret) :result))))))
+                (let ((bd (gt-buffer-insert-source-text (car text) t)))
                   (unless (cdr tasks)
                     (put-text-property (car bd) (cdr bd) 'gt-task (car tasks)))))))
           ;; collect positions
@@ -444,8 +447,8 @@ TAG is extra message show in the middle if not nil."
 ;; implements via package Posframe, you should install it before use this
 
 (defclass gt-posframe-pop-render (gt-buffer-render)
-  ((width        :initarg :width        :initform 100)
-   (height       :initarg :height       :initform 15)
+  ((width        :initarg :width        :initform nil)
+   (height       :initarg :height       :initform nil)
    (forecolor    :initarg :forecolor    :initform nil)
    (backcolor    :initarg :backcolor    :initform nil)
    (padding      :initarg :padding      :initform 12)
@@ -456,6 +459,8 @@ The frame will disappear when do do anything but focus in it.
 Manually close the frame with `q'.")
 
 (defvar gt-posframe-pop-render-buffer " *GT-Pop-Posframe*")
+(defvar gt-posframe-pop-render-init-hook nil)
+(defvar gt-posframe-pop-render-output-hook nil)
 (defvar gt-posframe-pop-render-timeout 30)
 (defvar gt-posframe-pop-render-poshandler nil)
 
@@ -482,16 +487,37 @@ Manually close the frame with `q'.")
 (cl-defmethod gt-init ((render gt-posframe-pop-render) translator)
   (with-slots (width height forecolor backcolor padding frame-params) render
     (let ((inhibit-read-only t)
-          (buf gt-posframe-pop-render-buffer))
+          (gt-buffer-render-dislike-source-text t)
+          (gt-buffer-render-init-hook gt-posframe-pop-render-init-hook)
+          (buf (get-buffer-create gt-posframe-pop-render-buffer))
+          (rweight (cond ((functionp width) (funcall width translator))
+                         ((numberp width) width)
+                         (t (if fill-column (- fill-column 5) 50))))
+          (rheight (cond ((functionp height) (funcall height translator))
+                         ((numberp height) height)
+                         (t 0))))
+      ;; height
+      (when (< rheight 1)
+        (let* ((h 1) (factor 1) (ts (ensure-list (oref translator text))))
+          (with-temp-buffer
+            (insert (string-join ts "\n"))
+            (goto-char (point-min))
+            (while (re-search-forward "\n+" nil t) (cl-incf h)))
+          (setq factor (* factor (length ts)))
+          (setq factor (* factor (max 1 (length (ensure-list (oref translator engines))))))
+          (setq factor (* factor (max 1 (length (ensure-list (cdr (oref translator target)))))))
+          (setq rheight (* factor (+ 4 h)))))
+      ;; render
+      (gt-buffer-render-init buf render translator)
       ;; create
-      (unless (buffer-live-p (get-buffer buf))
+      (unless (get-buffer-window (get-buffer buf))
         (apply #'posframe-show buf
                (append frame-params
                        (list
-                        :string "Loading..."
                         :timeout gt-posframe-pop-render-timeout
-                        :max-width width
-                        :max-height height
+                        :width rweight
+                        :height rheight
+                        :max-height (/ (window-height) 2)
                         :foreground-color (or forecolor gt-pop-posframe-forecolor)
                         :background-color (or backcolor gt-pop-posframe-backcolor)
                         :internal-border-width padding
@@ -499,18 +525,17 @@ Manually close the frame with `q'.")
                         :accept-focus t
                         :position (point)
                         :poshandler gt-posframe-pop-render-poshandler))))
-      ;; render
-      (gt-buffer-render-init buf render translator)
       (posframe-refresh buf)
       ;; setup
       (with-current-buffer buf
-        (gt-buffer-render-key ("q" "Close") (posframe-delete buf))))))
+        (gt-buffer-render-key ("q" "Close") (posframe-delete buf)))
+      (add-hook 'post-command-hook #'gt-posframe-render-auto-close-handler))))
 
 (cl-defmethod gt-output ((render gt-posframe-pop-render) translator)
   (when-let (buf (get-buffer gt-posframe-pop-render-buffer))
-    (gt-buffer-render-output buf render translator)
-    (posframe-refresh buf)
-    (add-hook 'post-command-hook #'gt-posframe-render-auto-close-handler)))
+    (let ((gt-buffer-render-output-hook gt-posframe-pop-render-output-hook))
+      (gt-buffer-render-output buf render translator)
+      (posframe-refresh buf))))
 
 
 ;;; [Render] Child-Frame Render (Pin Mode)
@@ -532,6 +557,8 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
 
 (defvar gt-posframe-pin-render-buffer " *GT-Pin-Posframe*")
 (defvar gt-posframe-pin-render-frame nil)
+(defvar gt-posframe-pin-render-init-hook nil)
+(defvar gt-posframe-pin-render-output-hook nil)
 (defvar gt-posframe-pin-render-poshandler #'posframe-poshandler-frame-top-right-corner)
 
 (cl-defmethod gt-init ((render gt-posframe-pin-render) translator)
@@ -564,13 +591,15 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
     (when-let (color (or (oref render fri-color) gt-pin-posframe-fringe-color))
       (set-face-background 'fringe color  gt-posframe-pin-render-frame)))
   ;; render
-  (gt-buffer-render-init gt-posframe-pin-render-buffer render translator)
+  (let ((gt-buffer-render-init-hook gt-posframe-pin-render-init-hook))
+    (gt-buffer-render-init gt-posframe-pin-render-buffer render translator))
   ;; setup
   (with-current-buffer gt-posframe-pin-render-buffer
     (gt-buffer-render-key ("q" "Close") (posframe-hide gt-posframe-pin-render-buffer))))
 
 (cl-defmethod gt-output ((render gt-posframe-pin-render) translator)
-  (gt-buffer-render-output gt-posframe-pin-render-buffer render translator))
+  (let ((gt-buffer-render-output-hook gt-posframe-pin-render-output-hook))
+    (gt-buffer-render-output gt-posframe-pin-render-buffer render translator)))
 
 
 ;;; [Render] kill-ring render
