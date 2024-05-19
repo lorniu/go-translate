@@ -1086,9 +1086,9 @@ a to b or a to c if this is nil."
   :type 'boolean
   :group 'go-translate)
 
-(defvar gt-taker-text-things '(buffer word symbol list sexp defun sentence page line paragraph))
+(defvar gt-taker-text-things '(word paragraph sentence buffer line page list sexp defun symbol))
 
-(defvar gt-taker-pick-things '(word symbol list sexp defun sentence page line paragraph))
+(defvar gt-taker-pick-things '(word paragraph sentence line list sexp defun page symbol))
 
 (defcustom gt-taker-text 'word
   "The initial text taken by taker of translator.

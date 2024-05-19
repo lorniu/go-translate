@@ -96,18 +96,24 @@
 
 ;;; Presets
 
+(defun gt-define-custom-taker ()
+  (let ((text (completing-read "Initial text: "
+                               (gt-make-completion-table `(,@gt-taker-text-things nil))))
+        (pick (completing-read "Pick style: "
+                               (gt-make-completion-table `(nil ,@gt-taker-pick-things))))
+        (prompt (completing-read "Prompt style: "
+                                 (gt-make-completion-table (list 'disable 'buffer 'minibuffer)) nil t)))
+    (gt-taker :text (intern text) :pick (intern pick)
+              :prompt (pcase prompt ("buffer" 'buffer) ("minibuffer" t) (_ nil)))))
+
 (defcustom gt-preset-takers
   (lambda ()
-    `((default                              . ,(gt-taker))
-      ("default and not-pick"               . ,(gt-taker :pick nil))
-      ("default and with-prompt"            . ,(gt-taker :prompt t))
-      ("default and with-buffer-prompt"     . ,(gt-taker :prompt 'buffer))
-      ("not-pick and with-prompt"           . ,(gt-taker :pick nil :prompt t))
-      ("not-pick and with-buffer-prompt"    . ,(gt-taker :pick nil :prompt 'buffer))
-      ("interactively take"                 . ,(gt-taker :text t :pick t :prompt t))
-      ("current-paragraph and pick-by-line" . ,(gt-taker :text 'paragraph :pick 'line))
-      (whole-buffer-no-paragraph            . ,(gt-taker :text 'buffer :pick 'nil))
-      (whole-buffer-by-paragraph            . ,(gt-taker :text 'buffer :pick 'paragraph))))
+    `((,(gt-face-lazy "new..." 'bold)  . ,#'gt-define-custom-taker)
+      (default                         . ,(gt-taker))
+      (interactively                   . ,(gt-taker :text t :pick t :prompt t))
+      (paragraph-at-point              . ,(gt-taker :text 'paragraph :pick nil))
+      (whole-buffer                    . ,(gt-taker :text 'buffer :pick 'nil))
+      (whole-buffer-by-paragraph       . ,(gt-taker :text 'buffer :pick 'paragraph))))
   "Preset takers.
 
 It is an alist or a function return the alist, which the value is a valid
@@ -126,11 +132,12 @@ of `gt-default-translator' at any time in `gt-do-setup'."
     `((Bing                 . ,(gt-bing-engine))
       (DeepL                . ,(gt-deepl-engine))
       (Google               . ,(gt-google-engine))
-      (GoogleRPC            . ,(gt-google-rpc-engine))
       (ChatGPT              . ,(gt-chatgpt-engine))
+      (ChatGPT-Stream       . ,(gt-chatgpt-engine :stream t))
       (Youdao-Dict          . ,(gt-youdao-dict-engine))
       (Youdao-Suggest       . ,(gt-youdao-suggest-engine))
       (StarDict             . ,(gt-stardict-engine))
+      (GoogleRPC            . ,(gt-google-rpc-engine))
       (Google-Summary       . ,(gt-google-engine :parse (gt-google-summary-parser)))
       (Bionic_Reading       . ,(gt-echo-engine :do '(clean br) :tag "Bionic Reading"))))
   "Preset engines.
@@ -222,9 +229,12 @@ will be used as the default translator."
                          (if (gt-functionp ,name)
                              (replace-regexp-in-string "[ \n\t]+" " " (format "%s" ,name))
                            ,@body)))))
-      (list (desc1 taker (cl-flet ((desc2 (slot) (when (slot-boundp taker slot) (format "%s: %s" slot (slot-value taker slot)))))
-                           (format "<%s> %s" (eieio-object-class taker) (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", "))))
-            (desc1 engines (mapconcat (lambda (en) (format "%s" (oref en tag))) (ensure-list (gt-ensure-plain engines)) ", "))
+      (list (desc1 taker (cl-flet ((desc2 (slot) (when (slot-boundp taker slot)
+                                                   (format "%s: %s" slot (slot-value taker slot)))))
+                           (format "<%s> %s" (eieio-object-class taker)
+                                   (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", "))))
+            (desc1 engines (mapconcat (lambda (en) (concat (format "%s" (oref en tag)) (if (gt-stream-p en) " (stream)")))
+                                      (ensure-list (gt-ensure-plain engines)) ", "))
             (desc1 render (format "<%s>" (eieio-object-class (gt-ensure-plain render))))))))
 
 (defun gt-set-taker (&optional translator taker)
@@ -232,10 +242,11 @@ will be used as the default translator."
   (interactive)
   (unless translator (setq translator gt-default-translator))
   (unless taker
-    (setq taker
-          (let ((takers (gt-ensure-plain gt-preset-takers)))
-            (alist-get (completing-read "Taker to use: " (gt-make-completion-table takers) nil t)
-                       takers nil nil #'string-equal))))
+    (let ((cands (gt-ensure-plain gt-preset-takers)))
+      (setq taker (gt-ensure-plain
+                   (alist-get
+                    (completing-read "Taker to use: " (gt-make-completion-table cands) nil t)
+                    cands nil nil #'string-equal)))))
   (oset translator taker nil)
   (oset translator _taker taker)
   (message "Changed taker done."))
@@ -245,10 +256,12 @@ will be used as the default translator."
   (interactive)
   (unless translator (setq translator gt-default-translator))
   (unless engines
-    (setq engines
-          (let ((cands (gt-ensure-plain gt-preset-engines)))
+    (let ((cands (gt-ensure-plain gt-preset-engines)))
+      (setq engines
             (mapcar (lambda (item)
-                      (alist-get item cands nil nil #'string-equal))
+                      (let ((engine (gt-ensure-plain (alist-get item cands nil nil #'string-equal))))
+                        (if (cl-typep engine 'gt-engine) engine
+                          (user-error "Invalid engine detected. Abort"))))
                     (completing-read-multiple "Engines to use (can choose multiple): "
                                               (gt-make-completion-table cands))))))
   (oset translator engines nil)
@@ -260,10 +273,11 @@ will be used as the default translator."
   (interactive)
   (unless translator (setq translator gt-default-translator))
   (unless render
-    (setq render
-          (let ((renders (gt-ensure-plain gt-preset-renders)))
-            (alist-get (completing-read "Render to use: " (gt-make-completion-table renders) nil t)
-                       renders nil nil #'string-equal))))
+    (let ((cands (gt-ensure-plain gt-preset-renders)))
+      (setq render (gt-ensure-plain
+                    (alist-get
+                     (completing-read "Render to use: " (gt-make-completion-table cands) nil t)
+                     cands nil nil #'string-equal)))))
   (oset translator render nil)
   (oset translator _render render)
   (message "Changed render done."))
