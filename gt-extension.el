@@ -357,7 +357,7 @@ as argument that return a length.")
                     (put-text-property (car bd) (cdr bd) 'gt-task (car tasks)))))))
           ;; collect positions
           (goto-char (point-min))
-          (while (setq prop (text-property-search-forward 'gt-result t t))
+          (while (setq prop (text-property-search-forward 'gt-result))
             (push (cons (set-marker (make-marker) (prop-match-beginning prop))
                         (set-marker (make-marker) (prop-match-end prop)))
                   bds))
@@ -365,11 +365,12 @@ as argument that return a length.")
           ;; output results in bounds
           (cl-loop for _ in text
                    for i from 0
-                   do (cl-loop for tr in (cl-remove-if (lambda (r) (plist-get r :stream)) ret)
+                   do (cl-loop for tr in ret
                                for (beg . end) = (pop bds)
                                for (res state task) = (list (plist-get tr :result) (plist-get tr :state) (plist-get tr :task))
                                do (goto-char beg)
-                               do (when (and (cl-plusp state) (null (get-char-property beg 'gt-done)))
+                               do (when (and (cl-plusp state) (null (get-char-property beg 'gt-done))
+                                             (or (not (eq (get-char-property (point) 'gt-result) 'stream)) (= state 1)))
                                     (delete-region beg end)
                                     (insert (propertize (if (consp res) (nth i res) res)
                                                         'gt-result t 'gt-done t 'gt-task task 'gt-part i))))))))
@@ -708,7 +709,9 @@ Otherwise, join the results use the default logic."
      (t (setq res (string-join res "\n"))
         ;; when multiple lines or at the end of line, will insert in a new line
         (when (eq type 'after)
-          (setq res (concat (if (or (string-match-p "\n" res) (and (not (gt-word-p nil src)) (eolp))) "\n" " ") res)))
+          (setq res (concat (if (string-blank-p src) ""
+                              (or (string-match-p "\n" res) (and (not (gt-word-p nil src)) (eolp))) "\n" " ")
+                            res)))
         (gt-face-lazy res rface)))))
 
 (cl-defmethod gt-init ((render gt-insert-render) translator)
@@ -764,6 +767,7 @@ Otherwise, join the results use the default logic."
                                      (delete-region beg end)
                                      (insert (propertize src 'face face))))
                                  (insert (propertize fres 'type 'gt-insert-result))
+                                 (push-mark)
                                  (if (= (length bds) (+ i 1)) (push-mark)))
                        finally (when (and hash (equal hash (buffer-hash)))
                                  (set-buffer-modified-p nil)))
