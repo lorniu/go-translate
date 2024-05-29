@@ -79,7 +79,7 @@
     :documentation "Generally, the source language.")
    (tgt
     :initarg :tgt
-    :type symbol
+    :type (or symbol string)
     :documentation "Generally, the target language.")
    (meta
     :initform nil
@@ -731,8 +731,8 @@ the buffer will returned as the result."
                              nil t)
                    (erase-buffer)
                    ,(if .initial-contents `(insert ,.initial-contents))
-                   ,@forms
                    (pop-to-buffer ,buffer ,.window-config)
+                   ,@forms
                    (recursive-edit))
                (ignore-errors (kill-buffer ,buffer)))))))))
 
@@ -1564,6 +1564,7 @@ will do the parse and render job. See type `gt-engine' for more description."
                (unless res
                  (user-error "No translate result found"))
                (unless (= (length (remove nil res)) (length text))
+                 (gt-log 'fail (format "%s" text))
                  (user-error "Source text and result text have no same length"))
                ;; set cache if possible
                (cl-destructuring-bind (cacher condition) (gt-current-cacher engine task)

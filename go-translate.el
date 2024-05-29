@@ -72,6 +72,7 @@
 (require 'gt-engine-libre)
 (require 'gt-engine-echo)
 (require 'gt-text-utility)
+(require 'gt-chat-openai)
 
 ;;; Mask these commands in M-x
 (dolist (cmd '(gt-prompt-next-target
