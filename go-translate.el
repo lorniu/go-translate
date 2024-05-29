@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.8
+;; Version: 3.1.0
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -72,6 +72,7 @@
 (require 'gt-engine-libre)
 (require 'gt-engine-echo)
 (require 'gt-text-utility)
+(require 'gt-chat-openai)
 
 ;;; Mask these commands in M-x
 (dolist (cmd '(gt-prompt-next-target
