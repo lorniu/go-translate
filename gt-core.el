@@ -934,6 +934,8 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 (defvar gt-default-http-client nil)
 
+(defvar gt-http-client-max-retry 3)
+
 (defvar-local gt-http-client-stream-abort-flag nil
   "Used in callback of http filter.
 Set this to non-nil to ignore the following stream progress.")
@@ -943,7 +945,7 @@ Set this to non-nil to ignore the following stream progress.")
   "Used to send a request and get the response."
   :abstract t)
 
-(cl-defgeneric gt-request (http-client &key url filter done fail data headers cache)
+(cl-defgeneric gt-request (http-client &key url filter done fail data headers cache retry)
   "Send HTTP request using the given HTTP-CLIENT.
 
 Optional keyword arguments:
@@ -954,15 +956,22 @@ Optional keyword arguments:
   - DATA: The data to include in the request.
   - HEADERS: Additional headers to include in the request.
   - CACHE: enable get and set results in cache for current request.
+  - RETRY: how many times it can retry for timeout
 
 It should return the process of this request."
-  (:method :around ((client gt-http-client) &key url filter done fail data headers)
+  (:method :around ((client gt-http-client) &key url filter done fail data headers retry)
            (cl-assert (and url (or filter done)))
            (let* ((tag (format "%s" (eieio-object-class client)))
                   (failfn (lambda (status)
-                            (gt-log tag (format "Request FAIL: (%s) %s" url status))
-                            (if fail (funcall fail status)
-                              (signal (car status) (cdr status)))))
+                            (unless retry (setq retry gt-http-client-max-retry))
+                            (if (and (string-match-p "Operation timeout" (format "%s" status)) (cl-plusp retry))
+                                (progn (gt-log tag (format "request timeout, retrying (remains %d times)..." retry))
+                                       (gt-request client
+                                                   :url url :filter filter :done done :fail fail
+                                                   :data data :headers headers :retry (1- retry)))
+                              (gt-log tag (format "Request FAIL: (%s) %s" url status))
+                              (if fail (funcall fail status)
+                                (signal (car status) (cdr status))))))
                   (filterfn (when filter
                               (lambda ()
                                 (unless gt-http-client-stream-abort-flag
@@ -980,7 +989,8 @@ It should return the process of this request."
                (if headers (format "> HEADER: %s" headers))
                (if data (format "> DATA:   %s" data)))
              (cl-call-next-method client :url url :headers headers :data data :filter filterfn :done donefn :fail failfn )))
-  (:method (&key url filter done fail data headers cache)
+  (:method (&key url filter done fail data headers cache retry)
+           (ignore retry)
            (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
              (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
                  (let* ((tag (format "%s" (eieio-object-class client)))
@@ -1034,7 +1044,8 @@ It should return the process of this request."
         (narrow-to-region url-http-end-of-headers (point-max))
         (funcall gt-url-extra-filter)))))
 
-(cl-defmethod gt-request ((client gt-url-http-client) &key url filter done fail data headers)
+(cl-defmethod gt-request ((client gt-url-http-client) &key url filter done fail data headers retry)
+  (ignore retry)
   (let* ((inhibit-message t)
          (message-log-max nil)
          (url-debug gt-debug-p)
@@ -1915,7 +1926,7 @@ Output to minibuffer by default."
                (unless taker (setf taker (gt-taker)))
                (unless render (setf render (gt-render)))
                (setf _taker taker _engines engines _render render))
-             (setf version (time-to-seconds) state 0 tasks nil total 0))))
+             (setf version (time-to-seconds) state 0 tasks nil total 0 taker nil engines nil render nil))))
 
 (cl-defmethod gt-init ((translator gt-translator) &rest _)
   "Initialize the components, text and target for TRANSLATOR."

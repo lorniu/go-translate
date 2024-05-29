@@ -64,7 +64,8 @@ Or switch http client to `gt-url-http-client' instead:\n
   (unless (and (require 'plz nil t) (executable-find plz-curl-program))
     (error "You should have `plz.el' and `curl' installed before using `gt-plz-http-client'")))
 
-(cl-defmethod gt-request ((client gt-plz-http-client) &key url filter done fail data headers)
+(cl-defmethod gt-request ((client gt-plz-http-client) &key url filter done fail data headers retry)
+  (ignore retry)
   (let ((plz-curl-default-args
          (if (slot-boundp client 'extra-args)
              (append (oref client extra-args) plz-curl-default-args)
