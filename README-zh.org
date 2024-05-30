@@ -602,7 +602,6 @@ ChatGPT 需要 apikey 才能正常使用:
          :engines (gt-google-engine)
          :render (gt-overlay-render :type 'after
                                     :sface nil
-                                    :rfmt "\n\n%s"
                                     :rface 'font-lock-doc-face)))
 
   ;; 将 Buffer 中所有符合条件的单词做标记，当鼠标移上去的时候显示翻译结果

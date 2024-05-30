@@ -623,9 +623,10 @@ PARAMS contains search keys like :user, :host same as `auth-source-search'."
         (funcall secret)
       secret)))
 
-(defun gt-insert-text-at-marker (str marker &optional end-marker)
+(defun gt-insert-text-at-marker (str marker &optional end-marker keep-cursor)
   "Insert STR to position of MARKER.
-If END-MARKER exists, delete the content between the markers first."
+If END-MARKER exists, delete the content between the markers first.
+If KEEP-CURSOR is not nil, keep the cursor at front."
   (with-current-buffer (marker-buffer marker)
     (let ((inhibit-read-only t))
       (when end-marker
@@ -633,7 +634,9 @@ If END-MARKER exists, delete the content between the markers first."
         (delete-region marker end-marker))
       (goto-char marker)
       (deactivate-mark)
-      (save-excursion (insert str)))))
+      (if keep-cursor
+          (save-excursion (insert str))
+        (insert str)))))
 
 (defun gt-parse-html-dom (str)
   "Parse html STR and return the DOM body."
@@ -641,6 +644,8 @@ If END-MARKER exists, delete the content between the markers first."
     (insert str)
     (xml-remove-comments (point-min) (point-max))
     (dom-by-tag (libxml-parse-html-region) 'body)))
+
+(declare-function let-alist--deep-dot-search "ext:let-alist" t t)
 
 (defmacro gt-plist-let (varlist &rest body)
   "Let-bind dotted symbols to plist and execute BODY like `let-alist'.
@@ -1550,7 +1555,7 @@ will do the parse and render job. See type `gt-engine' for more description."
                                      (if (gt-stream-p engine)
                                          (if gt-http-client-stream-abort-flag
                                              (gt-log 'next (format "%s: %s translate streaming abort!" id (eieio-object-class engine)))
-                                           (gt-next-for-stream engine task))
+                                           (gt-next-for-stream render task))
                                        (gt-log 'next (format "%s: %s translate success!" id (eieio-object-class engine)))
                                        (gt-next engine task))
                                    (gt-fail task err1))
@@ -1606,20 +1611,24 @@ will do the parse and render job. See type `gt-engine' for more description."
                (gt-update-state translator)
                (gt-output (oref translator render) translator)))))
 
-(cl-defgeneric gt-next-for-stream (_engine task)
+(cl-defgeneric gt-next-for-stream (_render task)
   "Output result in TASK to specific marker position directly.
 Notice, the result should propertized with `gt-result' to avoid issue.
-This is used for streaming output of _ENGINE."
-  (:method ((_engine gt-engine) task)
-           (with-slots (markers res) task
+This is used for streaming output for _RENDER."
+  (:method :around ((render gt-render) task)
+           (with-slots (markers) task
              (if (null markers)
                  (progn
                    (setq gt-http-client-stream-abort-flag t)
                    (message "Stream output is unavailable for current task."))
                (setf markers (ensure-list markers))
+               (cl-call-next-method render task))))
+  (:method ((_render gt-render) task)
+           (with-slots (markers res) task
+             (save-excursion
                (gt-insert-text-at-marker
                 (propertize (string-join (ensure-list res) "\n") 'gt-result 'stream)
-                (car markers) (cdr markers))))))
+                (car markers) (cdr markers) t)))))
 
 
 ;;; Text to Speech

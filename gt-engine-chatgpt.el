@@ -137,7 +137,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                         (setf res (concat res content))
                                         (set-marker gt-tracking-marker (point))
                                         (unless (string-blank-p (concat res))
-                                          (save-excursion (funcall next task))))))
+                                          (funcall next task)))))
                                 (error (unless (string-prefix-p "json" (format "%s" (car err)))
                                          (signal (car err) (cdr err)))))))
                   :done (unless stream

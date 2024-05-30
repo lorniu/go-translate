@@ -588,7 +588,6 @@ Here are some usage examples:
          :engines (gt-google-engine)
          :render (gt-overlay-render :type 'after
                                     :sface nil
-                                    :rfmt "\n\n%s"
                                     :rface 'font-lock-doc-face)))
 
   ;; Mark all qualified words in the Buffer and display the translation results when hover over them
