@@ -546,11 +546,14 @@ Return cons cells in form of (begin prompt-end end)."
                           (gt-chat-send-current)))
                       (message "Done"))
                   (with-current-buffer buf
-                    (let ((inhibit-read-only t))
+                    (let ((inhibit-read-only t)
+                          (p (unless (eobp) (point))))
                       (goto-char (point-max))
                       (insert (format "\n\n<U> "))
-                      (gt-chat-sync-session gt-chat-buffer-session (buffer-string) t)
-                      (save-excursion (gt-chat--property-messages)))
+                      (if p (goto-char p))
+                      (save-excursion
+                        (gt-chat-sync-session gt-chat-buffer-session (buffer-string) t)
+                        (gt-chat--property-messages)))
                     (message "Done")))
               (if (or func-name func-args)
                   (progn
@@ -558,8 +561,13 @@ Return cons cells in form of (begin prompt-end end)."
                     (if func-args (setq gt-chat-func-args (concat gt-chat-func-args func-args))))
                 (with-current-buffer buf
                   (let ((inhibit-read-only t))
-                    (goto-char (point-max))
-                    (if content (insert content)))))))))
+                    (when content
+                      (if (eobp)
+                          (insert content)
+                        (save-excursion
+                          (goto-char (point-max))
+                          (insert content)))
+                      (save-excursion (gt-chat--property-messages))))))))))
     (error (if (string-prefix-p "json" (format "%s" (car err)))
                (setq gt-chat-last-position (line-beginning-position))
              (signal (car err) (cdr err))))))
