@@ -308,7 +308,10 @@ Return cons cells in form of (begin prompt-end end)."
 
 (defun gt-chat--customize-buffer ()
   (setq header-line-format
-        `((:propertize " Chat with C-c RET, Submit with C-c C-c, Cancel with C-c C-k" face gt-chat-buffer-head-line-face)))
+        `((:propertize ,(format " Chat with %s, Submit with C-c C-c, Cancel with C-c C-k"
+                                (if-let (k (car (where-is-internal #'gt-chat-send-current)))
+                                    (key-description k) 'gt-chat-send-current))
+                       face gt-chat-buffer-head-line-face)))
   (setq mode-line-format
         (cl-flet ((props (fn)
                     `( 'face 'font-lock-keyword-face
@@ -593,9 +596,20 @@ Return cons cells in form of (begin prompt-end end)."
                                 (gt-log 'openai-response 2 raw)))
                       :fail (lambda (err) (signal 'user-error err))))))))
 
+(cl-defmethod gt-start :around ((translator gt-chat-openai))
+  "Make chat buffer can be toggle show."
+  (with-slots (_taker) translator
+    (when (ignore-errors (eq (oref (gt-ensure-plain _taker) prompt) 'buffer))
+      (if (and (cl-plusp (recursion-depth))
+               (buffer-live-p (get-buffer gt-chat-buffer-name)))
+          (if (equal (buffer-name) gt-chat-buffer-name)
+              (progn (bury-buffer) (delete-window))
+            (pop-to-buffer gt-chat-buffer-name gt-chat-buffer-window-config))
+        (cl-call-next-method translator)))))
+
 (cl-defmethod gt-prompt ((_taker gt-taker) (translator gt-chat-openai) (_ (eql 'buffer)))
   (with-slots (text bounds target engines _engines) translator
-    (when (cdr text) (user-error "Multiple text cannot be prompted"))
+    (if (cdr text) (user-error "Multiple text cannot be prompted"))
     (unless engines (setf engines (ensure-list (gt-ensure-plain _engines))))
     (let* ((session (gt-chat-get-session (if gt-chat-openai-current-session
                                              (plist-get gt-chat-openai-current-session :name)
