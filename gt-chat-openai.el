@@ -196,8 +196,11 @@ Can also put into .authinfo file as:
 
 (defun gt-chat-stringify-items (items)
   (cl-loop for (role . content) in items
-           collect (format "<%s> %s" (upcase (substring (symbol-name role) 0 1)) (string-trim content)) into rs
-           finally (return (string-join rs "\n\n"))))
+           for chat = (format "<%s> %s"
+                              (upcase (substring (symbol-name role) 0 1))
+                              (string-trim content))
+           collect chat into chats
+           finally (return (string-join chats "\n\n"))))
 
 (defun gt-chat-sync-session (session &optional extra index)
   "Persist SESSION to file and refresh SESSION.
@@ -241,16 +244,14 @@ If EXTRA is alist, append it to the end."
 (defvar gt-chat-prompt-display-function
   (lambda (role beg end)
     (unless (string-blank-p (buffer-substring-no-properties beg end))
-      (add-text-properties beg end
-                           (list
-                            'face (pcase (substring role 1 2)
-                                    ("A" 'gt-chat-assistant-prompt-face)
-                                    ("U" 'gt-chat-user-prompt-face)
-                                    ("S" 'gt-chat-system-prompt-face)
-                                    ("T" 'gt-chat-assistant-prompt-face)
-                                    ("R" 'gt-chat-user-prompt-face))
-                            'line-prefix "   "
-                            'wrap-prefix "   ")))))
+      (add-face-text-property beg end
+                              (pcase (substring role 1 2)
+                                ("A" 'gt-chat-assistant-prompt-face)
+                                ("U" 'gt-chat-user-prompt-face)
+                                ("S" 'gt-chat-system-prompt-face)
+                                ("T" 'gt-chat-assistant-prompt-face)
+                                ("R" 'gt-chat-user-prompt-face)))
+      (add-text-properties beg end (list 'line-prefix "   " 'wrap-prefix "   ")))))
 
 (defun gt-chat-bound-of-current-message ()
   "Get the bounds of message at point.
@@ -288,23 +289,28 @@ Return cons cells in form of (begin prompt-end end)."
     (define-key map (kbd "C-k") #'gt-chat-delete-current-message)
     map))
 
-(defun gt-chat--property-messages ()
+(defun gt-chat--property-messages (&optional only-current)
   (cl-loop with inhibit-read-only = t
-           with bounds = (gt-chat-collect-message-bounds)
+           with bounds = (if only-current
+                             (let ((bd (gt-chat-bound-of-current-message)))
+                               (list (cons (car bd) (cadr bd))))
+                           (gt-chat-collect-message-bounds))
            for bd in bounds for i from 1
-           do (save-restriction
-                (narrow-to-region (car bd) (cdr bd))
-                (let* ((beg (point-min)) (end (+ beg 4)) (last (point-max))
-                       (prompt (buffer-substring beg end)))
-                  (add-text-properties beg end
-                                       (list
-                                        'read-only t
-                                        'display (funcall gt-chat-prompt-logo-display-function prompt)))
-                  (unless (and (equal prompt "<U> ") (= i (length bounds))) ; except the last user prompt
-                    (funcall gt-chat-prompt-display-function prompt end last))
-                  (put-text-property beg end 'keymap gt-chat-buffer-message-logo-map)
-                  (put-text-property (- end 1) end 'rear-nonsticky t)
-                  (put-text-property beg (+ beg 1) 'front-sticky t)))))
+           do (let* ((beg (car bd)) (end (+ beg 4)) (last (cdr bd))
+                     (prompt (buffer-substring beg end))
+                     (content (buffer-substring end last)))
+                (unless (and (equal prompt "<U> ") (= i (length bounds))) ; except the last user prompt
+                  (save-excursion
+                    (goto-char end)
+                    (delete-region (point) last)
+                    (insert (gt-chat-font-lock-string-with-markdown content)))
+                  (funcall gt-chat-prompt-display-function prompt end last))
+                (add-text-properties beg end
+                                     (list 'read-only t
+                                           'display (funcall gt-chat-prompt-logo-display-function prompt)
+                                           'keymap gt-chat-buffer-message-logo-map))
+                (put-text-property (- end 1) end 'rear-nonsticky t)
+                (put-text-property beg (+ beg 1) 'front-sticky t))))
 
 (defun gt-chat--customize-buffer ()
   (setq header-line-format
@@ -360,6 +366,18 @@ Return cons cells in form of (begin prompt-end end)."
                       content (substring content (match-end 0)))
              do (push `((role . ,role) (content . ,content)) messages))
     (list (nreverse messages) tools)))
+
+(defun gt-chat-font-lock-string-with-markdown (str)
+  (with-temp-buffer
+    (let ((ori markdown-fontify-code-blocks-natively))
+      (unwind-protect
+          (progn
+            (setq markdown-fontify-code-blocks-natively t)
+            (markdown-mode)
+            (insert str)
+            (font-lock-ensure)
+            (buffer-string))
+        (setq markdown-fontify-code-blocks-natively ori)))))
 
 
 
@@ -525,41 +543,41 @@ Return cons cells in form of (begin prompt-end end)."
                   (insert (format "\n\n<%s> " (if (or func-name func-args) "T" "A")))
                   (save-excursion (gt-chat--property-messages))
                   (setq gt-chat-tracking-marker (point-marker)))))
-            (if finish-reason
-                (if (equal finish-reason "tool_calls")
-                    (let ((r `((name . ,gt-chat-func-name)
-                               (arguments . ,(json-parse-string gt-chat-func-args :object-type 'alist)))))
-                      (with-current-buffer buf
-                        (let ((inhibit-read-only t))
-                          (goto-char (point-max))
-                          (insert (format "%s" (json-encode r)))
-                          (insert (format "\n\n<R> %s" r))
-                          (let* ((obj (apply #'make-instance
-                                             (intern-soft (alist-get 'name r))
-                                             (cl-loop for (k . v) in (alist-get 'arguments r)
-                                                      append (list (intern (format ":%s" k)) v))))
-                                 (rr (gt-eval obj))
-                                 (fc (format "%s: %s" (alist-get 'name r) rr)))
-                            (insert fc "\n"))
-                          (gt-chat-sync-session gt-chat-buffer-session (buffer-string) t)
-                          (save-excursion (gt-chat--property-messages))
-                          (gt-chat-send-current)))
-                      (message "Done"))
-                  (with-current-buffer buf
-                    (let ((inhibit-read-only t)
-                          (p (unless (eobp) (point))))
-                      (goto-char (point-max))
-                      (insert (format "\n\n<U> "))
-                      (if p (goto-char p))
-                      (save-excursion
-                        (gt-chat-sync-session gt-chat-buffer-session (buffer-string) t)
-                        (gt-chat--property-messages)))
-                    (message "Done")))
-              (if (or func-name func-args)
-                  (progn
-                    (if func-name (setq gt-chat-func-name func-name))
-                    (if func-args (setq gt-chat-func-args (concat gt-chat-func-args func-args))))
+            (cond
+             ((equal finish-reason "tool_calls")
+              (let ((r `((name . ,gt-chat-func-name)
+                         (arguments . ,(json-parse-string gt-chat-func-args :object-type 'alist)))))
                 (with-current-buffer buf
+                  (let ((inhibit-read-only t))
+                    (goto-char (point-max))
+                    (insert (format "%s" (json-encode r)))
+                    (insert (format "\n\n<R> %s" r))
+                    (let* ((obj (apply #'make-instance
+                                       (intern-soft (alist-get 'name r))
+                                       (cl-loop for (k . v) in (alist-get 'arguments r)
+                                                append (list (intern (format ":%s" k)) v))))
+                           (rr (gt-eval obj))
+                           (fc (format "%s: %s" (alist-get 'name r) rr)))
+                      (insert fc "\n"))
+                    (gt-chat-sync-session gt-chat-buffer-session (buffer-string) t)
+                    (save-excursion (gt-chat--property-messages))
+                    (gt-chat-send-current)))
+                (message "Done")))
+             (finish-reason
+              (with-current-buffer buf
+                (let ((inhibit-read-only t)
+                      (p (unless (eobp) (point))))
+                  (goto-char (point-max))
+                  (insert (format "\n\n<U> "))
+                  (if p (goto-char p))
+                  (save-excursion
+                    (gt-chat-sync-session gt-chat-buffer-session (buffer-string) t)
+                    (gt-chat--property-messages)))
+                (message "Done")))
+             ((or func-name func-args)
+              (if func-name (setq gt-chat-func-name func-name))
+              (if func-args (setq gt-chat-func-args (concat gt-chat-func-args func-args))))
+             (t (with-current-buffer buf
                   (let ((inhibit-read-only t))
                     (when content
                       (if (eobp)
@@ -567,7 +585,7 @@ Return cons cells in form of (begin prompt-end end)."
                         (save-excursion
                           (goto-char (point-max))
                           (insert content)))
-                      (save-excursion (gt-chat--property-messages))))))))))
+                      (save-excursion (gt-chat--property-messages t))))))))))
     (error (if (string-prefix-p "json" (format "%s" (car err)))
                (setq gt-chat-last-position (line-beginning-position))
              (signal (car err) (cdr err))))))
@@ -606,8 +624,8 @@ Return cons cells in form of (begin prompt-end end)."
 
 (cl-defmethod gt-start :around ((translator gt-chat-openai))
   "Make chat buffer can be toggle show."
-  (with-slots (_taker) translator
-    (when (ignore-errors (eq (oref (gt-ensure-plain _taker) prompt) 'buffer))
+  (with-slots (taker) translator
+    (when (ignore-errors (eq (oref (gt-ensure-plain taker) prompt) 'buffer))
       (if (and (cl-plusp (recursion-depth))
                (buffer-live-p (get-buffer gt-chat-buffer-name)))
           (if (equal (buffer-name) gt-chat-buffer-name)
