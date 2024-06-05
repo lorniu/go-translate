@@ -562,8 +562,8 @@ If OBJ is symbol, return its value."
 
 (defun gt-clean-properties (text &optional props)
   "Remove specified PROPS from TEXT."
-  (unless props (setq props '(gt-result gt-task gt-done)))
-  (remove-text-properties 0 (length text) props text)
+  (unless props (setq props '(gt-result gt-task gt-done read-only)))
+  (remove-list-of-text-properties 0 (length text) props text)
   text)
 
 (defun gt-face-lazy (str face &optional display)
