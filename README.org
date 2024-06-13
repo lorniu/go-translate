@@ -49,6 +49,32 @@ Of course, it is possible to specify more options for the translator, such as:
   ;; and output the results with a new Buffer.
 #+end_src
 
+Or specify a function that return different translator for different case dynamically:
+#+begin_src emacs-lisp
+  (defun my-smart-translator ()
+    (cond
+     ((derived-mode-p '(Info-mode help-mode gnus-article-mode eww-mode))
+      (gt-translator
+       :taker (gt-taker :text 'paragraph)
+       :engines (list (gt-deepl-engine) (gt-google-engine :if 'word))
+       :render (lambda ()
+                 (if (use-region-p)
+                     (gt-posframe-pop-render)
+                   (gt-overlay-render :sface nil :rface 'font-lock-doc-face)))))
+     ((member (buffer-name) '("COMMIT_EDITMSG"))
+      (gt-translator :taker (gt-taker :text 'line)
+                     :engines (gt-deepl-engine)
+                     :render (gt-insert-render)))
+     (t
+      (gt-translator :engines (list (gt-youdao-dict-engine :if 'word)
+                                    (gt-google-engine)
+                                    (gt-deepl-engine :if 'not-word))
+                     :render (gt-posframe-pop-render)))))
+
+  (setq gt-langs '(en fr))
+  (setq gt-default-translator #'my-smart-translator)
+#+end_src
+
 Except config default translator with =gt-default-translator=, you can define several preset translators with =gt-preset-translators=.
 
 The first translator in =gt-preset-translators= will be used as the default one if =gt-default-translator= is nil.

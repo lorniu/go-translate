@@ -190,14 +190,14 @@ of `gt-default-translator' at any time in `gt-do-setup'."
   "Preset translators.
 
 It is an alist or a function return the alist, which the value is a valid
-instance of `gt-translator' and the key is a string or symbol, representing the
-display label of the translator.
+instance of `gt-translator' or a function return the instance and the key is a
+string or symbol, representing the display label of the translator.
 
 Custom your own translator and put them into this list, then change the the
 default translator to one of them at any time in `gt-do-setup'."
   :type '(choice function
                  (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-translator")))
+                        :value-type (sexp :tag "Instance of gt-translator or function return a gt-translator")))
   :group 'gt-do-translate)
 
 (defcustom gt-default-translator nil
@@ -214,8 +214,75 @@ will be used as the default translator."
     (setq gt-default-translator (cdar (gt-ensure-plain gt-preset-translators))))
   (if (cl-typep gt-default-translator 'gt-translator)
       (let (gt-debug-p) (gt-reset gt-default-translator))
-    (user-error "The `gt-default-translator' is unavailable"))
+    (unless (functionp gt-default-translator)
+      (user-error "The `gt-default-translator' is unavailable")))
   gt-default-translator)
+
+(defun gt-set-taker (&optional translator taker)
+  "Set TRANSLATOR's TAKER to one from `gt-preset-takers'."
+  (interactive)
+  (unless translator (setq translator gt-default-translator))
+  (if (functionp translator) (user-error "Can't change components of dynamic translator"))
+  (unless taker
+    (let ((cands (gt-ensure-plain gt-preset-takers)))
+      (setq taker (gt-ensure-plain
+                   (alist-get
+                    (completing-read "Taker to use: " (gt-make-completion-table cands) nil t)
+                    cands nil nil #'string-equal)))))
+  (oset translator taker nil)
+  (oset translator _taker taker)
+  (message "Changed taker done."))
+
+(defun gt-set-engines (&optional translator engines)
+  "Set TRANSLATOR's ENGINES to ones from `gt-preset-engines'."
+  (interactive)
+  (unless translator (setq translator gt-default-translator))
+  (if (functionp translator) (user-error "Can't change components of dynamic translator"))
+  (unless engines
+    (let ((cands (gt-ensure-plain gt-preset-engines)))
+      (setq engines
+            (mapcar (lambda (item)
+                      (let ((engine (gt-ensure-plain (alist-get item cands nil nil #'string-equal))))
+                        (if (cl-typep engine 'gt-engine) engine
+                          (user-error "Invalid engine detected. Abort"))))
+                    (completing-read-multiple "Engines to use (can choose multiple): "
+                                              (gt-make-completion-table cands))))))
+  (oset translator engines nil)
+  (oset translator _engines engines)
+  (message "Changed engines done."))
+
+(defun gt-set-render (&optional translator render)
+  "Set TRANSLATOR's RENDER to one from `gt-preset-renders'."
+  (interactive)
+  (unless translator (setq translator gt-default-translator))
+  (if (functionp translator) (user-error "Can't change components of dynamic translator"))
+  (unless render
+    (let ((cands (gt-ensure-plain gt-preset-renders)))
+      (setq render (gt-ensure-plain
+                    (alist-get
+                     (completing-read "Render to use: " (gt-make-completion-table cands) nil t)
+                     cands nil nil #'string-equal)))))
+  (oset translator render nil)
+  (oset translator _render render)
+  (message "Changed render done."))
+
+(defun gt-translator-copy-of-presets ()
+  (let* ((tss (gt-ensure-plain gt-preset-translators))
+         (tsn (completing-read "Preset translator: " tss nil t))
+         (translator (alist-get tsn tss nil nil #'string-equal)))
+    (list (if (cl-typep translator 'gt-translator)
+              (clone translator)
+            translator)
+          tsn)))
+
+(defun gt-switch-translator ()
+  "Switch `gt-default-translator' to another defined in `gt-preset-translators'."
+  (interactive)
+  (cl-destructuring-bind (translator name)
+      (gt-translator-copy-of-presets)
+    (setq gt-default-translator translator)
+    (gt-ensure-default-translator)
+    (message "Switch default translator to: %s" name)))
 
 (defun gt-translator-info (translator)
   "Return TRANSLATOR's basic info for displaying."
@@ -236,66 +303,6 @@ will be used as the default translator."
             (desc1 render (if (consp render) (format "%s" render)
                             (gt-desc (gt-ensure-plain render))))))))
 
-(defun gt-set-taker (&optional translator taker)
-  "Set TRANSLATOR's TAKER to one from `gt-preset-takers'."
-  (interactive)
-  (unless translator (setq translator gt-default-translator))
-  (unless taker
-    (let ((cands (gt-ensure-plain gt-preset-takers)))
-      (setq taker (gt-ensure-plain
-                   (alist-get
-                    (completing-read "Taker to use: " (gt-make-completion-table cands) nil t)
-                    cands nil nil #'string-equal)))))
-  (oset translator taker nil)
-  (oset translator _taker taker)
-  (message "Changed taker done."))
-
-(defun gt-set-engines (&optional translator engines)
-  "Set TRANSLATOR's ENGINES to ones from `gt-preset-engines'."
-  (interactive)
-  (unless translator (setq translator gt-default-translator))
-  (unless engines
-    (let ((cands (gt-ensure-plain gt-preset-engines)))
-      (setq engines
-            (mapcar (lambda (item)
-                      (let ((engine (gt-ensure-plain (alist-get item cands nil nil #'string-equal))))
-                        (if (cl-typep engine 'gt-engine) engine
-                          (user-error "Invalid engine detected. Abort"))))
-                    (completing-read-multiple "Engines to use (can choose multiple): "
-                                              (gt-make-completion-table cands))))))
-  (oset translator engines nil)
-  (oset translator _engines engines)
-  (message "Changed engines done."))
-
-(defun gt-set-render (&optional translator render)
-  "Set TRANSLATOR's RENDER to one from `gt-preset-renders'."
-  (interactive)
-  (unless translator (setq translator gt-default-translator))
-  (unless render
-    (let ((cands (gt-ensure-plain gt-preset-renders)))
-      (setq render (gt-ensure-plain
-                    (alist-get
-                     (completing-read "Render to use: " (gt-make-completion-table cands) nil t)
-                     cands nil nil #'string-equal)))))
-  (oset translator render nil)
-  (oset translator _render render)
-  (message "Changed render done."))
-
-(defun gt-translator-copy-of-presets ()
-  (let* ((tss (gt-ensure-plain gt-preset-translators))
-         (tsn (completing-read "Preset translator: " tss nil t))
-         (translator (alist-get tsn tss nil nil #'string-equal)))
-    (list (clone translator) tsn)))
-
-(defun gt-switch-translator ()
-  "Switch `gt-default-translator' to another defined in `gt-preset-translators'."
-  (interactive)
-  (cl-destructuring-bind (translator name)
-      (gt-translator-copy-of-presets)
-    (setq gt-default-translator translator)
-    (gt-ensure-default-translator)
-    (message "Switch default translator to: %s" name)))
-
 (transient-define-prefix gt-do-setup ()
   "Setup `gt-default-translator' in user interface provided by transient."
   :transient-non-suffix #'transient--do-exit
@@ -303,7 +310,10 @@ will be used as the default translator."
    (lambda ()
      (format "Current Default Translator:\n\n    %s\n"
              (condition-case err
-                 (apply #'format "Taker: %s\n    Engines: %s\n    Render: %s"  (gt-translator-info (gt-ensure-default-translator)))
+                 (let ((ts (gt-ensure-default-translator)))
+                   (if (functionp ts)
+                       (string-replace "\n" " " (format "%s" ts))
+                     (apply #'format "Taker: %s\n    Engines: %s\n    Render: %s"  (gt-translator-info ts))))
                (error (format "%s" err)))))
    [("t"  "Set taker..."   gt-set-taker   :transient t)]
    [("e"  "Set engines..." gt-set-engines :transient t)]
@@ -330,6 +340,23 @@ Define your default translator like this:
                    :engines (list (gt-google-engine) (gt-deepl-engine))
                    :render (gt-buffer-render)))
 
+  (setq gt-default-translator
+        (lambda ()  ; dynamic
+          (cond
+           ((derived-mode-p 'Info-mode)
+            (gt-translator
+             :taker (gt-taker :text 'paragraph)
+             :engines (gt-deepl-engine)
+             :render (gt-overlay-render)))
+           ((use-region-p)
+            (gt-translator
+             :engines (gt-bing-engine)
+             :render (gt-posframe-pop-render)))
+           (t
+            (gt-translator
+             :engines (gt-google-engine)
+             :render (gt-buffer-render))))))
+
 Or define several different translators and put them in `gt-preset-translators',
 and switch with `gt-do-setup' at any time.
 
@@ -340,7 +367,7 @@ If ARG is not nil, translate with translator select by `gt-preset-translators'."
   (interactive "P")
   (let ((gt-default-translator (if arg (car (gt-translator-copy-of-presets)) gt-default-translator)))
     (gt-ensure-default-translator)
-    (gt-start gt-default-translator)))
+    (gt-start (gt-ensure-plain gt-default-translator))))
 
 (provide 'go-translate)
 

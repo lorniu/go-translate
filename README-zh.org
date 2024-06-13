@@ -52,6 +52,32 @@
   ;; 结果使用新的 Buffer 渲染出来
 #+end_src
 
+也可以指定一个函数，根据不同情况动态使用不同翻译器:
+#+begin_src emacs-lisp
+  (defun my-smart-translator ()
+    (cond
+     ((derived-mode-p '(Info-mode help-mode gnus-article-mode eww-mode))
+      (gt-translator
+       :taker (gt-taker :text 'paragraph)
+       :engines (list (gt-deepl-engine) (gt-google-engine :if 'word))
+       :render (lambda ()
+                 (if (use-region-p)
+                     (gt-posframe-pop-render)
+                   (gt-overlay-render :sface nil :rface 'font-lock-doc-face)))))
+     ((member (buffer-name) '("COMMIT_EDITMSG"))
+      (gt-translator :taker (gt-taker :text 'line)
+                     :engines (gt-deepl-engine)
+                     :render (gt-insert-render)))
+     (t
+      (gt-translator :engines (list (gt-youdao-dict-engine :if 'word)
+                                    (gt-google-engine)
+                                    (gt-deepl-engine :if 'not-word))
+                     :render (gt-posframe-pop-render)))))
+
+  (setq gt-langs '(en zh))
+  (setq gt-default-translator #'my-smart-translator)
+#+end_src
+
 除了通过 =gt-default-translator= 设定默认翻译器，也可以通过 =gt-preset-translators= 配置若干预设翻译器。
 如果 =gt-default-translator= 为 nil，那么 =gt-preset-translators= 中的第一个将会被作为默认翻译器。
 
