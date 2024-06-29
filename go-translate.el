@@ -69,6 +69,7 @@
 (require 'gt-engine-stardict)
 (require 'gt-engine-youdao)
 (require 'gt-engine-chatgpt)
+(require 'gt-engine-azure-openai)
 (require 'gt-engine-echo)
 (require 'gt-text-utility)
 
@@ -134,6 +135,8 @@ of `gt-default-translator' at any time in `gt-do-setup'."
       (Google               . ,(gt-google-engine))
       (ChatGPT              . ,(gt-chatgpt-engine))
       (ChatGPT-Stream       . ,(gt-chatgpt-engine :stream t))
+      (Azure-OpenAI              . ,(gt-azure-openai-engine))
+      (Azure-OpenAI-Stream       . ,(gt-azure-openai-engine :stream t))
       (Youdao-Dict          . ,(gt-youdao-dict-engine))
       (Youdao-Suggest       . ,(gt-youdao-suggest-engine))
       (StarDict             . ,(gt-stardict-engine))
