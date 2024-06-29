@@ -466,17 +466,17 @@ ChatGPT 需要 apikey 才能正常使用:
 
 Azure OpenAI 的设置与 ChatGPT 基本相同，有 3 点需要注意：
 
-1. 需要设置 gt-azure-openai-host ，格式为
-#+begin_src
+1. 需要设置 =gt-azure-openai-host= ，格式为
+   #+begin_src
    https://[RESOURCE_NAME].openai.azure.com/openai/deployments/[DEPLOYMENT_NAME]
-#+end_src
+   #+end_src
 
-2. 如果在 authinfo 文件中保存 apikey ，authinfo 文件中的 'machine' 应为 gt-azure-openai-host 的主机名，格式如：
-#+begin_src
-machine [RESOURCE_NAME].openai.azure.com login apikey password [YOUR_KEY]
-#+end_src
+2. 如果在 =.authinfo= 文件中保存 apikey ， =.authinfo= 文件中的 =machine= 应为 =gt-azure-openai-host= 的主机名，格式如：
+   #+begin_src
+   machine [RESOURCE_NAME].openai.azure.com login apikey password [YOUR_KEY]
+   #+end_src
 
-3. 注意与 ChatGPT 的模型名称区别，如 ChatGPT 的 'gpt-3.5-turbo' 在 Azure OpenAI 中是 'gpt-35-turbo'
+3. 注意与 ChatGPT 的模型名称区别，如 ChatGPT 的 =gpt-3.5-turbo= 在 Azure OpenAI 中是 =gpt-35-turbo=
 
 *** gt-buffer-render
 
