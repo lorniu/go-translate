@@ -203,6 +203,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 - =gt-bing-engine=, 微软翻译
 - =gt-google-engine/gt-google-rpc-engine=, Google 翻译
 - =gt-chatgpt-engine=, 使用 ChatGPT 进行翻译
+- =gt-azure-openai-engine=, 使用 Azure OpenAI 进行翻译
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词。主要用于中英互译
 - =gt-stardict-engine=, StarDict，支持外挂字典，可以用于离线翻译
 
@@ -460,6 +461,22 @@ ChatGPT 需要 apikey 才能正常使用:
 #+end_src
 
 另外，可以通过 =gt-do-speak= 尝试其语音播报。
+
+*** gt-azure-openai-engine
+
+Azure OpenAI 的设置与 ChatGPT 基本相同，有 3 点需要注意：
+
+1. 需要设置 gt-azure-openai-host ，格式为
+#+begin_src
+   https://[RESOURCE_NAME].openai.azure.com/openai/deployments/[DEPLOYMENT_NAME]
+#+end_src
+
+2. 如果在 authinfo 文件中保存 apikey ，authinfo 文件中的 'machine' 应为 gt-azure-openai-host 的主机名，格式如：
+#+begin_src
+machine [RESOURCE_NAME].openai.azure.com login apikey password [YOUR_KEY]
+#+end_src
+
+3. 注意与 ChatGPT 的模型名称区别，如 ChatGPT 的 'gpt-3.5-turbo' 在 Azure OpenAI 中是 'gpt-35-turbo'
 
 *** gt-buffer-render
 

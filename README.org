@@ -212,6 +212,7 @@ The built-in Engine implementations are:
 - =gt-bing-engine=, Bing Translate
 - =gt-google-engine/gt-google-rpc-engine=, Google Translate
 - =gt-chatgpt-engine=, translate with ChatGPT
+- =gt-azure-openai-engine=, translate with Azure OpenAI
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道翻译，有道近义词
 - =gt-stardict-engine=, StarDict，for offline translate
 
@@ -446,6 +447,22 @@ It support streaming output with some renders. Examples:
 #+end_src
 
 After all, try text to speech with command =gt-do-speak=.
+
+*** gt-azure-openai-engine
+
+The settings of Azure OpenAI are basically the same as ChatGPT. There are 3 points to note:
+
+1. You need to set 'gt-azure-openai-host' in the format of
+#+begin_src
+   https://[RESOURCE_NAME].openai.azure.com/openai/deployments/[DEPLOYMENT_NAME]
+#+end_src
+
+2. If apikey is saved in the authinfo file, 'machine' field in the authinfo file should be the host name of 'gt-azure-openai-host', in the format:
+#+begin_src
+machine [RESOURCE_NAME].openai.azure.com login apikey password [YOUR_KEY]
+#+end_src
+
+3. Pay attention to the difference in model names with ChatGPT. For example, 'gpt-3.5-turbo' in ChatGPT is 'gpt-35-turbo' in Azure OpenAI.
 
 *** gt-buffer-render
 
