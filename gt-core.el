@@ -697,6 +697,8 @@ Available options can be specified as keyword arguments:
   :catch            Catch tag used in for inner `throw'
   :apply-key        The keybinding for applying changes (default: \"C-c C-c\")
   :cancel-key       The keybinding for canceling changes (default: \"C-c C-k\")
+  :apply-hook       Hook run before apply operation
+  :cancel-hook      Hook run before cancel operation
 
 Other FORMS is used to do extra initialization, you can config head line, mode
 line format or bind keys here.
@@ -707,7 +709,7 @@ the buffer will returned as the result."
       ((cl-loop for item in forms by #'cddr
                 while (keywordp item) append (list (pop forms) (pop forms))))
     (let ((buffer (or .buffer (format "*gt-%s*" (gensym "tmp-"))))
-          (tag (or .catch 'gt-read-from-buffer))
+          (tag (or .catch ''gt-read-from-buffer))
           (apply-key  (or .apply-key  "C-c C-c"))
           (cancel-key (or .cancel-key "C-c C-k")))
       `(if (and (cl-plusp (recursion-depth)) (buffer-live-p (get-buffer ,buffer)))
@@ -717,8 +719,16 @@ the buffer will returned as the result."
              (unwind-protect
                  (with-current-buffer (get-buffer-create ,buffer)
                    ,(if .keymap `(use-local-map ,.keymap))
-                   (local-set-key (kbd ,apply-key) (lambda () (interactive) (throw ,tag (buffer-string))))
-                   (local-set-key (kbd ,cancel-key) (lambda () (interactive) (throw ,tag nil)))
+                   (local-set-key (kbd ,apply-key)
+                                  (lambda ()
+                                    (interactive)
+                                    ,(if .apply-hook `(funcall ,.apply-hook))
+                                    (throw ,tag (buffer-string))))
+                   (local-set-key (kbd ,cancel-key)
+                                  (lambda ()
+                                    (interactive)
+                                    ,(if .cancel-hook `(funcall ,.cancel-hook))
+                                    (throw ,tag nil)))
                    (add-hook 'kill-buffer-query-functions
                              (lambda () ; only allow quit with C-c C-k
                                (not (and (memq this-command '(kill-buffer kill-this-buffer))

@@ -1048,6 +1048,10 @@ It depends on the `alert' package.")
 
 (defvar gt-buffer-prompt-map (make-sparse-keymap))
 
+(defvar gt-buffer-prompt-after-init-function nil
+  "Function with no argument, executed after prompt buffer init.
+Can do extra setup works for the buffer through this function.")
+
 (declare-function gt-set-render "ext:go-translate")
 (declare-function gt-set-engines "ext:go-translate")
 (declare-function gt-translator-info "ext:go-translate")
@@ -1121,7 +1125,9 @@ target, engines and render in the buffer for the following translation."
                        :keymap gt-buffer-prompt-map
                        (set-head-line)
                        (set-mode-line)
-                       (set-local-keys))))
+                       (set-local-keys)
+                       (when gt-buffer-prompt-after-init-function
+                         (funcall gt-buffer-prompt-after-init-function)))))
         (when (null newtext)
           (user-error ""))
         (when (string-blank-p newtext)
