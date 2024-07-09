@@ -183,7 +183,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
   ;; 也可以实现更复杂、更智能的选取逻辑。比如，只选取生词进行翻译
   (defun my-get-words-length>-6 (text)
     (cl-remove-if-not (lambda (bd) (> (- (cdr bd) (car bd)) 6))
-                      (gt-pick-items-from-text text 'word)))
+                      (gt-pick-items-by-thing text 'word)))
   (gt-translator :taker (gt-taker :text 'paragraph :pick #'my-get-words-length>-6))
 #+end_src
 

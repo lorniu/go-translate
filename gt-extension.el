@@ -265,7 +265,8 @@ as argument that return a length.")
       (cons (point) (point-max)))))
 
 (defun gt-buffer-insert-source-text (text &optional fold)
-  "Propertize and insert the source TEXT into render buffer."
+  "Propertize and insert the source TEXT into render buffer.
+If FOLD non nil, only make part of the text visible."
   (let* ((text (string-trim text "\n+"))
          (beg (point))
          (end (progn (insert (substring-no-properties text)) (point))))
@@ -1112,10 +1113,9 @@ target, engines and render in the buffer for the following translation."
                   (local-set-key (kbd "C-c C-p") #'cycle-prev-target)
                   (local-set-key (kbd "C-c C-e") #'set-engines)
                   (local-set-key (kbd "C-c C-r") #'set-render)))
-      (let* ((ori (gt-collect-bounds-to-text (ensure-list text)))
-             (newtext (gt-read-from-buffer
+      (let* ((newtext (gt-read-from-buffer
                        :buffer gt-buffer-prompt-name
-                       :initial-contents (or (car ori) "")
+                       :initial-contents (or (car text) "")
                        :catch 'gt-buffer-prompt
                        :window-config gt-buffer-prompt-window-config
                        :keymap gt-buffer-prompt-map
@@ -1124,10 +1124,9 @@ target, engines and render in the buffer for the following translation."
                        (set-local-keys))))
         (when (null newtext)
           (user-error ""))
-        (when (zerop (length (string-trim newtext)))
+        (when (string-blank-p newtext)
           (user-error "Text should not be null, abort"))
-        (unless (equal ori (list newtext))
-          (setf text (ensure-list newtext)))))))
+        (setf text (ensure-list newtext))))))
 
 
 ;;; [Taker] pdf-view-mode

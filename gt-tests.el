@@ -51,19 +51,19 @@ This buffer is for text that is not saved, and for Lisp evaluation.
   (should-not (gt-word-p 'en "hello,world"))
   (should-not (gt-word-p 'en "hello world")))
 
-(ert-deftest test--gt-pick-items-from-text ()
-  (should (null (gt-pick-items-from-text nil nil)))
-  (should (equal (gt-pick-items-from-text gt-test-text-1 nil) gt-test-text-1))
-  (should (equal (gt-pick-items-from-text gt-test-text-1 'word)
+(ert-deftest test--gt-pick-items-by-thing ()
+  (should (null (gt-pick-items-by-thing nil nil)))
+  (should (equal (gt-pick-items-by-thing gt-test-text-1 nil) gt-test-text-1))
+  (should (equal (gt-pick-items-by-thing gt-test-text-1 'word)
                  '("This" "buffer" "is" "for" "text" "that" "is" "not" "saved" "and"
                    "for" "Lisp" "evaluation" "To" "create" "a" "file" "visit" "it" "with" "C" "x" "C" "f"
                    "and" "enter" "text" "in" "its" "buffer")))
-  (should (equal (gt-pick-items-from-text gt-test-text-1 'word (lambda (w) (string-prefix-p "e" w)))
+  (should (equal (gt-pick-items-by-thing gt-test-text-1 'word (lambda (w) (string-prefix-p "e" w)))
                  '("evaluation" "enter")))
-  (should (equal (gt-pick-items-from-text gt-test-text-1 'paragraph)
-                 '("This buffer is for text that is not saved, and for Lisp evaluation."
-                   " To create a file, visit it with ‘C-x C-f’ and enter text in its buffer.")))
-  (should (equal (gt-pick-items-from-text gt-test-text-2 'word)
+  (should (equal (gt-pick-items-by-thing gt-test-text-1 'paragraph)
+                 '("This buffer is for text that is not saved, and for Lisp evaluation.\n"
+                   " To create a file, visit it with ‘C-x C-f’ and enter text in its buffer.\n")))
+  (should (equal (gt-pick-items-by-thing gt-test-text-2 'word)
                  '("你好" "朋友" "欢迎你"))))
 
 (ert-deftest test--gt-available-langs ()
@@ -79,7 +79,7 @@ This buffer is for text that is not saved, and for Lisp evaluation.
       (should (equal (gt-available-langs '(en zh ja) gt-test-text-2)
                      '((zh en) (zh ja))))
       (should (equal (gt-available-langs
-                      '(en zh ja) (gt-pick-items-from-text gt-test-text-1 'word))
+                      '(en zh ja) (gt-pick-items-by-thing gt-test-text-1 'word))
                      '((en zh) (en ja)))))
     (let ((gt-polyglot-p t)
           (gt-ignore-target-history-p t))
@@ -136,38 +136,40 @@ This buffer is for text that is not saved, and for Lisp evaluation.
             (gt-plist-let a (equal (+ .b .c) 5)))))
 
 (ert-deftest test--gt-translation-life-cycle ()
-  (let* ((res nil)
-         (translator (gt-translator :taker (gt-taker
-                                            :langs '(en zh)
-                                            :text 'buffer
-                                            :pick 'word
-                                            :pick-pred (lambda (w) (string-prefix-p "w" w))
-                                            :then #'ignore)
-                                    :engines (list
-                                              (gt-google-engine
-                                               :parse (gt-google-summary-parser)
-                                               :if 'word
-                                               :cache nil
-                                               :then #'ignore)
-                                              (gt-deepl-engine
-                                               :if 'not-word
-                                               :cache nil))
-                                    :render (gt-insert-render
-                                             :type 'after
-                                             :then (lambda (ts)
-                                                     (with-current-buffer (car (oref ts bounds))
-                                                       (setq res (buffer-string))))))))
+  (let ((translator (gt-translator
+                     :taker (gt-taker
+                             :langs '(en zh)
+                             :text 'buffer
+                             :pick 'word
+                             :pick-pred (lambda (w) (string-prefix-p "w" w))
+                             :then #'ignore)
+                     :engines (list
+                               (gt-google-engine
+                                :parse (gt-google-summary-parser)
+                                :if 'word
+                                :cache nil
+                                :then #'ignore)
+                               (gt-deepl-engine
+                                :if 'not-word
+                                :cache nil))
+                     :render (gt-insert-render
+                              :type 'after
+                              :then (lambda (ts)
+                                      (with-slots (bounds state bag) ts
+                                        (with-current-buffer (car bounds)
+                                          (setf state 9 bag (buffer-string)))))))))
     (with-temp-buffer
       (insert "hello world")
       (gt-start translator)
-      (while (< (oref translator state) 3) (sit-for 0.2))
-      (should (equal "hello world\n世界" res)))
+      (while (< (oref translator state) 4) (sit-for 0.2))
+      (should (string-match-p "^hello world[ \n]+世界$" (oref translator bag))))
     (with-temp-buffer
-      (insert "love and peace")
-      (gt-set-taker translator (gt-taker :langs '(en zh) :text 'buffer))
-      (gt-start translator)
-      (while (< (oref translator state) 3) (sit-for 0.2))
-      (should (equal "love and peace\n爱与和平" res)))))
+      (with-slots (bag state) translator
+        (insert "love and peace")
+        (gt-set-taker translator (gt-taker :langs '(en zh) :text 'buffer))
+        (gt-start translator)
+        (while (< state 4) (sit-for 0.2))
+        (should (string-match-p "^love and peace[ \n]+爱与和平$" bag))))))
 
 (provide 'gt-tests)
 

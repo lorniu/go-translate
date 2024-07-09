@@ -192,7 +192,7 @@ Finally, the initial text is cut and filtered based on =pick= and =pick-pred=. T
   ;; More complex and intelligent pick logic can be implemented
   (defun my-get-words-length>-6 (text)
     (cl-remove-if-not (lambda (bd) (> (- (cdr bd) (car bd)) 6))
-                      (gt-pick-items-from-text text 'word)))
+                      (gt-pick-items-by-thing text 'word)))
   (gt-translator :taker (gt-taker :text 'paragraph :pick #'my-get-words-length>-6))
 #+end_src
 
