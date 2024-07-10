@@ -194,6 +194,10 @@ Finally, the initial text is cut and filtered based on =pick= and =pick-pred=. T
     (cl-remove-if-not (lambda (bd) (> (- (cdr bd) (car bd)) 6))
                       (gt-pick-items-by-thing text 'word)))
   (gt-translator :taker (gt-taker :text 'paragraph :pick #'my-get-words-length>-6))
+
+  ;; Use ':pick 'fresh-word' to pick unknown word only for translation
+  ;; With commands 'gt-record-words-as-known/unknown' to add word to known/unknown list
+  (gt-translator :taker (gt-taker :text 'paragraph :pick 'fresh-word))
 #+end_src
 
 *** component =gt-engine= for translating/transforming

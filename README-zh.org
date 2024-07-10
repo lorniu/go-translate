@@ -185,6 +185,10 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
     (cl-remove-if-not (lambda (bd) (> (- (cdr bd) (car bd)) 6))
                       (gt-pick-items-by-thing text 'word)))
   (gt-translator :taker (gt-taker :text 'paragraph :pick #'my-get-words-length>-6))
+
+  ;; 使用 :pick 'fresh-word 实现了“透析翻译”的效果，即结合训练的结果，只显示生僻词
+  ;; 结合 gt-record-words-as-known/unkown 命令将单词标记(训练)为已经掌握的单词
+  (gt-translator :taker (gt-taker :text 'paragraph :pick 'fresh-word))
 #+end_src
 
 *** 用于翻译转换的 =gt-engine= 组件
@@ -350,6 +354,20 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 - =C-c C-c= 提交修改，进行翻译
 - =C-c C-k= 取消翻译
 - 也可以切换语言、切换组件，通过 mode-line 获取更多信息
+
+可以通过 pick 的 =fresh-word= 选项实现只翻译生僻词的目的。基本步骤:
+1. 配置要使用的翻译器，将 pick 指定为 fresh-word, 比如:
+   #+begin_src emacs-lisp
+     (setq gt-default-translator
+           (gt-translator :taker (gt-taker :text 'paragraph :pick 'fresh-word)
+                          :engines (gt-bing-engine)
+                          :render (gt-overlay-render :sface nil)))
+   #+end_src
+2. 对文本进行翻译，默认会对目标文本中的所有单词进行翻译
+3. 执行 =gt-record-words-as-known= 命令，按提示将已经掌握的单词记录在案
+4. 持续执行 2/3 步骤，训练掌握单词的量。已记录单词作为非生僻词将不会出现在之后的翻译中
+5. 可执行 =gt-record-words-as-unknown= 将某单词重新设定为生僻词
+6. 本功能有很大的优化提升空间。比如换作用数据库记录，统计单词的翻译次数等，按下不提
 
 *** gt-stardict-engine
 
