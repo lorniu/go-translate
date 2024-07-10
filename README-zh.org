@@ -3,7 +3,7 @@
 这是一个翻译框架，其主要特点是高度可配置性和高度可扩展性。
 
 作为一个翻译框架，它有很多优点:
-- 支持多种翻译引擎，比如 ChatGPT, Bing, Google, DeepL, 有道词典/近义词, StarDict 等
+- 支持多种翻译引擎，比如 ChatGPT, Bing, Google, DeepL, 有道词典/近义词, StarDict, LibreTranslate 等
 - 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等。支持流式渲染
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
@@ -205,6 +205,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 - =gt-chatgpt-engine=, 使用 ChatGPT 进行翻译
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词。主要用于中英互译
 - =gt-stardict-engine=, StarDict，支持外挂字典，可以用于离线翻译
+- =gt-libre-engine=, LibreTranslate, 可以使用网络服务，也可以搭建本地服务
 
 通过 =:engines= 为翻译器指定引擎。一个翻译器可以有一个或多个引擎，也可以指定一个返回引擎列表的函数:
 #+begin_src emacs-lisp

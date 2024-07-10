@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.5
+;; Version: 3.0.6
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -69,6 +69,7 @@
 (require 'gt-engine-stardict)
 (require 'gt-engine-youdao)
 (require 'gt-engine-chatgpt)
+(require 'gt-engine-libre)
 (require 'gt-engine-echo)
 (require 'gt-text-utility)
 
@@ -137,6 +138,7 @@ of `gt-default-translator' at any time in `gt-do-setup'."
       (Youdao-Dict          . ,(gt-youdao-dict-engine))
       (Youdao-Suggest       . ,(gt-youdao-suggest-engine))
       (StarDict             . ,(gt-stardict-engine))
+      (LibreTranslate       . ,(gt-libre-engine))
       (GoogleRPC            . ,(gt-google-rpc-engine))
       (Google-Summary       . ,(gt-google-engine :parse (gt-google-summary-parser)))
       (Bionic_Reading       . ,(gt-echo-engine :do '(clean br) :tag "Bionic Reading"))))
