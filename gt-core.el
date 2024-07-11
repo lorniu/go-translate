@@ -1502,7 +1502,8 @@ If BACKWARDP is not nil then switch to previous one."
            (with-slots (text bounds) translator
              (unless (bufferp (car bounds)) ; ensure buffer is recorded
                (push (current-buffer) bounds))
-             (unless (cdr text) ; for solo part only
+             (when (and (not (cdr text)) ; for solo part only
+                        (if (slot-boundp taker 'pick) (oref taker pick) gt-taker-pick)) ; pick is non-nil
                (cl-call-next-method taker translator))))
   (:method ((taker gt-taker) translator)
            (with-slots (text bounds) translator
