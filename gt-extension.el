@@ -1212,7 +1212,7 @@ target, engines and render in the buffer for the following translation."
     (let* ((car (if (cdr bounds) (cl-subseq bounds 0 2) (car text)))
            (pred (lambda (word)
                    (and (if-let (p (oref taker pick-pred)) (funcall p word) t)
-                        (> (length word) 2)
+                        (> (string-bytes word) 2)
                         (not (string-match-p "^[0-9]+$" word))
                         (gt-word-fresh-p word)
                         (push word gt-fresh-words-last)))))

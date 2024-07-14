@@ -112,14 +112,15 @@
 
 *** 用于捕获输入的 =gt-taker= 组件
 
-| slot      | 介绍                         | 值                                                                                  |
-|-----------+------------------------------+-------------------------------------------------------------------------------------|
-| text      | 初始文本                     | 字符串或返回字符串的一个函数，也可以是 'buffer 'word 'paragraph 'sentence 等 symbol |
-| langs     | 要翻译的语言                 | 列表，比如 '(en zh), '(en ru it fr)，如果为空，则采用变量 gt-langs 的值             |
-| prompt    | 交互式确认                   | 如果为 t 则通过 Minibuffer 确认，如果为 'buffer 则通过打开一个新 buffer 进行确认    |
-| pick      | 从文本中挑选段落、句子或单词 | 进行挑选的函数，或者 'word 'paragraph 'sentence 等 symbol                           |
-| pick-pred | 用于过滤 pick 到的文字       | 传入字符串，输出布尔类型                                                            |
-| then      | take 之后要执行的逻辑，钩子  | 一个以当前 translator 为参数的函数。可以对 take 到的内容进行最后一步修改            |
+| slot      | 介绍                        | 值                                                                                 |
+|-----------+-----------------------------+------------------------------------------------------------------------------------|
+| text      | 初始文本                    | 字符串或返回字符串的一个函数，也可以是 'buffer 'word 'paragraph 'sentence 等 symbol |
+| langs     | 要翻译的语言                | 列表，比如 '(en zh), '(en ru it fr)，如果为空，则采用变量 gt-langs 的值             |
+| prompt    | 交互式确认                  | 如果为 t 则通过 Minibuffer 确认，如果为 'buffer 则通过打开一个新 buffer 进行确认     |
+| pick      | 从文本中挑选段落、句子或单词 | 进行挑选的函数，或者 'word 'paragraph 'sentence 等 symbol                          |
+| pick-pred | 用于过滤 pick 到的文字      | 传入字符串，输出布尔类型                                                            |
+| then      | take 之后要执行的逻辑，钩子 | 一个以当前 translator 为参数的函数。可以对 take 到的内容进行最后一步修改             |
+| if        | 过滤                        | 函数或字面量表达式，用于根据输入的内容决定 taker 是否适用于当前翻译任务              |
 
 当前只内置了一个 Taker 实现，它可以适用大多数场景:
 : 通过 text 决定初始文本，通过 langs 判定翻译语言，通过 prompt 进行确认，通过 pick 从中摘取某些段落、句子或单词
@@ -137,6 +138,14 @@
   (gt-translator :taker (gt-taker))
   (gt-translator :taker (gt-taker :langs '(en zh) :text 'word :pick 'paragraph :prompt nil))
   (gt-translator :taker (lambda () (gt-taker))) ; 可以是一个函数
+
+  ;; 也可以是一个 taker 列表，那么返回第一个可用的
+  ;; 结合 :if 判定，如果 taker 没有 :if 则一定是可用的
+  ;; 比如下面的例子: 如果有文字被选中，prompt; 如果 buffer 只读，翻译当前段落; 否则翻译当前行
+  (gt-translator :taker (list
+                         (gt-taker :prompt t :if 'selection)
+                         (gt-taker :text 'paragraph :if 'read-only)
+                         (gt-taker :text 'line)))
 #+end_src
 
 Taker 将使用 =text= 决定初始翻译内容。如果当前有文本被选中，则选中的文本被采用。否则使用下面规则:
@@ -193,14 +202,14 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 
 *** 用于翻译转换的 =gt-engine= 组件
 
-| slot      | 介绍                          | 值                                                                                    |
-|-----------+-------------------------------+---------------------------------------------------------------------------------------|
-| parse     | 指定解析器                    | 解析器或函数                                                                          |
+| slot      | 介绍                          | 值                                                                                  |
+|-----------+-------------------------------+-------------------------------------------------------------------------------------|
+| parse     | 指定解析器                    | 解析器或函数                                                                        |
 | cache     | 配置缓存                      | 如果设为 nil 则为当前 engine 禁用缓存。也可以为不同 engine 指定不同 cacher 或缓存策略 |
-| stream    | 是否开启 stream 模式          | 只有引擎支持流式 API 这个设置才有用。比如，ChatGPT 引擎                               |
-| if        | 过滤                          | 函数或字面量表达式，用于根据输入的内容决定当前 engine 是否参与当前翻译任务            |
-| delimiter | 分隔符                        | 如果不为空，则采取「连接-翻译-分割」的翻译策略                                        |
+| stream    | 是否开启 stream 模式          | 只有引擎支持流式 API 这个设置才有用。比如，ChatGPT 引擎                              |
+| delimiter | 分隔符                        | 如果不为空，则采取「连接-翻译-分割」的翻译策略                                       |
 | then      | engine 完成后执行的逻辑，钩子 | 一个以当前 task 为参数的函数。可以用于在渲染之前对返回的内容进行最后一步修改          |
+| if        | 过滤                          | 函数或字面量表达式，用于根据输入的内容决定当前 engine 是否参与当前翻译任务            |
 
 内置的 Engine 实现有:
 - =gt-deepl-engine=, DeepL 翻译
@@ -259,10 +268,11 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 
 *** 用于渲染输出的 =gt-render= 组件
 
-| slot   | 介绍                       | 值                                                                            |
-|--------+----------------------------+-------------------------------------------------------------------------------|
-| prefix | 定制输出中的 Prefix 内容   | 函数或字符串。定制 Prefix 显示格式。Prefix 是输出结果中的语言、引擎提示的文本 |
-| then   | 渲染完成后执行的逻辑，钩子 | 函数或另一个渲染器。可以将渲染任务传递给下一个渲染器，实现多渲染器输出的效果  |
+| slot   | 介绍                      | 值                                                                          |
+|--------+---------------------------+-----------------------------------------------------------------------------|
+| prefix | 定制输出中的 Prefix 内容  | 函数或字符串。定制 Prefix 显示格式。Prefix 是输出结果中的语言、引擎提示的文本 |
+| then   | 渲染完成后执行的逻辑，钩子 | 函数或另一个渲染器。可以将渲染任务传递给下一个渲染器，实现多渲染器输出的效果   |
+| if     | 过滤                      | 函数或字面量表达式，用于根据输入的内容决定 render 是否适用于当前翻译任务      |
 
 内置的 Render 实现有:
 - =gt-render=, 默认实现，会将结果输出到 Echo Area
@@ -279,6 +289,15 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
   (gt-translator :render (gt-alert-render))
   (gt-translator :render (gt-alert-render :then (gt-kill-ring-render))) ; 以系统消息方式展示，并保存进 kill-ring
   (gt-translator :render (lambda () (if buffer-read-only (gt-buffer-render) (gt-insert-render)))) ; 可以指定函数
+#+end_src
+
+可以结合 =:if= 选择使用列表中的第一个可用 render。这可以灵活配置不同情况下 render 的使用。比如:
+#+begin_src emacs-lisp
+  (gt-translator
+   :render (list (gt-overlay-render :if 'selection) ; 如果翻译的是选中的文字，那么通过 overlay 方式渲染
+                 (gt-posframe-pop-render :if 'word) ; 如果翻译的是单词，那么通过 posframe 方式渲染
+                 (gt-alert-render :if '(and read-only not-word)) ; 如果翻译的是只读 buffer 中的非单词，那么通过 alert 渲染
+                 (gt-buffer-render)))               ; 默认，使用新 buffer 进行渲染
 #+end_src
 
 ** 常用组件/补充说明
@@ -687,6 +706,44 @@ ChatGPT 需要 apikey 才能正常使用:
         (gt-text-utility
          :taker (gt-taker :langs '(speak md5) :text 'buffer :pick 'paragraph)
          :render (gt-posframe-pin-render)))
+#+end_src
+
+*** gt-validator
+
+组件 =gt-taker=, =gt-engine= 和 =gt-render= 等都继承了 =gt-validator=, 它通过 =:if= 提供了判定组件可用性的方式,
+因此可以大大简化不同场景下 translator 的配置。
+
+槽 =:if= 的值可以是函数，也可以是内置实现的一些 symbol, 或者通过 and/or 连接起来的 form 列表。
+另外, symbol 可以使用 =not-= 为前缀表示反向判定。
+
+部分内置 symbol:
+- =word= 翻译的文本是单词
+- =src:en= 翻译的源语言是英语
+- =tgt:en= 翻译的目的语言是英语
+- =parts= 翻译的是分段的文本
+- =read-only= 当前 buffer 是只读的
+- =selection= 当前翻译的是选中的文本
+- =not-word= 反向判定，翻译的文本 *不是* 单词
+
+一个粗糙的配置示例:
+#+begin_src emacs-lisp
+  ;; 对于选中的文本，不分段，并使用 posframe 渲染
+  ;; 对于 Info，翻译当前段落，使用 overlay 显示结果
+  ;; 对于只读文本，翻译整个 buffer 中的生词，并使用 overlay 渲染
+  ;; 对于 magit commit buffer，将翻译结果插入到光标位置
+  ;; 对于单词，使用 google 引擎翻译; 其他使用 deepl 引擎
+  (setq gt-default-translator
+        (gt-translator
+         :taker   (list (gt-taker :pick nil :if 'selection)
+                        (gt-taker :text 'paragraph :if (lambda (&rest _) (derived-mode-p 'Info-mode)))
+                        (gt-taker :text 'buffer :pick 'fresh-word :if 'read-only)
+                        (gt-taker))
+         :engines (list (gt-google-engine :if 'word)
+                        (gt-deepl-engine :if 'no-word))
+         :render  (list (gt-posframe-pop-render :if 'selection)
+                        (gt-overlay-render :if 'read-only)
+                        (gt-insert-render :if (lambda (&rest _) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-buffer-render))))
 #+end_src
 
 ** 定制与扩展

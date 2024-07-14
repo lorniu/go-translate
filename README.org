@@ -126,6 +126,7 @@ Therefore, one needs to understand these components first for better configurati
 | pick      | Pick paragraphs, sentences or words from initial text | Function or a symbol like 'word 'paragraph 'sentence etc                                                                      |
 | pick-pred | Used to filter the text picked                        | Pass in a string and output a Boolean type                                                                                    |
 | then      | The logic to be executed after take. Hook             | A function that takes the current translator as argument. The final modification can be made to the content captured by Taker |
+| if        | Validate                                              | Function or literal symbol, used to determine whether taker is available for current translation task                         |
 
 Currently there is only one built-in Taker implementation, which can be used in most scenarios:
 : Determine the initial text with 'text',
@@ -146,6 +147,10 @@ It's better to use =:taker= to explicitly specify a Taker for the translator:
   (gt-translator :taker (gt-taker))
   (gt-translator :taker (gt-taker :langs '(en fr) :text 'word :pick 'paragraph :prompt nil))
   (gt-translator :taker (lambda () (gt-taker))) ; a function
+  (gt-translator :taker (list ; a list, use the first available one
+                           (gt-taker :prompt t :if 'selection)
+                           (gt-taker :text 'paragraph :if 'read-only)
+                           (gt-taker :text 'line)))
 #+end_src
 
 Taker will use =text= to determine the initial text. If there is active region, the selected text is taken. Otherwise use the following rules:
@@ -207,9 +212,9 @@ Finally, the initial text is cut and filtered based on =pick= and =pick-pred=. T
 | parse     | Specify parser                                               | A parser or a function                                                                                                                    |
 | cache     | Configure cache                                              | If set to nil, cache is disabled for the current engine. You can also specify different cachers or cache strategies for different engines |
 | stream    | Whether turn on stream query                                 | Boolean. Works only when engines support stream, for example ChatGPT engine.                                                              |
-| if        | Filter                                                       | Function or literal symbol, used to determine whether the current engine should work for current translation task                         |
 | delimiter | Delimiter                                                    | If not empty, the translation strategy of "join-translate-split" will be adopted                                                          |
 | then      | The logic to be executed after the engine is completed. Hook | A function that takes current task as argument. Can be used to make final modifications to the translate result before rendering          |
+| if        | Filter                                                       | Function or literal symbol, used to determine whether the current engine should work for current translation task                         |
 
 The built-in Engine implementations are:
 - =gt-deepl-engine=, DeepL Translate
@@ -271,6 +276,7 @@ If delimiter is set to nil, then a list of strings will be passed to the engine,
 |--------+--------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------|
 | prefix | Customize the Prefix                                   | Override the default Prefix format. Set to nil to disable prefix output                                                       |
 | then   | Logic to be executed after rendering is complete. Hook | function or another Render. The rendering task can be passed to the next Render to achieve the effect of multi-renders output |
+| if     | Validate                                               | Function or literal symbol, used to determine whether render is available for current translation task                        |
 
 The built-in Render implementations:
 - =gt-render=, the default implementation, will output the results to Echo Area
@@ -287,6 +293,14 @@ Configure render for translator via =:render=. Multiple renders can be chained t
   (gt-translator :render (gt-alert-render))
   (gt-translator :render (gt-alert-render :then (gt-kill-ring-render))) ; display as system notification then save in kill ring
   (gt-translator :render (lambda () (if buffer-read-only (gt-buffer-render) (gt-insert-render)))) ; a function return render
+#+end_src
+
+The first available render in the list (validate conjunction with =:if=) can be used as the final render. For example:
+#+begin_src emacs-lisp
+  (gt-translator
+   :render (list (gt-posframe-pop-render :if 'word) ; if current translation text is word, render with posframe
+                 (gt-alert-render :if '(and read-only not-word)) ; if text is not word and buffer is readonly, render with alert
+                 (gt-buffer-render)))               ; default, render with new buffer
 #+end_src
 
 ** Components (Supplementary Notes)
@@ -650,6 +664,45 @@ Here are some usage examples:
         (gt-text-utility
          :taker (gt-taker :langs '(speak md5) :text 'buffer :pick 'paragraph)
          :render (gt-posframe-pin-render)))
+#+end_src
+
+*** gt-validator
+
+Component =gt-taker=, =gt-engine= and =gt-render= are inherited from =gt-validator=, which
+provides a way to determine component availability through =:if= slot. This greatly simplifies
+the configuration of translator for different scenarios.
+
+The value of the slot =:if= can be a function, a symbol or a list of forms linked by and/or.
+Symbol can be prefixed with =not-= to indicate a reverse determination.
+
+Some symbols built-in:
+- =word= translated text is word
+- =src:en= source language is English
+- =tgt:en= target language is English
+- =parts= multiple parts text to be translated
+- =read-only= current buffer is read only
+- =selection= current use region is active
+- =not-word= reverse determination, translated text *is not* word
+
+One simple config example:
+#+begin_src emacs-lisp
+  ;; for text selected, not pick, render with posframe
+  ;; for buffer Info, translate current paragraph, render with overlay
+  ;; for buffer readonly, translate all fresh word in buffer, render with overlay
+  ;; for Magit commit buffer, insert the translated result into current position
+  ;; for word, translate with google engine; for non-word, use deepl
+  (setq gt-default-translator
+        (gt-translator
+         :taker   (list (gt-taker :pick nil :if 'selection)
+                        (gt-taker :text 'paragraph :if (lambda (&rest _) (derived-mode-p 'Info-mode)))
+                        (gt-taker :text 'buffer :pick 'fresh-word :if 'read-only)
+                        (gt-taker))
+         :engines (list (gt-google-engine :if 'word)
+                        (gt-deepl-engine :if 'no-word))
+         :render  (list (gt-posframe-pop-render :if 'selection)
+                        (gt-overlay-render :if 'read-only)
+                        (gt-insert-render :if (lambda (&rest _) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-buffer-render))))
 #+end_src
 
 ** Customization and Extension

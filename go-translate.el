@@ -231,13 +231,15 @@ will be used as the default translator."
                          (if (gt-functionp ,name)
                              (replace-regexp-in-string "[ \n\t]+" " " (format "%s" ,name))
                            ,@body)))))
-      (list (desc1 taker (cl-flet ((desc2 (slot) (when (slot-boundp taker slot)
-                                                   (format "%s: %s" slot (slot-value taker slot)))))
-                           (format "<%s> %s" (eieio-object-class taker)
-                                   (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", "))))
+      (list (desc1 taker (if (consp taker) (format "%s" taker)
+                           (cl-flet ((desc2 (slot) (when (slot-boundp taker slot)
+                                                     (format "%s: %s" slot (slot-value taker slot)))))
+                             (format "<%s> %s" (eieio-object-class taker)
+                                     (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", ")))))
             (desc1 engines (mapconcat (lambda (en) (concat (format "%s" (oref en tag)) (if (gt-stream-p en) " (stream)")))
                                       (ensure-list (gt-ensure-plain engines)) ", "))
-            (desc1 render (format "<%s>" (eieio-object-class (gt-ensure-plain render))))))))
+            (desc1 render (if (consp render) (format "%s" render)
+                            (format "<%s>" (eieio-object-class (gt-ensure-plain render)))))))))
 
 (defun gt-set-taker (&optional translator taker)
   "Set TRANSLATOR's TAKER to one from `gt-preset-takers'."
@@ -329,7 +331,7 @@ Define your default translator like this:
     (gt-translator :engines (gt-bing-engine)))
 
   (setq gt-default-translator
-    (gt-translator :taker (gt-taker :langs `(en fr) :text `sentence :prompt t)
+    (gt-translator :taker (gt-taker :langs '(en fr) :text 'sentence :prompt t)
                    :engines (list (gt-google-engine) (gt-deepl-engine))
                    :render (gt-buffer-render)))
 

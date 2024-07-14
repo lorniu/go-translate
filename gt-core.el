@@ -61,6 +61,13 @@
       (prog1 inst
         (oset-default class insts `((,key . ,inst) ,@insts))))))
 
+(defclass gt-validator ()
+  ((if :initarg :if
+     :type (or function symbol list)
+     :documentation "See `gt-valid' for details."))
+  :abstract t
+  :documentation "Use to detect whether component is available")
+
 (defclass gt-task ()
   ((text
     :initarg :text
@@ -119,7 +126,7 @@
 Its life cycle is in one translation. It is created by translator, then derived
 to engines for result, at last extracted by render for output.")
 
-(defclass gt-taker (gt-single)
+(defclass gt-taker (gt-single gt-validator)
   ((text
     :initarg :text
     :type (or function symbol string)
@@ -167,7 +174,7 @@ Or use the default value or corresponding variables as:
 
 Then use the taker in the translator and start your translation.")
 
-(defclass gt-parser (gt-single)
+(defclass gt-parser (gt-single gt-validator)
   ((tag
     :initarg :tag
     :initform nil
@@ -178,7 +185,7 @@ Then use the taker in the translator and start your translation.")
 to a user-friendly string. One engine can have different parsers, but can only
 use one of them at a time.")
 
-(defclass gt-engine (gt-single)
+(defclass gt-engine (gt-single gt-validator)
   ((tag
     :initarg :tag
     :type (or string symbol)
@@ -211,9 +218,6 @@ If this is a cacher, then cache using the cacher instead.")
     :initarg :salt
     :initform nil
     :documentation "Distinguish from... now for cache key only.")
-   (if :initarg :if
-     :type (or function symbol list)
-     :documentation "See `gt-valid' for details.")
    (then
     :initarg :then
     :type function
@@ -234,7 +238,7 @@ be passed to the engine, and a translated string list is expected.
 Also in some cases, you should turn the cache off by setting `no-cache' to t."
   :abstract t)
 
-(defclass gt-render (gt-single)
+(defclass gt-render (gt-single gt-validator)
   ((output
     :initarg :output
     :initform nil
@@ -316,11 +320,11 @@ targets.")
    (taker
     :initarg :taker
     :initform nil
-    :type (or function gt-taker null)
+    :type (or function gt-taker list)
     :documentation "Used to take input for the translator.
 If this is a function, use its return value as the taker. It will take the
 source text and targets, and save them into `text', `bounds' and `target' slots
-for the following translation task.")
+for the following translate task. If this is a list, use the first available one.")
 
    (engines
     :initarg :engines
@@ -335,12 +339,13 @@ rendering process will be performed.")
    (render
     :initarg :render
     :initform nil
-    :type (or function gt-render null)
+    :type (or function gt-render list)
     :documentation "Used to output the translation results.
-This should be a `gt-render' instance or a function return one.")
+This should be a `gt-render' instance or a function return one.
+If this is a list, use the first available one.")
 
    (_taker
-    :type (or function gt-taker null)
+    :type (or function gt-taker list)
     :documentation "Backup of initial value of `taker', which may be a
 function or `gt-taker' object. The value will be normalized at the start of
 every translation and stored into the `taker' slot. Avoid changing this during
@@ -351,7 +356,7 @@ translation progress unless you are confident in what you are doing.")
     :documentation "Backup of initial `engines' like above.")
 
    (_render
-    :type (or function gt-render null)
+    :type (or function gt-render list)
     :documentation "Backup of initial `render' like above.")
 
    (bag :initform nil))
@@ -522,9 +527,6 @@ That is: 1) define the translator 2) executable `gt-start'.")
 
 (cl-defgeneric gt-init (object &rest _args)
   "Initialization for OBJECT.")
-
-(cl-defgeneric gt-valid (object &rest _args)
-  "Validate OBJECT, return t if it's available.")
 
 
 ;;; Utility
@@ -756,39 +758,80 @@ This is a generic method, improve it for specific LANG as you wish."
       (insert text)
       (equal (thing-at-point 'word) text))))
 
+
+;;; Validator Trait
+
+;; add validate feature to `taker/engine/render/cache' through `:if' slot
+
 (cl-defgeneric gt-valid-literally (v text src tgt)
   "Check literally symbol or form V to determine next step.
 
 It can be used by cacher and engine.
 
-V should be a symbol like `word', `not-word', `src:en', `not-src:en', or a
-list like `(or word not-parts (and tgt:cn #`xxxx))'.
+V should be a symbol like `word', `parts', `src:en', `tgt:en', `selection',
+`read-only', or symbol with `not-' prefix as `not-word', `not-src:en' etc.
+
+V also can be a list form grouping above symbols with `and/or', for example:
+
+  (or word not-parts (and tgt:cn #`xxxx)).
 
 TEXT, SRC and TGT are translation text and targets.
 
 This is a generic method, you can extend the V as you wish."
-  (cond ((or (null v) (eq v t)) v)
-        ((symbolp v)
-         (setq text (ensure-list text))
-         (let ((vn (symbol-name v)) (notp nil))
-           (when (string-match "^not?-\\(.*\\)" vn) ; text is not-xxx style
-             (setq vn (match-string 1 vn))
-             (setq v (intern vn))
-             (setq notp t))
-           (funcall
-            (if notp #'not #'identity)
-            (cond ((eq v 'word)  ; text is word
-                   (and (not (cdr text)) (gt-word-p (intern-soft src) (car text))))
-                  ((eq v 'parts) ; text is multiple parts
-                   (cdr text))
-                  ((string-match "^\\(src\\|tgt\\):\\(.+\\)" vn) ; src/tgt is specific one, as src:en
-                   (equal (format "%s" (if (equal (match-string 1 vn) "src") src tgt))
-                          (match-string 2 vn)))))))
-        ((consp v) ; compose as (or word (and not-parts src:zh))
-         (unless (member (car v) '(or and)) (push 'or v))
-         (funcall (if (eq (pop v) 'or) #'cl-some #'cl-every)
-                  #'identity
-                  (mapcar (lambda (x) (gt-valid-literally x text src tgt)) v)))))
+  (:method :around (v text src tgt)
+           (cond ((or (null v) (eq v t)) v)
+                 ((symbolp v)
+                  (setq text (ensure-list text))
+                  (let ((vn (symbol-name v)) (notp nil))
+                    (when (string-match "^not?-\\(.*\\)" vn) ; not-xxx style
+                      (setq vn (match-string 1 vn))
+                      (setq v (intern vn))
+                      (setq notp t))
+                    (funcall
+                     (if notp #'not #'identity)
+                     (cl-call-next-method v text src text))))
+                 ((consp v) ; compose as: (or word (and not-parts src:zh))
+                  (unless (member (car v) '(or and)) (push 'or v))
+                  (funcall (if (eq (pop v) 'or) #'cl-some #'cl-every) #'identity
+                           (mapcar (lambda (x) (gt-valid-literally x text src tgt)) v)))))
+  (let ((vn (symbol-name v)))
+    (cond
+     ((eq v 'word) (and (car text) ; text is word
+                        (not (cdr text))
+                        (gt-word-p (intern-soft src) (car text))))
+     ((eq v 'parts) (cdr text)) ; text is multiple parts
+     ((eq v 'selection) (use-region-p)) ; use region is active
+     ((eq v 'read-only) buffer-read-only) ; buffer is read-only
+     ((string-match "^\\(src\\|tgt\\):\\(.+\\)" vn)
+      (member (match-string 2 vn) ; src/tgt is specific one, as src:en
+              (mapcar (lambda (item) (format "%s" item))
+                      (ensure-list (if (equal (match-string 1 vn) "src") src tgt))))))))
+
+(cl-defgeneric gt-valid (component &rest _args)
+  "Validate COMPONENT, return t if it's available."
+  (:method ((component gt-validator) carrier)
+           "Determine if current COMPONENT is available through `if' slot.
+Slot value can be a function, a symbol or a list. CARRIER maybe a task, a
+translator or a list to provide more validation data."
+           (let (text src tgt)
+             (cond
+              ((gt-task-p carrier)
+               (setq text (oref (oref carrier translator) text)
+                     src (oref carrier src)
+                     tgt (oref carrier tgt)))
+              ((gt-translator-p carrier)
+               (setq text (oref carrier text)
+                     src (car (oref carrier target))
+                     tgt (cdr (oref carrier target))))
+              ((consp carrier)
+               (setq text (car carrier)
+                     src (cadr carrier)
+                     tgt (caddr carrier)))
+              (t (user-error "Carrier type is not supported")))
+             (with-slots (if) component
+               (cond ((not (slot-boundp component 'if)) t)
+                     ((functionp if) (funcall if component carrier))
+                     (t (gt-valid-literally if text src tgt)))))))
 
 
 ;;; Logging
@@ -841,9 +884,8 @@ TAG is a label for message being logged."
 
 ;;; Caching
 
-(defclass gt-cacher ()
-  ((storage :initform nil :documentation "Where to save the caches.")
-   (if :initarg :if :documentation "Condition that current task should cache."))
+(defclass gt-cacher (gt-validator)
+  ((storage :initform nil :documentation "Where to save the caches."))
   "Used to cache the translate results."
   :abstract t)
 
@@ -912,6 +954,13 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 ;; caching task
 
+(cl-defmethod gt-valid ((cacher gt-cacher) (task gt-task) pred text)
+  (with-slots (src tgt) task
+    (or (and (null pred) (not (slot-boundp cacher 'if)))
+        (let ((pred (or pred (oref cacher if))))
+          (or (and (functionp pred) (funcall pred task))
+              (gt-valid-literally pred text src tgt))))))
+
 (cl-defmethod gt-cache-key ((task gt-task) &optional n)
   "Generate caching key for the Nth text in TASK."
   (with-slots (text src tgt engine parse) task
@@ -934,10 +983,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
     (cl-loop for c in text
              for r in res
              for i from 0
-             if (or (and (null pred) (not (slot-boundp cacher 'if)))
-                    (let ((pred (or pred (oref cacher if))))
-                      (or (and (functionp pred) (funcall pred task))
-                          (gt-valid-literally pred c src tgt))))
+             if (gt-valid cacher task pred c)
              do (gt-cache-set cacher (gt-cache-key task i) r))))
 
 (defun gt-purge-cache (cacher)
@@ -1552,16 +1598,6 @@ If BACKWARDP is not nil then switch to previous one."
   (unless (slot-boundp engine 'tag)
     (oset engine tag (eieio-object-class engine))))
 
-(cl-defmethod gt-valid ((engine gt-engine) task)
-  "Determine whether current ENGINE is valid for TASK.
-It's working with the `if' slot of the ENGINE. The slot can be a function,
-a symbol or a list."
-  (with-slots (src tgt translator) task
-    (with-slots (if) engine
-      (cond ((not (slot-boundp engine 'if)) t)
-            ((functionp if) (funcall if engine task))
-            (t (gt-valid-literally if (oref translator text) src tgt))))))
-
 (cl-defmethod gt-init ((engine gt-engine) task)
   "Preprocessing text in TASK for ENGINE. Try cache first if possible."
   (with-slots (id text cache) task
@@ -1989,14 +2025,17 @@ Output to minibuffer by default."
     (gt-reset translator)
     ;; take
     (unless keep (setf text nil bounds nil target nil))
-    (setf taker (or (gt-ensure-plain _taker) (user-error "No taker found in this translator")))
+    (setf taker (or (cl-find-if (lambda (tk) (gt-valid tk translator))
+                                (ensure-list (gt-ensure-plain _taker)))
+                    (user-error "No taker found in this translator")))
     (gt-take taker translator)
     (setf keep nil)
     (let ((history-delete-duplicates t))
       (add-to-history 'gt-target-history target 8))
     ;; prepare engines and render
     (setf engines (ensure-list (gt-ensure-plain _engines)))
-    (setf render (gt-ensure-plain _render))
+    (setf render (cl-find-if (lambda (rd) (gt-valid rd translator))
+                             (ensure-list (gt-ensure-plain _render))))
     ;; log
     (gt-log 'translator (format "version: %s\ntarget: %s\nbounds: %s\ntext: %s\ntaker: %s, engines: %s, render: %s"
                                 version target bounds text
