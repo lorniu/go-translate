@@ -815,11 +815,11 @@ Slot value can be a function, a symbol or a list. CARRIER maybe a task, a
 translator or a list to provide more validation data."
            (let (text src tgt)
              (cond
-              ((gt-task-p carrier)
+              ((cl-typep carrier 'gt-task)
                (setq text (oref (oref carrier translator) text)
                      src (oref carrier src)
                      tgt (oref carrier tgt)))
-              ((gt-translator-p carrier)
+              ((cl-typep carrier 'gt-translator)
                (setq text (oref carrier text)
                      src (car (oref carrier target))
                      tgt (cdr (oref carrier target))))
@@ -2010,7 +2010,7 @@ Output to minibuffer by default."
              (setq gt-default-cacher (gt-memory-cacher)))
            (unless gt-default-http-client
              (setq gt-default-http-client (gt-url-http-client)))
-           (with-slots (version state tasks total taker engines render _taker _engines _render) translator
+           (with-slots (version state tasks bag total taker engines render _taker _engines _render) translator
              (unless (slot-boundp translator '_taker)
                (unless taker (setf taker (gt-taker)))
                (unless render (setf render (gt-render)))

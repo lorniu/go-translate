@@ -1,4 +1,4 @@
-[[https://melpa.org/#/go-translate][file:https://melpa.org/packages/go-translate-badge.svg]]
+[[https://melpa.org/#/go-translate][file:https://melpa.org/packages/go-translate-badge.svg]] [[https://stable.melpa.org/#/go-translate][file:https://stable.melpa.org/packages/go-translate-badge.svg]]
 
 * Go Translate
 
