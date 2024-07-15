@@ -2,7 +2,8 @@
 ;;; Commentary:
 ;;; Code:
 
-(defvar gt-chat-session-location (locate-user-emacs-file "gt-chats"))
+(require 'gt-core)
+(require 'eieio-base)
 
 (defclass gt-chat-session ()
   ((name
@@ -12,14 +13,15 @@
     :initarg :llm)
    (items
     :initarg :items)
-   (index
-    :initarg :index
-    :type integer
-    :initform 0)))
+   (top
+    :initarg :top
+    :type (or null float)
+    :initform nil)))
 
 (defclass gt-chat-session-item ()
   ((id
     :initarg :id
+    :type float
     :initform (time-to-seconds))
    (state
     :initarg :state
@@ -27,145 +29,143 @@
    (role
     :initarg :role)
    (content
-    :initarg :content)))
-
-(cl-defgeneric gt-chat-session-save (session))
-
-(cl-defgeneric gt-chat-session-read (session-class filename))
+    :initarg :content
+    :type (or null string)
+    :initform nil)
+   (bound
+    :initform nil)))
 
 (cl-defmethod gt-chat-items ((session gt-chat-session))
-  (with-slots (items index) session
-    (cl-subseq items 0 (- (length items) index))))
-
-(defvar gt-chat-prompt-logo-display-function
-  (lambda (role)
-    (let* ((face (pcase role
-                   ('assistant 'gt-chat-assistant-prompt-logo-face)
-                   ('tool 'gt-chat-assistant-prompt-logo-face)
-                   ('user 'gt-chat-user-prompt-logo-face)
-                   ('callback 'gt-chat-user-prompt-logo-face)
-                   ('system 'gt-chat-system-prompt-logo-face))))
-      (propertize (format " %s " (pcase role
-                                   ('assistant "#")
-                                   ('user ">")
-                                   ('system "!!!")
-                                   (_ (substring (symbol-name c) 0 1))))
-                  'face face
-                  'pointer 'hand))))
-
-(defvar gt-chat-prompt-display-function
-  (lambda (role beg end)
-    (unless (string-blank-p (buffer-substring-no-properties beg end))
-      (add-face-text-property beg end
-                              (pcase role
-                                ('assistant 'gt-chat-assistant-prompt-face)
-                                ('user 'gt-chat-user-prompt-face)
-                                ('system 'gt-chat-system-prompt-face)
-                                ('tool 'gt-chat-assistant-prompt-face)
-                                ('callback 'gt-chat-user-prompt-face)))
-      (add-text-properties beg end (list 'line-prefix "   " 'wrap-prefix "   ")))))
-
-(cl-defmethod gt-chat-stringify ((item gt-chat-session-item))
-  (with-slots (id role content) item
-    (let* ((p (format "<%s:%s>" id role))
-           (c (string-trim content))
-           (len (length p)))
-      (when (eq role 'assistant)
-        (setq c (gt-chat-font-lock-string-with-markdown c)))
-      (with-temp-buffer
-        (insert p " " c)
-        (let* ((beg (point-min))
-               (pend (+ beg len 1))
-               (end (point-max)))
-          (funcall gt-chat-prompt-display-function role pend end)
-          (put-text-property (- pend 1) pend 'rear-nonsticky t)
-          (put-text-property beg (+ beg 1) 'front-sticky t)
-          (add-text-properties beg pend
-                               (list 'read-only t
-                                     'display (funcall gt-chat-prompt-logo-display-function role)
-                                     'keymap gt-chat-buffer-message-logo-map)))
-        (buffer-string)))))
-
-(cl-defmethod gt-chat-stringify ((session gt-chat-session))
-  (cl-loop for item in (gt-chat-items session)
-           collect (gt-chat-stringify item) into chats
-           finally (return (string-join (reverse chats) "\n\n"))))
-
-(defun gt-chat-bound-of-current-message ()
-  "Get the bounds of message at point.
-Return cons cells in form of (begin prompt-end end)."
-  (save-excursion
-    (save-match-data
-      (let (beg pend end)
-        (end-of-line)
-        (if (re-search-backward "^<[0-9.]+:[a-z]+> " nil t)
-            (setq beg (point) pend (match-end 0))
-          (user-error "Cannot find the begin of prompt"))
-        (end-of-line)
-        (setq end (if (re-search-forward "^<[0-9.]+:[a-z]+> " nil t)
-                      (match-beginning 0)
-                    (point-max)))
-        (list beg pend end)))))
-
-(defun gt-chat-parse-buffer ()
-  (save-excursion
-    (let ((inhibit-read-only t))
-      (goto-char (point-min))
-      (unless (re-search-forward "^<[0-9.]+:[a-z]+> " nil t)
-        (insert (format "<%s:user> " (time-to-seconds))))
-      (goto-char (point-max))
-      (unless (re-search-backward "^<[0-9.]+:system> " nil t)
-        (goto-char (point-min))
-        (insert (format "<%s:system> %s\n\n"
-                        (time-to-seconds)
-                        (car gt-chat-system-prompts))))
-      (goto-char (point-min))
-      (let (items)
-        (while (re-search-forward "^<[0-9.]+:\\([a-z]+\\)> " nil t)
-          (let* ((role (intern (match-string 1)))
-                 (bds (gt-chat-bound-of-current-message))
-                 (item (gt-chat-session-item
-                        :role role
-                        :content (substring-no-properties (string-trim (buffer-substring (cadr bds) (caddr bds)))))))
-            (push item items)))
-        items))))
+  "Return the items available (should be displayed)."
+  (with-slots (items top) session
+    (if-let (p (and top (cl-position-if (lambda (c) (equal (oref c id) top)) items)))
+        (cl-subseq items 0 (1+ p))
+      items)))
 
 
-;; Persist in file
+;;; Persist in file
 
 (defclass gt-chat-file-session (gt-chat-session eieio-persistent) ())
+
+(defvar gt-chat-session-location (locate-user-emacs-file "gt-chats"))
+
+(defun gt-chat-ensure-directory ()
+  (unless (file-directory-p gt-chat-session-location)
+    (make-directory gt-chat-session-location t)))
 
 (cl-defmethod initialize-instance :after ((session gt-chat-file-session) &rest _)
   (with-slots (name file) session
     (setf file (expand-file-name name gt-chat-session-location))))
 
+(cl-defmethod gt-chat-session-list ((_class (eql 'gt-chat-file-session)))
+  (gt-chat-ensure-directory)
+  (cl-loop for name in (mapcar #'car
+                               (sort
+                                (directory-files-and-attributes
+                                 gt-chat-session-location nil "^[^.]" t)
+                                (lambda (x y) (time-less-p (nth 6 y) (nth 6 x)))))
+           for path = (expand-file-name name gt-chat-session-location)
+           collect (cons name path)))
+
+(cl-defmethod gt-chat-session-read ((class (eql 'gt-chat-file-session)) name)
+  (let ((path (expand-file-name name gt-chat-session-location)))
+    (unless (file-exists-p path) (user-error "Session `%s' not existed" name))
+    (eieio-persistent-read path class)))
+
+(cl-defmethod gt-chat-session-create ((class (eql 'gt-chat-file-session)) name system-prompt)
+  (let ((path (expand-file-name name gt-chat-session-location)))
+    (when (file-exists-p path)
+      (user-error "Session `%s' already existed" name))
+    (gt-chat-ensure-directory)
+    (gt-chat-session-save
+     (make-instance class
+                    :llm 'openai
+                    :name name
+                    :items (when system-prompt
+                             (list (gt-chat-session-item
+                                    :role 'system
+                                    :content system-prompt)))))))
+
 (cl-defmethod gt-chat-session-save ((session gt-chat-file-session))
   (with-slots (name) session
-    (eieio-persistent-save session (expand-file-name name gt-chat-session-location))))
+    (eieio-persistent-save session (expand-file-name name gt-chat-session-location))
+    session))
 
-(cl-defmethod gt-chat-session-read ((class (eql 'gt-chat-file-session)) filename)
-  (eieio-persistent-read filename class))
+(cl-defmethod gt-chat-session-delete ((_class (eql 'gt-chat-file-session)) name)
+  (let ((path (expand-file-name name gt-chat-session-location)))
+    (unless (file-exists-p path)
+      (user-error "Session `%s' not existed" name))
+    (delete-file path)))
 
 
-;;; Test
+;;; Stringify
 
-(defun gt-test-1i2323 ()
-  (let* ((c1 (gt-chat-session-item :role 'system :content "you are a assist"))
-         (c2 (gt-chat-session-item :role 'user :content "what is your name"))
-         (c3 (gt-chat-session-item :role 'assistant :content "I am chatgpt..."))
-         (ss (gt-chat-file-session
-              :name "hello"
-              :llm 'openai
-              :system c1
-              :items (list c1 c3 c2 c1))))
-    (gt-chat-session-save ss)))
+(cl-defgeneric gt-chat-transform (object &rest args))
 
-(defun gt-test-231i2323 ()
-  (let* ((f "~/.emacs.d/.var/gt-chats/hello")
-         (ss (gt-chat-session-read 'gt-chat-file-session f)))
-    (with-slots (items) ss
-      (push (gt-chat-session-item :role 'user :content "你是个啥玩意") items))
-    (gt-chat-session-save ss)))
+(cl-defgeneric gt-chat-stringify (object)
+  (:method ((item gt-chat-session-item))
+           (gt-chat-transform item)
+           (with-slots (id role content) item
+             (concat (propertize (format "<%s:%s> " id role) 'face 'minibuffer-prompt) content)))
+  (:method ((session gt-chat-session)) (gt-chat-stringify (gt-chat-items session)))
+  (if (cl-every #'gt-chat-session-item-p object)
+      (cl-loop for item in object
+               collect (gt-chat-stringify item) into chats
+               finally (return (string-join (reverse chats) "\n\n")))
+    (user-error "Unsupported stringify")))
+
+(defun gt-chat-parse (&optional point trimp)
+  "Parse message at POINT as session item."
+  (save-excursion
+    (save-match-data
+      (unless point (setq point (point)))
+      (goto-char point)
+      (end-of-line)
+      (unless (re-search-backward "^<\\([0-9.]+\\):\\([a-z]+\\)> " nil t)
+        (user-error "Cannot find the begin of prompt"))
+      (let* ((beg (point))
+             (pend (match-end 0))
+             (end (save-match-data
+                    (end-of-line)
+                    (if (re-search-forward "^<[0-9.]+:[a-z]+> " nil t)
+                        (match-beginning 0)
+                      (point-max))))
+             (content (funcall (if trimp #'string-trim #'identity)
+                               (buffer-substring-no-properties pend end)))
+             (item (gt-chat-session-item
+                    :id (string-to-number (match-string 1))
+                    :role (intern (match-string 2))
+                    :content content)))
+        (oset item bound (list beg pend end point))
+        item))))
+
+(defun gt-chat-parse-buffer ()
+  (save-excursion
+    (goto-char (point-min))
+    (let (items)
+      (while (re-search-forward "^<[0-9.]+:[a-z]+> " nil t)
+        (push (gt-chat-parse (point) t) items))
+      items)))
+
+(defun gt-chat-current-system-prompt (&optional content-only)
+  (when-let (item (save-excursion
+                    (goto-char (point-max))
+                    (when (re-search-backward "^<[0-9.]+:system> " nil t)
+                      (gt-chat-parse (point) t))))
+    (if content-only (oref item content) item)))
+
+
+;;; Request
+
+(cl-defmethod gt-chat-req-messages ((session gt-chat-session))
+  ;; from system message or maybe set a limit?
+  (let* ((items (gt-chat-items session)) messages tools)
+    (when-let (p (cl-position-if (lambda (c) (eq (oref c role) 'system)) items))
+      (setq items (subseq items 0 (1+ p))))
+    (dolist (item items)
+      (with-slots (role content) item
+        (push `((role . ,role) (content . ,(substring-no-properties (or content "")))) messages)))
+    (list messages tools)))
 
 (provide 'gt-chat-session)
 
