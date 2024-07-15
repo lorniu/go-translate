@@ -708,13 +708,13 @@ ChatGPT 需要 apikey 才能正常使用:
          :render (gt-posframe-pin-render)))
 #+end_src
 
-*** gt-validator
+*** gt-validator (:if)
 
 组件 =gt-taker=, =gt-engine= 和 =gt-render= 等都继承了 =gt-validator=, 它通过 =:if= 提供了判定组件可用性的方式,
 因此可以大大简化不同场景下 translator 的配置。
 
 槽 =:if= 的值可以是函数，也可以是内置实现的一些 symbol, 或者通过 and/or 连接起来的 form 列表。
-另外, symbol 可以使用 =not-= 为前缀表示反向判定。
+另外, symbol 可以使用 =not-= 或 =no-= 为前缀表示反向判定。
 
 部分内置 symbol:
 - =word= 翻译的文本是单词
@@ -723,26 +723,28 @@ ChatGPT 需要 apikey 才能正常使用:
 - =parts= 翻译的是分段的文本
 - =read-only= 当前 buffer 是只读的
 - =selection= 当前翻译的是选中的文本
-- =not-word= 反向判定，翻译的文本 *不是* 单词
+- =emacs-lisp-mode= 以 mode 结尾，表示须匹配当前模式
+- =not-word= or =no-word= 反向判定，翻译的文本 *不是* 单词
 
 一个粗糙的配置示例:
 #+begin_src emacs-lisp
   ;; 对于选中的文本，不分段，并使用 posframe 渲染
   ;; 对于 Info，翻译当前段落，使用 overlay 显示结果
   ;; 对于只读文本，翻译整个 buffer 中的生词，并使用 overlay 渲染
-  ;; 对于 magit commit buffer，将翻译结果插入到光标位置
+  ;; 对于 Magit commit buffer，将翻译结果插入到光标位置
   ;; 对于单词，使用 google 引擎翻译; 其他使用 deepl 引擎
   (setq gt-default-translator
         (gt-translator
          :taker   (list (gt-taker :pick nil :if 'selection)
-                        (gt-taker :text 'paragraph :if (lambda (&rest _) (derived-mode-p 'Info-mode)))
+                        (gt-taker :text 'paragraph :if '(Info-mode help-mode))
                         (gt-taker :text 'buffer :pick 'fresh-word :if 'read-only)
-                        (gt-taker))
+                        (gt-taker :text 'word))
          :engines (list (gt-google-engine :if 'word)
                         (gt-deepl-engine :if 'no-word))
          :render  (list (gt-posframe-pop-render :if 'selection)
                         (gt-overlay-render :if 'read-only)
-                        (gt-insert-render :if (lambda (&rest _) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-insert-render :if (lambda (translator) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-alert-render :if '(and xxx-mode (or not-selection (and read-only parts))))
                         (gt-buffer-render))))
 #+end_src
 

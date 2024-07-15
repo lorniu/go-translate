@@ -666,14 +666,14 @@ Here are some usage examples:
          :render (gt-posframe-pin-render)))
 #+end_src
 
-*** gt-validator
+*** gt-validator (:if)
 
 Component =gt-taker=, =gt-engine= and =gt-render= are inherited from =gt-validator=, which
 provides a way to determine component availability through =:if= slot. This greatly simplifies
 the configuration of translator for different scenarios.
 
 The value of the slot =:if= can be a function, a symbol or a list of forms linked by and/or.
-Symbol can be prefixed with =not-= to indicate a reverse determination.
+Symbol can be prefixed with =not-= or =no-= to indicate a reverse determination.
 
 Some symbols built-in:
 - =word= translated text is word
@@ -682,7 +682,8 @@ Some symbols built-in:
 - =parts= multiple parts text to be translated
 - =read-only= current buffer is read only
 - =selection= current use region is active
-- =not-word= reverse determination, translated text *is not* word
+- =emacs-lisp-mode= suffix with *-mode*, that match with current mode
+- =not-word= or =no-word= reverse determination, translated text *is not* word
 
 One simple config example:
 #+begin_src emacs-lisp
@@ -694,14 +695,15 @@ One simple config example:
   (setq gt-default-translator
         (gt-translator
          :taker   (list (gt-taker :pick nil :if 'selection)
-                        (gt-taker :text 'paragraph :if (lambda (&rest _) (derived-mode-p 'Info-mode)))
+                        (gt-taker :text 'paragraph :if '(Info-mode help-mode))
                         (gt-taker :text 'buffer :pick 'fresh-word :if 'read-only)
-                        (gt-taker))
+                        (gt-taker :text 'word))
          :engines (list (gt-google-engine :if 'word)
                         (gt-deepl-engine :if 'no-word))
          :render  (list (gt-posframe-pop-render :if 'selection)
                         (gt-overlay-render :if 'read-only)
-                        (gt-insert-render :if (lambda (&rest _) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-insert-render :if (lambda (translator) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-alert-render :if '(and xxx-mode (or not-selection (and read-only parts))))
                         (gt-buffer-render))))
 #+end_src
 

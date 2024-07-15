@@ -769,7 +769,8 @@ This is a generic method, improve it for specific LANG as you wish."
 It can be used by cacher and engine.
 
 V should be a symbol like `word', `parts', `src:en', `tgt:en', `selection',
-`read-only', or symbol with `not-' prefix as `not-word', `not-src:en' etc.
+`xxx-mode', `read-only', or symbol with `not-' or `no-' prefix such as
+`not-word', `not-src:en', `no-parts' etc.
 
 V also can be a list form grouping above symbols with `and/or', for example:
 
@@ -802,6 +803,8 @@ This is a generic method, you can extend the V as you wish."
      ((eq v 'parts) (cdr text)) ; text is multiple parts
      ((eq v 'selection) (use-region-p)) ; use region is active
      ((eq v 'read-only) buffer-read-only) ; buffer is read-only
+     ((string-suffix-p "-mode" vn) ; major-mode or minor-mode
+      (if (boundp v) (symbol-value v) (eq major-mode v)))
      ((string-match "^\\(src\\|tgt\\):\\(.+\\)" vn)
       (member (match-string 2 vn) ; src/tgt is specific one, as src:en
               (mapcar (lambda (item) (format "%s" item))
@@ -830,7 +833,10 @@ translator or a list to provide more validation data."
               (t (user-error "Carrier type is not supported")))
              (with-slots (if) component
                (cond ((not (slot-boundp component 'if)) t)
-                     ((functionp if) (funcall if component carrier))
+                     ((and (functionp if) (= 2 (car (func-arity if))))
+                      (funcall if component carrier))
+                     ((and (functionp if) (= 1 (car (func-arity if))))
+                      (funcall if carrier))
                      (t (gt-valid-literally if text src tgt)))))))
 
 
