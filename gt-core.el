@@ -685,15 +685,16 @@ See gt-tests.el for details."
   "Read text in a new created buffer interactively.
 
 Available options can be specified as keyword arguments:
-  :buffer           The buffer used for reading user input
-  :initial-contents The initial contents of the buffer
-  :keymap           The keymap to use in the buffer
-  :window-config    The window configuration for the window display the buffer
-  :catch            Catch tag used in for inner `throw'
-  :apply-key        The keybinding for applying changes (default: \"C-c C-c\")
-  :cancel-key       The keybinding for canceling changes (default: \"C-c C-k\")
-  :apply-hook       Hook run before apply operation
-  :cancel-hook      Hook run before cancel operation
+  :buffer            The buffer used for reading user input
+  :initial-contents  The initial contents of the buffer
+  :keymap            The keymap to use in the buffer
+  :window-config     The window configuration for the window display the buffer
+  :catch             Catch tag used in for inner `throw'
+  :apply-key         The keybinding for applying changes (default: \"C-c C-c\")
+  :cancel-key        The keybinding for canceling changes (default: \"C-c C-k\")
+  :apply-hook        Hook run before apply operation
+  :cancel-hook       Hook run before cancel operation
+  :window-no-restore When non-nil, don't restore window config after close
 
 Other FORMS is used to do extra initialization, you can config head line, mode
 line format or bind keys here.
@@ -709,9 +710,9 @@ the buffer will returned as the result."
           (cancel-key (or .cancel-key "C-c C-k")))
       `(if (and (cl-plusp (recursion-depth)) (buffer-live-p (get-buffer ,buffer)))
            (throw 'exit t) ; avoid recursion
-         (save-window-excursion
-           (catch ,tag
-             (unwind-protect
+         (let ((wconfig (current-window-configuration)))
+           (unwind-protect
+               (catch ,tag
                  (with-current-buffer (get-buffer-create ,buffer)
                    ,(if .keymap `(use-local-map ,.keymap))
                    (local-set-key (kbd ,apply-key)
@@ -733,8 +734,9 @@ the buffer will returned as the result."
                    ,(if .initial-contents `(insert ,.initial-contents))
                    (pop-to-buffer ,buffer ,.window-config)
                    ,@forms
-                   (recursive-edit))
-               (ignore-errors (kill-buffer ,buffer)))))))))
+                   (recursive-edit)))
+             (ignore-errors (with-current-buffer ,buffer (kill-buffer-and-window)))
+             (unless ,.window-no-restore (set-window-configuration wconfig))))))))
 
 (cl-defgeneric gt-word-p (lang text)
   "Whether TEXT is a single word in LANG.

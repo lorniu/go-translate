@@ -76,28 +76,30 @@ Can also put into .authinfo file as:
 (cl-defmethod gt-translate ((engine gt-chat-openai-engine) task next)
   (with-slots (text res translator) task
     (setf text (string-join text "\n"))
-    (if-let* ((messages (gt-chat-parse-messages text))
-              (items (plist-get messages :items))
-              (last (car (last items)))
-              (role (car last))
-              (content (cdr last)))
+    (when-let* ((session gt-chat-current-session)
+                (items (gt-chat-items session))
+                (item (car items)))
+      (when (string-blank-p (concat (oref item content)))
+        (setq item (cadr items)))
+      (with-slots (role content) item
         (cond
          ((eq role 'assistant)
-          (oset translator text (list (gt-chat-stringify-session (butlast items))))
+          (oset translator text (list (gt-chat-stringify (nthcdr 1 items))))
           (setf res (substring-no-properties content))
           (funcall next task))
          ((eq role 'user)
           (gt-chat-openai-chat engine
-                               (gt-chat-generate-reqeust-messages text)
+                               (car (gt-chat-req-messages session))
                                (lambda (raw)
                                  (let* ((json (json-read-from-string raw))
                                         (str (alist-get 'content (alist-get 'message (let-alist json (aref .choices 0)))))
                                         (gt-buffer-render-output-hook (lambda () (toggle-truncate-lines -1))))
-                                   (gt-chat-sync-buffer-session gt-chat-current-session `((assistant . ,str)))
+                                   (oset session items (cons (gt-chat-session-item :role 'assistant :content str) items))
+                                   (gt-chat-session-save session)
                                    (setf res (substring-no-properties str))
                                    (funcall next task)))
                                (lambda (err) (gt-fail task err))))
-         (t (user-error "Wrong request content"))))))
+         (t (user-error "Wrong request content")))))))
 
 (cl-defmethod gt-parse ((_ gt-chat-openai-engine-parser) _task))
 
@@ -117,169 +119,245 @@ Can also put into .authinfo file as:
                 :fail fail)))
 
 
-
-(defun gt-chat-ensure-directory ()
-  (unless (file-directory-p gt-chat-session-location)
-    (make-directory gt-chat-session-location t)))
-
-(defun gt-chat-sessions ()
-  (gt-chat-ensure-directory)
-  (cl-loop for name in (mapcar #'car
-                               (sort
-                                (directory-files-and-attributes
-                                 gt-chat-session-location nil "^[^.]" t)
-                                (lambda (x y) (time-less-p (nth 6 y) (nth 6 x)))))
-           for path = (expand-file-name name gt-chat-session-location)
-           collect (cons name path)))
-
-;;(gt-chat-new-session "woooo")
-;;(gt-chat-del-session "woooo")
-;;(gt-chat-get-session "woooo")
-;;(insert (gt-chat-stringify gt-chat-current-session))
-;;(oref gt-chat-current-session index)
-;; (insert (gt-chat-stringify (car (oref gt-chat-current-session items))))
-;;(insert (gt-chat-stringify gt-chat-current-session))
-;; (gt-chat-items gt-chat-current-session)
-;; (oset gt-chat-current-session index 1)
+;;; Wrapper of Session
 
 (defvar gt-chat-session-type 'gt-chat-file-session)
 
+(defun gt-chat-sessions ()
+  (gt-chat-session-list gt-chat-session-type))
+
 (defun gt-chat-get-session (name)
-  (let ((path (expand-file-name name gt-chat-session-location)))
-    (unless (file-exists-p path)
-      (user-error "Current session `%s' not existed" name))
-    (setq gt-chat-current-session
-          (gt-chat-session-read gt-chat-session-type path))))
+  (setq gt-chat-current-session nil)
+  (setq gt-chat-current-session (gt-chat-session-read gt-chat-session-type name)))
 
 (defun gt-chat-new-session (name &optional system-prompt)
-  (let ((path (expand-file-name name gt-chat-session-location)))
-    (when (file-exists-p path)
-      (user-error "Current session `%s' already existed" name))
-    (gt-chat-ensure-directory)
-    (setq gt-chat-current-session
-          (make-instance gt-chat-session-type
-                         :llm 'openai
-                         :name name
-                         :items (list
-                                 (gt-chat-session-item
-                                  :type 'system
-                                  :content (or system-prompt (car gt-chat-system-prompts))))))
-    (gt-chat-session-save gt-chat-current-session)))
+  (setq gt-chat-current-session
+        (gt-chat-session-create
+         gt-chat-session-type name
+         (or system-prompt (car gt-chat-system-prompts)))))
 
 (defun gt-chat-del-session (name)
-  (let ((path (expand-file-name name gt-chat-session-location)))
-    (unless (file-exists-p path)
-      (user-error "Current session `%s' not existed" name))
-    (when (equal name (oref gt-chat-current-session name))
-      (setq gt-chat-current-session nil))
-    (delete-file path)))
+  (gt-chat-session-delete gt-chat-session-type name)
+  (when (and gt-chat-current-session (equal name (oref gt-chat-current-session name)))
+    (setq gt-chat-current-session nil)))
+
+
+;;; Buffer
 
 (defvar-local gt-chat-buffer-session nil)
 
-(defun gt-chat-sync-buffer-session ()
-  (let ((news (gt-chat-parse-buffer)))
-    (with-slots (items index) gt-chat-buffer-session
-      (setf items (append news (items-left))) ; TODO
-      (setf index (oref (last news) id)))
-    (gt-chat-session-save gt-chat-buffer-session)))
+(defun gt-chat-sync-buffer->session (&optional obj session topid)
+  (let ((session (or session gt-chat-buffer-session
+                     (user-error "Session is required")))
+        (news (cond
+               ((null obj) (gt-chat-parse-buffer))
+               ((stringp obj) (with-temp-buffer (insert obj) (gt-chat-parse-buffer)))
+               ((cl-every #'gt-chat-session-item-p obj) obj)
+               (t (user-error "Content is not valid")))))
+    (with-slots (items top) session
+      (setf items (append news (if-let (n (cl-position-if (lambda (c) (equal top (oref c id))) items)) (nthcdr (+ n 1) items))))
+      (setf top (or topid (oref (car (last news)) id))))
+    (gt-chat-session-save session)))
 
-(defun gt-chat-load-session (session &optional input)
-  (with-slots (items) session
-    (unless (eq 'user (oref (car items) role))
-      (push (gt-chat-session-item :role 'user :content input) items))
-    (insert (gt-chat-stringify session))
-    (gt-chat--customize-buffer)))
+(defun gt-chat-sync-session->buffer (&optional input session)
+  (let ((session (or session gt-chat-buffer-session
+                     (user-error "Session is required"))))
+    (with-slots (items) session
+      (let ((inhibit-read-only t))
+        (when input
+          (with-slots (role content) (car items)
+            (if (eq role 'user)
+                (setf content (concat content
+                                      (if (string-match-p "[^ ]$" content) " ")
+                                      input))
+              (push (gt-chat-session-item :role 'user :content input) items))))
+        (erase-buffer)
+        (insert (gt-chat-stringify session))
+        (gt-chat-setup-buffer)))))
 
-(defun gt-chat-delete-current-message ()
+;; Pretty
+
+(defvar gt-chat-prompt-logo-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] #'outline-cycle)
+    (define-key map (kbd "TAB") #'outline-cycle)
+    (define-key map (kbd "C-k") #'gt-chat--delete-current-message)
+    map))
+
+(cl-defmethod gt-chat-stringify-prompt ((item gt-chat-session-item))
+  (with-slots (id role) item
+    (let* ((display (propertize (format " %s " (pcase role
+                                                 ('assistant "#")
+                                                 ('user ">")
+                                                 ('system "!!!")
+                                                 (_ (substring (symbol-name role) 0 1))))
+                                'face (pcase role
+                                        ('assistant 'gt-chat-assistant-prompt-logo-face)
+                                        ('tool 'gt-chat-assistant-prompt-logo-face)
+                                        ('user 'gt-chat-user-prompt-logo-face)
+                                        ('callback 'gt-chat-user-prompt-logo-face)
+                                        ('system 'gt-chat-system-prompt-logo-face))
+                                'pointer 'hand))
+           (result (format "<%s:%s> " id role))
+           (length (length result)))
+      (put-text-property (1- length) length 'rear-nonsticky t result)
+      (put-text-property 0 1 'front-sticky t result)
+      (add-text-properties 0 length (list 'read-only t 'display display 'keymap gt-chat-prompt-logo-map) result)
+      result nil)))
+
+(cl-defmethod gt-chat-stringify-content ((item gt-chat-session-item))
+  (with-slots (role content) item
+    (let ((face (pcase role
+                  ('assistant 'gt-chat-assistant-prompt-face)
+                  ('user 'gt-chat-user-prompt-face)
+                  ('system 'gt-chat-system-prompt-face)
+                  ('tool 'gt-chat-assistant-prompt-face)
+                  ('callback 'gt-chat-user-prompt-face)))
+          (prefix (list 'line-prefix "   " 'wrap-prefix "   "))
+          (result content))
+      (add-face-text-property 0 (length result) face nil result)
+      (add-text-properties 0 (length result) prefix result)
+      result nil)))
+
+(cl-defmethod gt-chat-transform ((item gt-chat-session-item))
+  (with-slots (role content) item
+    (when (and content (eq role 'assistant))
+      (with-temp-buffer
+        (require 'markdown-mode)
+        (let ((ori markdown-fontify-code-blocks-natively))
+          (unwind-protect
+              (progn
+                (setq markdown-fontify-code-blocks-natively t)
+                (markdown-mode)
+                (insert content)
+                (font-lock-ensure)
+                (setf content (buffer-string)))
+            (setq markdown-fontify-code-blocks-natively ori)))))))
+
+;; State
+
+(defun gt-chat--update-head-line ()
+  (setq header-line-format
+        `((:propertize ,(format " Chat with %s, Submit with C-c C-c, Cancel with C-c C-k"
+                                (if-let (k (car (where-is-internal #'gt-chat-send-current)))
+                                    (key-description k) 'gt-chat-send-current))
+                       face gt-chat-buffer-head-line-face))))
+
+(defun gt-chat--update-mode-line ()
+  (setq mode-line-format
+        (cl-flet ((props (fn)
+                    `( face font-lock-keyword-face
+                       local-map (keymap (mode-line keymap (mouse-1 . ,fn)))
+                       mouse-face font-lock-warning-face )))
+          `(" Session: "
+            (:propertize ,(let ((session gt-chat-buffer-session))
+                            (with-temp-buffer
+                              (save-excursion (insert (oref session name)))
+                              (concat (thing-at-point 'sentence))))
+                         ,@(props #'gt-chat--switch-session))
+            "  Model: "
+            (:propertize ,(with-slots (model temperature) (car (oref gt-chat-buffer-translator engines))
+                            (format "%s/%s"
+                                    (or model gt-chatgpt-model)
+                                    (or temperature gt-chatgpt-temperature)))
+                         ,@(props #'gt-chat--config-engine))
+            "  System prompt: "
+            (:propertize ,(let ((p (or (gt-chat-current-system-prompt 'content-only) "NONE")))
+                            (with-temp-buffer
+                              (save-excursion (insert p))
+                              (concat (thing-at-point 'sentence) "..")))
+                         ,@(props #'gt-chat--switch-system-prompt))
+            "  Render: "
+            (:propertize ,(nth 2 (gt-translator-info gt-chat-buffer-translator))
+                         ,@(props #'gt-chat--set-current-render))
+            "  Referrer: "
+            (:propertize ,(buffer-name (car (oref gt-chat-buffer-translator bounds)))
+                         face font-lock-keyword-face)))))
+
+(defun gt-chat--refresh-buffer-point ()
+  (goto-char (point-max))
+  (when (re-search-backward "^<[0-9.]+:[au][a-z]+> " nil t) (search-forward " "))
+  (recenter-top-bottom 2))
+
+(defun gt-chat-setup-buffer ()
+  (gt-chat--update-head-line)
+  (gt-chat--update-mode-line)
+  (setq-local outline-regexp "^<[0-9.]+:[us][a-z]+> ")
+  (setq-local line-move-visual t)
+  (outline-minor-mode 1))
+
+;; Commands
+
+(defun gt-chat--previous-message ()
+  (interactive)
+  (with-slots (items top) gt-chat-buffer-session
+    (if (= 1 (line-number-at-pos))
+        (if (or (null top) (equal top (oref (car (last items)) id)))
+            (message "Already at the most top position")
+          (let ((offset (- (point-max) (point))))
+            (message "Loading...")
+            (gt-chat-sync-buffer->session)
+            (oset gt-chat-buffer-session top nil)
+            (gt-chat-sync-session->buffer)
+            (goto-char (- (point-max) offset))))
+      (when (looking-back "^<[0-9.]+:[a-z]+> " (point-min))
+        (beginning-of-line)
+        (backward-char))
+      (if (re-search-backward "^<[0-9.]+:[a-z]+> " nil t)
+          (goto-char (match-end 0))
+        (beginning-of-line)))))
+
+(defun gt-chat--back-to-indentation ()
+  (interactive)
+  (end-of-line)
+  (if (re-search-backward "^<[0-9.]+:[a-z]+> " (line-beginning-position) t)
+      (goto-char (match-end 0))
+    (back-to-indentation)))
+
+(defun gt-chat--delete-current-message ()
   (interactive)
   (let* ((inhibit-read-only t)
-         (current (gt-chat-bound-of-current-message))
+         (current (oref (gt-chat-parse (point)) bound))
          (last (unless (= (point-min) (car current))
                  (save-excursion
                    (goto-char (car current))
                    (backward-char)
-                   (gt-chat-bound-of-current-message)))))
+                   (oref (gt-chat-parse (point)) bound)))))
     (unless (and (string-prefix-p (buffer-substring (car current) (cadr current)) "<U> ")
                  (not (save-excursion (forward-char) (re-search-forward "^<[AUSTR]> " nil t)))
                  (not (string-prefix-p (buffer-substring (car last) (cadr last)) "<U> ")))
       (kill-region (car current) (caddr current)))))
 
-(defvar gt-chat-buffer-message-logo-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map [mouse-1] #'outline-cycle)
-    (define-key map (kbd "TAB") #'outline-cycle)
-    (define-key map (kbd "C-k") #'gt-chat-delete-current-message)
-    map))
-
-(defun gt-chat--customize-buffer ()
-  (setq header-line-format
-        `((:propertize ,(format " Chat with %s, Submit with C-c C-c, Cancel with C-c C-k"
-                                (if-let (k (car (where-is-internal #'gt-chat-send-current)))
-                                    (key-description k) 'gt-chat-send-current))
-                       face gt-chat-buffer-head-line-face)))
-  (setq mode-line-format
-        (cl-flet ((props (fn)
-                    `( 'face 'font-lock-keyword-face
-                       'local-map '(keymap (mode-line keymap (mouse-1 . ,fn)))
-                       'mouse-face 'font-lock-warning-face )))
-          `(" Session: "
-            (:eval (propertize
-                    (let ((session gt-chat-buffer-session))
-                      (with-temp-buffer
-                        (save-excursion (insert (oref session name)))
-                        (concat (thing-at-point 'sentence))))
-                    ,@(props #'gt-chat--switch-session)))
-            "  Model: "
-            (:eval (with-slots (model temperature) (car (oref gt-chat-buffer-translator engines))
-                     (propertize (format "%s/%s"
-                                         (or model gt-chatgpt-model)
-                                         (or temperature gt-chatgpt-temperature))
-                                 ,@(props #'gt-chat--config-engine))))
-            "  System prompt: "
-            ,(apply #'propertize
-                    (let ((p (gt-chat--current-system-prompt)))
-                      (message ">>> 111. %s" (time-to-seconds))
-                      (with-temp-buffer
-                        (save-excursion (insert p))
-                        (concat (thing-at-point 'sentence) "..")))
-                    (props #'gt-chat--switch-system-prompt))
-            "  Render: "
-            (:eval (propertize
-                    (nth 2 (gt-translator-info gt-chat-buffer-translator))
-                    ,@(props #'gt-chat--set-current-render))))))
-  (setq-local outline-regexp "^<[US]> ")
-  (setq-local line-move-visual t)
-  (outline-minor-mode 1))
-
-(defun gt-chat--refresh-point ()
-  (goto-char (point-max))
-  (when (re-search-backward "^<[AU]> " nil t) (search-forward " "))
-  (recenter-top-bottom 2))
-
-(defun gt-chat-generate-reqeust-messages (string)
-  (let* ((items (gt-chat-parse-messages string))
-         (lst (cl-subseq (plist-get items :items) (plist-get items :index)))
-         messages tools)
-    (cl-loop for (role . content) in lst
-             when (string-match "^ *\\[\\(.+?\\)\\] +" content)
-             do (setq tools (append tools (mapcar #'string-trim (string-split (match-string 1 content) ",")))
-                      content (substring content (match-end 0)))
-             do (push `((role . ,role) (content . ,content)) messages))
-    (list (nreverse messages) tools)))
-
-(defun gt-chat-font-lock-string-with-markdown (str)
-  (with-temp-buffer
-    (let ((ori markdown-fontify-code-blocks-natively))
-      (unwind-protect
-          (progn
-            (setq markdown-fontify-code-blocks-natively t)
-            (markdown-mode)
-            (insert str)
-            (font-lock-ensure)
-            (buffer-string))
-        (setq markdown-fontify-code-blocks-natively ori)))))
+(defun gt-chat--pick-reference-text ()
+  "Yank content from last buffer."
+  (interactive)
+  (let* ((last-buffer (cl-find-if (lambda (b) (not (string-prefix-p " " (buffer-name b))))
+                                  (cdr (buffer-list))))
+         (cands (with-current-buffer last-buffer
+                  `(,(when (use-region-p)
+                       (cons 'region
+                             (buffer-substring
+                              (region-beginning)
+                              (region-end))))
+                    ,@(mapcar (lambda (thing) (if-let (s (thing-at-point thing)) (cons thing s)))
+                              (remove 'buffer gt-taker-text-things))
+                    ,(cons 'buffer (buffer-string)))))
+         (cands (mapcar (lambda (sc)
+                          (cons (propertize (format "%s" (car sc)) 'face 'bold)
+                                (replace-regexp-in-string "[\n\t ]+" " " (string-trim (cdr sc)))))
+                        (delq nil cands)))
+         (annotation (lambda (p) (concat (make-string (- 10 (length p)) ? ) (cdr (assoc p cands)))))
+         (table (lambda (input pred action)
+                  (if (eq action 'metadata)
+                      `(metadata
+                        (annotation-function . ,annotation)
+                        (display-sort-function . ,#'identity))
+                    (complete-with-action action cands input pred))))
+         (key (completing-read "Yank reference text: " table)))
+    (insert (cdr (assoc key cands)))))
 
 
+;;; Chat with LLM
 
 (defvar gt-chat-buffer-map
   (let ((map (make-sparse-keymap)))
@@ -287,8 +365,8 @@ Can also put into .authinfo file as:
     (define-key map (kbd "C-c C-p") #'gt-chat--switch-system-prompt)
     (define-key map (kbd "C-c C-r") #'gt-chat--set-current-render)
     (define-key map (kbd "C-c C-u") #'gt-chat--previous-message)
+    (define-key map (kbd "C-c C-y") #'gt-chat--pick-reference-text)
     (define-key map (kbd "M-m") #'gt-chat--back-to-indentation)
-    (define-key map (kbd "C-c TAB") #'outline-cycle-buffer)
     (define-key map (kbd "C-c <return>") #'gt-chat-send-current)
     map))
 
@@ -296,98 +374,62 @@ Can also put into .authinfo file as:
 
 (defvar gt-chat-buffer-window-config gt-buffer-prompt-window-config)
 
-(defun gt-chat--previous-message ()
-  (interactive)
-  (if (= 1 (line-number-at-pos))
-      (if (= (plist-get gt-chat-buffer-session :index) 0)
-          (message "Already at the most top position")
-        (let ((inhibit-read-only t) (offset (- (point-max) (point))))
-          (message "Loading...")
-          (gt-chat-sync-buffer-session gt-chat-buffer-session (buffer-string) 0)
-          (erase-buffer)
-          (gt-chat-load-session gt-chat-buffer-session)
-          (goto-char (- (point-max) offset))))
-    (when (looking-back "^<[AUSTR]> ")
-      (beginning-of-line)
-      (backward-char))
-    (if (re-search-backward "^<[AUSTR]> " nil t)
-        (goto-char (match-end 0))
-      (beginning-of-line))))
+(defvar gt-chat-engine-models '("gpt-3.5-turbo" "gpt-4o"))
 
-(defun gt-chat--back-to-indentation ()
-  (interactive)
-  (end-of-line)
-  (if (re-search-backward "^<[AUSTR]> " (line-beginning-position) t)
-      (goto-char (match-end 0))
-    (back-to-indentation)))
+;; Setup
 
 (defun gt-chat--set-current-render ()
   (interactive)
   (gt-set-render gt-chat-buffer-translator)
-  (force-mode-line-update))
-
-(defvar gt-chat-engine-models
-  '("gpt-3.5-turbo"
-    "gpt-4o"))
+  (gt-chat--update-mode-line))
 
 (defun gt-chat--config-engine ()
   (interactive)
   (let ((engine (car (oref gt-chat-buffer-translator engines))))
-    (unless (typep engine 'gt-chatgpt-engine)
+    (unless (cl-typep engine 'gt-chatgpt-engine)
       (user-error "Invalid engine found"))
     (with-slots (model temperature) engine
       (let ((nm (completing-read "Model to use: " gt-chat-engine-models nil t
                                  nil nil (or model gt-chatgpt-model)))
             (nt (read-number "Temperature as: " (or temperature gt-chatgpt-temperature))))
         (setf model nm temperature nt)
-        (force-mode-line-update)))))
-
-(defun gt-chat--current-system-prompt ()
-  (save-excursion
-    (goto-char (point-max))
-    (when-let (bd (and (re-search-backward "^<[0-9.]+:system> " nil t)
-                       (gt-chat-bound-of-current-message)))
-      (string-trim (buffer-substring-no-properties (cadr bd) (caddr bd))))))
+        (gt-chat--update-mode-line)))))
 
 (defvar gt-chat-system-prompt-history nil)
 
 (defun gt-chat--switch-system-prompt ()
   (interactive)
-  (let ((inhibit-read-only t)
-        (prompt (completing-read "System prompt to: "
-                                 (gt-make-completion-table
-                                  (cl-remove-duplicates
-                                   (delq nil
-                                         (append (list (gt-chat--current-system-prompt))
-                                                 gt-chat-system-prompt-history
-                                                 gt-chat-system-prompts))
-                                   :from-end t
-                                   :test #'string-equal))
-                                 nil nil nil 'gt-chat-system-prompt-history)))
-    (when (string-blank-p prompt)
-      (user-error "System prompt is required"))
-    (end-of-line)
-    (let ((current (gt-chat-bound-of-current-message)))
-      (if (string-prefix-p "<S>" (buffer-substring (car current) (cadr current)))
-          (goto-char (caddr current))
-        (goto-char (car current))))
-    (insert (format "\n<S> %s\n\n" prompt))
-    (let ((offset (save-excursion
-                    (skip-chars-backward " \t\n")
-                    (- (point-max) (point)))))
-      (gt-chat-sync-buffer-session gt-chat-buffer-session (buffer-string)
-                            (if (re-search-forward "^<S> " nil t) 0))
-      (erase-buffer)
-      (gt-chat-load-session gt-chat-buffer-session)
-      (goto-char (- (point-max) offset))
-      (unless (re-search-forward "^<[ASTR]>" nil t)
-        (goto-char (point-max))))))
+  (let* ((inhibit-read-only t)
+         (prompt (completing-read "System prompt to: "
+                                  (gt-make-completion-table
+                                   (cl-remove-duplicates
+                                    (delq nil
+                                          (append (list (gt-chat-current-system-prompt :content))
+                                                  gt-chat-system-prompt-history
+                                                  gt-chat-system-prompts))
+                                    :from-end t
+                                    :test #'string-equal))
+                                  nil nil nil 'gt-chat-system-prompt-history))
+         (system (if (string-blank-p prompt)
+                     (user-error "System prompt is required")
+                   (gt-chat-session-item :role 'system :content prompt)))
+         (current (gt-chat-parse (point))) offset)
+    (with-slots (role bound) current
+      (goto-char (if (eq role 'system) (caddr bound) (car bound)))
+      (insert "\n" (gt-chat-stringify system) "\n\n"))
+    (setq offset (save-excursion
+                   (skip-chars-backward " \t\n")
+                   (- (point-max) (point))))
+    (gt-chat-sync-buffer->session nil nil (oref system id))
+    (gt-chat-sync-session->buffer)
+    (goto-char (- (point-max) offset))
+    (unless (re-search-forward "^<[0-9.]+:[astr][a-z]+> " nil t)
+      (goto-char (point-max)))))
 
 (defun gt-chat--switch-session ()
   (interactive)
-  (gt-chat-sync-buffer-session gt-chat-buffer-session (buffer-string))
-  (let ((inhibit-read-only t)
-        (name (completing-read "Session to: "
+  (gt-chat-sync-buffer->session)
+  (let ((name (completing-read "Session to: "
                                (cl-remove (oref gt-chat-buffer-session name)
                                           (gt-chat-sessions)
                                           :key #'car :test #'equal)
@@ -398,21 +440,10 @@ Can also put into .authinfo file as:
             (if (assoc name (gt-chat-sessions))
                 (gt-chat-get-session name)
               (gt-chat-new-session name))))
-    (erase-buffer)
-    (gt-chat-load-session gt-chat-buffer-session)
-    (gt-chat--refresh-point)))
+    (gt-chat-sync-session->buffer)
+    (gt-chat--refresh-buffer-point)))
 
-(defun gt-chat-delete-current-session (session)
-  (interactive (list (gt-chat-get-session
-                      (completing-read "Session to delete: "
-                                       (gt-chat-sessions)
-                                       nil t nil nil
-                                       (if gt-chat-buffer-session (plist-get gt-chat-buffer-session :name))))))
-  (gt-plist-let session
-    (when (y-or-n-p (format "Delete session `%s' and remove all %s items?" .name (length .items)))
-      (gt-chat-del-session .path))
-    (when (equal .name (plist-get gt-chat-buffer-session :name))
-      (throw 'gt-chat-buffer-prompt nil))))
+;; Request and Response
 
 (defvar-local gt-chat-tracking-marker nil)
 
@@ -439,10 +470,10 @@ Can also put into .authinfo file as:
           (save-match-data
             (with-current-buffer buf
               (unless gt-chat-tracking-marker
-                (let ((inhibit-read-only t))
+                (let ((inhibit-read-only t)
+                      (role (if (or func-name func-args) 'tool 'assistant)))
                   (goto-char (point-max))
-                  (insert (format "\n\n<%s> " (if (or func-name func-args) "T" "A")))
-                  (save-excursion (gt-chat--property-messages))
+                  (insert "\n\n" (gt-chat-stringify (gt-chat-session-item :role role)))
                   (setq gt-chat-tracking-marker (point-marker)))))
             (cond
              ((equal finish-reason "tool_calls")
@@ -452,7 +483,7 @@ Can also put into .authinfo file as:
                   (let ((inhibit-read-only t))
                     (goto-char (point-max))
                     (insert (format "%s" (json-encode r)))
-                    (insert (format "\n\n<R> %s" r))
+                    (insert "\n\n" (gt-chat-stringify (gt-chat-session-item :role 'callback :content r)))
                     (let* ((obj (apply #'make-instance
                                        (intern-soft (alist-get 'name r))
                                        (cl-loop for (k . v) in (alist-get 'arguments r)
@@ -460,20 +491,20 @@ Can also put into .authinfo file as:
                            (rr (gt-eval obj))
                            (fc (format "%s: %s" (alist-get 'name r) rr)))
                       (insert fc "\n"))
-                    (gt-chat-sync-buffer-session gt-chat-buffer-session (buffer-string) t)
-                    (save-excursion (gt-chat--property-messages))
+                    (gt-chat-sync-buffer->session)
                     (gt-chat-send-current)))
                 (message "Done")))
              (finish-reason
               (with-current-buffer buf
-                (let ((inhibit-read-only t)
-                      (p (unless (eobp) (point))))
-                  (goto-char (point-max))
-                  (insert (format "\n\n<U> "))
+                (let* ((inhibit-read-only t)
+                       (p (unless (eobp) (point)))
+                       (item (gt-chat-parse (point-max)))
+                       (bound (oref item bound)))
+                  (delete-region (car bound) (caddr bound))
+                  (insert (gt-chat-stringify item))
+                  (insert "\n\n" (gt-chat-stringify (gt-chat-session-item :role 'user)))
                   (if p (goto-char p))
-                  (save-excursion
-                    (gt-chat-sync-buffer-session gt-chat-buffer-session (buffer-string) t)
-                    (gt-chat--property-messages)))
+                  (gt-chat-sync-buffer->session))
                 (message "Done")))
              ((or func-name func-args)
               (if func-name (setq gt-chat-func-name func-name))
@@ -485,8 +516,7 @@ Can also put into .authinfo file as:
                           (insert content)
                         (save-excursion
                           (goto-char (point-max))
-                          (insert content)))
-                      (save-excursion (gt-chat--property-messages t))))))))))
+                          (insert content)))))))))))
     (error (if (string-prefix-p "json" (format "%s" (car err)))
                (setq gt-chat-last-position (line-beginning-position))
              (signal (car err) (cdr err))))))
@@ -494,80 +524,92 @@ Can also put into .authinfo file as:
 (defun gt-chat-send-current ()
   (interactive)
   (message "Sending...")
-  (with-slots (engines bounds) gt-chat-buffer-translator
+  (with-slots (engines bag) gt-chat-buffer-translator
     (setq gt-chat-current-session gt-chat-buffer-session)
-    (gt-chat-sync-buffer-session gt-chat-buffer-session (buffer-string))
+    (gt-chat-sync-buffer->session)
     (setq gt-chat-tracking-marker nil)
     (let ((engine (car (ensure-list engines))))
       (gt-ensure-key engine)
       (with-slots (host key model temperature) engine
-        (pcase-let* ((`(,messages ,functions) (gt-chat-generate-reqeust-messages (buffer-string)))
-                     (req-headers `(("Content-Type" . "application/json")
-                                    ("Authorization" . ,(encode-coding-string (concat "Bearer " key) 'utf-8))))
-                     (req-data    `((model . ,(or model gt-chatgpt-model))
-                                    (temperature . ,(or temperature gt-chatgpt-temperature))
-                                    (stream . t)
-                                    (messages . ,(if (vectorp messages) messages (vconcat messages))))))
-          (cl-loop for f in functions
-                   for fd = (ignore-errors (gt-serialize (intern-soft f)))
-                   if fd collect `((type . function) (function . ,fd)) into fds
-                   finally (if fds (setq req-data `(,@req-data (tools . [,@fds])))))
+        (pcase-let* ((`(,messages ,functions) (gt-chat-req-messages gt-chat-current-session))
+                     (url (concat (or host gt-chatgpt-host) "/v1/chat/completions"))
+                     (headers `(("Content-Type" . "application/json")
+                                ("Authorization" . ,(encode-coding-string (concat "Bearer " key) 'utf-8))))
+                     (data    `((model       . ,(or model gt-chatgpt-model))
+                                (temperature . ,(or temperature gt-chatgpt-temperature))
+                                (messages    . ,(if (vectorp messages) messages (vconcat messages)))
+                                (stream      . t)))
+                     (fds (cl-loop for f in functions
+                                   for fd = (ignore-errors (gt-serialize (intern-soft f)))
+                                   if fd collect `((type . function) (function . ,fd))))
+                     (data (encode-coding-string (json-encode (append fds data)) 'utf-8)))
           (let ((gt-log-buffer-name "*gt-stream-log*"))
-            (gt-log 'openai-request 2 (pp-to-string req-data)))
-          (gt-request :url (concat (or host gt-chatgpt-host) "/v1/chat/completions")
-                      :headers req-headers
-                      :data (encode-coding-string (json-encode req-data) 'utf-8)
-                      :filter (lambda () (gt-chat-openai-filter (car bounds)))
-                      :done (lambda (raw)
-                              (let ((gt-log-buffer-name "*gt-stream-log*"))
-                                (gt-log 'openai-response 2 raw)))
+            (gt-log 'openai-request 2 (pp-to-string data)))
+          (gt-request :url url :headers headers :data data
+                      :filter (lambda () (gt-chat-openai-filter bag))
+                      :done (lambda (raw) (let ((gt-log-buffer-name "*gt-stream-log*")) (gt-log 'openai-response 2 raw)))
                       :fail (lambda (err) (signal 'user-error err))))))))
+
+(defun gt-chat--restore-prompt-buffer (translator)
+  (if (equal (buffer-name) gt-chat-buffer-name)
+      (progn (bury-buffer) (delete-window))
+    (with-slots (taker text bounds) translator
+      (let ((inhibit-read-only t)
+            (rs (ensure-list (gt-text taker translator))))
+        (if (stringp (car rs))
+            (setf bounds (list (current-buffer)))
+          (unless (bufferp (car rs))
+            (push (current-buffer) rs))
+          (setf bounds rs))
+        (setf text (gt-collect-text rs))
+        (with-current-buffer
+            (pop-to-buffer gt-chat-buffer-name gt-chat-buffer-window-config)
+          (gt-chat--update-mode-line)
+          (when (car text)
+            (goto-char (point-max))
+            (save-excursion (insert (car text)))))))))
 
 (cl-defmethod gt-start :around ((translator gt-chat-openai))
   "Make chat buffer can be toggle show."
-  (with-slots (taker) translator
+  (with-slots (text taker) translator
     (when (ignore-errors (eq (oref (gt-ensure-plain taker) prompt) 'buffer))
-      (if (and (cl-plusp (recursion-depth))
-               (buffer-live-p (get-buffer gt-chat-buffer-name)))
-          (if (equal (buffer-name) gt-chat-buffer-name)
-              (progn (bury-buffer) (delete-window))
-            (pop-to-buffer gt-chat-buffer-name gt-chat-buffer-window-config))
+      (if (and (cl-plusp (recursion-depth)) (buffer-live-p (get-buffer gt-chat-buffer-name)))
+          (gt-chat--restore-prompt-buffer translator)
         (cl-call-next-method translator)))))
 
 (cl-defmethod gt-prompt ((_taker gt-taker) (translator gt-chat-openai) (_ (eql 'buffer)))
-  (with-slots (text bounds target engines _engines) translator
+  (with-slots (text target bag engines _engines) translator
     (if (cdr text) (user-error "Multiple text cannot be prompted"))
     (unless engines (setf engines (ensure-list (gt-ensure-plain _engines))))
     (let* ((session (gt-chat-get-session (if gt-chat-current-session
                                              (oref gt-chat-current-session name)
                                            (caar (gt-chat-sessions)))))
-           (oldtext (or (car (gt-collect-bounds-to-text (ensure-list text))) ""))
+           (oldtext (or (car (gt-collect-text (ensure-list text))) ""))
            (newtext (gt-read-from-buffer
                      :buffer gt-chat-buffer-name
                      :catch 'gt-chat-buffer-prompt
                      :window-config gt-chat-buffer-window-config
+                     :window-no-restore t
                      :keymap gt-chat-buffer-map
-                     (setf bounds (list (current-buffer)))
-                     (gt-chat-load-session session oldtext)
+                     (setf bag (current-buffer))
                      (setq gt-chat-buffer-session session)
                      (setq gt-chat-buffer-translator gt-current-translator)
-                     (setq truncate-lines nil)
-                     (gt-chat--refresh-point))))
+                     (gt-chat-sync-session->buffer oldtext)
+                     (gt-chat--refresh-buffer-point)
+                     (setq truncate-lines nil))))
       (when (null newtext)
         (user-error ""))
       (when (zerop (length (string-trim newtext)))
         (user-error "Text should not be null, abort"))
-      (setf bounds nil)
-      (setf target (list nil (plist-get session :name)))
-      (gt-chat-sync-buffer-session session newtext)
+      (gt-chat-sync-buffer->session newtext session)
       (setq gt-chat-current-session session)
+      (setf target (list nil (oref session name)))
       (unless (equal oldtext newtext) (setf text (ensure-list newtext))))))
 
-(cl-defmethod gt-pick ((_ gt-taker) (translator gt-chat-openai))
-  "Do not pick for this TRANSLATOR."
-  (oref translator text))
+(cl-defmethod gt-pick ((_ gt-taker) (_translator gt-chat-openai)) 'ignore)
 
 
+;;; Function
 
 (defclass gt-chat-callback (gt-single) ()
   :documentation "Function tool."
