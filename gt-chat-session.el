@@ -38,7 +38,7 @@
 (cl-defmethod gt-chat-items ((session gt-chat-session))
   "Return the items available (should be displayed)."
   (with-slots (items top) session
-    (if-let (p (and top (cl-position-if (lambda (c) (equal (oref c id) top)) items)))
+    (if-let* ((p (and top (cl-position-if (lambda (c) (equal (oref c id) top)) items))))
         (cl-subseq items 0 (1+ p))
       items)))
 
@@ -100,14 +100,14 @@
 
 ;;; Stringify
 
-(cl-defgeneric gt-chat-transform (object &rest args))
-
 (cl-defgeneric gt-chat-stringify (object)
+  "Generate session OBJECT or item to string."
   (:method ((item gt-chat-session-item))
-           (gt-chat-transform item)
            (with-slots (id role content) item
              (concat (propertize (format "<%s:%s> " id role) 'face 'minibuffer-prompt) content)))
-  (:method ((session gt-chat-session)) (gt-chat-stringify (gt-chat-items session)))
+  (:method ((session gt-chat-session))
+           (gt-chat-stringify (gt-chat-items session)))
+  ;; for session item list
   (if (cl-every #'gt-chat-session-item-p object)
       (cl-loop for item in object
                collect (gt-chat-stringify item) into chats
@@ -148,10 +148,10 @@
       items)))
 
 (defun gt-chat-current-system-prompt (&optional content-only)
-  (when-let (item (save-excursion
-                    (goto-char (point-max))
-                    (when (re-search-backward "^<[0-9.]+:system> " nil t)
-                      (gt-chat-parse (point) t))))
+  (when-let* ((item (save-excursion
+                      (goto-char (point-max))
+                      (when (re-search-backward "^<[0-9.]+:system> " nil t)
+                        (gt-chat-parse (point) t)))))
     (if content-only (oref item content) item)))
 
 
@@ -160,7 +160,7 @@
 (cl-defmethod gt-chat-req-messages ((session gt-chat-session))
   ;; from system message or maybe set a limit?
   (let* ((items (gt-chat-items session)) messages tools)
-    (when-let (p (cl-position-if (lambda (c) (eq (oref c role) 'system)) items))
+    (when-let* ((p (cl-position-if (lambda (c) (eq (oref c role) 'system)) items)))
       (setq items (subseq items 0 (1+ p))))
     (dolist (item items)
       (with-slots (role content) item

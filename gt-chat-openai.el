@@ -155,7 +155,7 @@ Can also put into .authinfo file as:
                ((cl-every #'gt-chat-session-item-p obj) obj)
                (t (user-error "Content is not valid")))))
     (with-slots (items top) session
-      (setf items (append news (if-let (n (cl-position-if (lambda (c) (equal top (oref c id))) items)) (nthcdr (+ n 1) items))))
+      (setf items (append news (if-let* ((n (cl-position-if (lambda (c) (equal top (oref c id))) items))) (nthcdr (+ n 1) items))))
       (setf top (or topid (oref (car (last news)) id))))
     (gt-chat-session-save session)))
 
@@ -239,7 +239,7 @@ Can also put into .authinfo file as:
 (defun gt-chat--update-head-line ()
   (setq header-line-format
         `((:propertize ,(format " Chat with %s, Submit with C-c C-c, Cancel with C-c C-k"
-                                (if-let (k (car (where-is-internal #'gt-chat-send-current)))
+                                (if-let* ((k (car (where-is-internal #'gt-chat-send-current))))
                                     (key-description k) 'gt-chat-send-current))
                        face gt-chat-buffer-head-line-face))))
 
@@ -339,7 +339,7 @@ Can also put into .authinfo file as:
                              (buffer-substring
                               (region-beginning)
                               (region-end))))
-                    ,@(mapcar (lambda (thing) (if-let (s (thing-at-point thing)) (cons thing s)))
+                    ,@(mapcar (lambda (thing) (if-let* ((s (thing-at-point thing))) (cons thing s)))
                               (remove 'buffer gt-taker-text-things))
                     ,(cons 'buffer (buffer-string)))))
          (cands (mapcar (lambda (sc)
@@ -581,9 +581,11 @@ Can also put into .authinfo file as:
   (with-slots (text target bag engines _engines) translator
     (if (cdr text) (user-error "Multiple text cannot be prompted"))
     (unless engines (setf engines (ensure-list (gt-ensure-plain _engines))))
-    (let* ((session (gt-chat-get-session (if gt-chat-current-session
+    (let* ((session (let ((name (if gt-chat-current-session
                                              (oref gt-chat-current-session name)
-                                           (caar (gt-chat-sessions)))))
+                                  (caar (gt-chat-sessions)))))
+                      (if name (gt-chat-get-session name)
+                        (gt-chat-new-session (read-string "No session exists, create one with name: ")))))
            (oldtext (or (car (gt-collect-text (ensure-list text))) ""))
            (newtext (gt-read-from-buffer
                      :buffer gt-chat-buffer-name
