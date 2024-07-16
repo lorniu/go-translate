@@ -100,14 +100,14 @@
 
 ;;; Stringify
 
-(cl-defgeneric gt-chat-transform (object &rest args))
-
 (cl-defgeneric gt-chat-stringify (object)
+  "Generate session OBJECT or item to string."
   (:method ((item gt-chat-session-item))
-           (gt-chat-transform item)
            (with-slots (id role content) item
              (concat (propertize (format "<%s:%s> " id role) 'face 'minibuffer-prompt) content)))
-  (:method ((session gt-chat-session)) (gt-chat-stringify (gt-chat-items session)))
+  (:method ((session gt-chat-session))
+           (gt-chat-stringify (gt-chat-items session)))
+  ;; for session item list
   (if (cl-every #'gt-chat-session-item-p object)
       (cl-loop for item in object
                collect (gt-chat-stringify item) into chats

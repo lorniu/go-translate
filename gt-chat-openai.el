@@ -581,9 +581,11 @@ Can also put into .authinfo file as:
   (with-slots (text target bag engines _engines) translator
     (if (cdr text) (user-error "Multiple text cannot be prompted"))
     (unless engines (setf engines (ensure-list (gt-ensure-plain _engines))))
-    (let* ((session (gt-chat-get-session (if gt-chat-current-session
+    (let* ((session (let ((name (if gt-chat-current-session
                                              (oref gt-chat-current-session name)
-                                           (caar (gt-chat-sessions)))))
+                                  (caar (gt-chat-sessions)))))
+                      (if name (gt-chat-get-session name)
+                        (gt-chat-new-session (read-string "No session exists, create one with name: ")))))
            (oldtext (or (car (gt-collect-text (ensure-list text))) ""))
            (newtext (gt-read-from-buffer
                      :buffer gt-chat-buffer-name
