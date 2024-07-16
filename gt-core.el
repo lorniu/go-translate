@@ -528,6 +528,10 @@ That is: 1) define the translator 2) executable `gt-start'.")
 (cl-defgeneric gt-init (object &rest _args)
   "Initialization for OBJECT.")
 
+(cl-defgeneric gt-desc (object)
+  "Return the string representation of the OBJECT."
+  (format "%s" (eieio-object-class object)))
+
 
 ;;; Utility
 
@@ -884,7 +888,7 @@ TAG is a label for message being logged."
       (format ,(if (string-match-p "^[ \n]" fmt) fmt (concat "gt-" fmt))
               ,@(cl-loop
                  for o in objects collect
-                 `(let ((obj ,o)) (if (eieio-object-p obj) (eieio-object-class obj) obj))))
+                 `(let ((obj ,o)) (if (eieio-object-p obj) (gt-desc obj) obj))))
       'font-lock-doc-face)))
 
 
@@ -972,8 +976,8 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
   (with-slots (text src tgt engine parse) task
     (sha1 (format "%s:%s:%s:%s:%s:%s"
                   (nth (or n 0) (ensure-list text)) src tgt
-                  (eieio-object-class engine)
-                  (eieio-object-class (oref engine parse))
+                  (gt-desc engine)
+                  (gt-desc (oref engine parse))
                   (or (oref engine salt) "1")))))
 
 (cl-defmethod gt-cache-get (cacher (task gt-task))
@@ -995,7 +999,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 (defun gt-purge-cache (cacher)
   "Purge storage of CACHER."
   (interactive (list gt-default-cacher))
-  (when (y-or-n-p (format "Purge all caches from %s now?" (eieio-object-class cacher)))
+  (when (y-or-n-p (format "Purge all caches from %s now?" (gt-desc cacher)))
     (gt-cacher-barking)
     (gt-cache-purge (or cacher gt-default-cacher))
     (message "Cache purged.")))
@@ -1032,7 +1036,7 @@ Optional keyword arguments:
 It should return the process of this request."
   (:method :around ((client gt-http-client) &key url filter done fail data headers retry)
            (cl-assert (and url (or filter done)))
-           (let* ((tag (format "%s" (eieio-object-class client)))
+           (let* ((tag (gt-desc client))
                   (failfn (lambda (status)
                             (unless retry (setq retry gt-http-client-max-retry))
                             (if (and (string-match-p "Operation timeout" (format "%s" status)) (cl-plusp retry))
@@ -1064,7 +1068,7 @@ It should return the process of this request."
            (ignore retry)
            (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
              (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
-                 (let* ((tag (format "%s" (eieio-object-class client)))
+                 (let* ((tag (gt-desc client))
                         (data (gt-format-params data))
                         (ckey (sha1 (format "%s%s" url data)))
                         (donefn (when done
@@ -1602,7 +1606,7 @@ If BACKWARDP is not nil then switch to previous one."
 
 (cl-defmethod initialize-instance :after ((engine gt-engine) &rest _)
   (unless (slot-boundp engine 'tag)
-    (oset engine tag (eieio-object-class engine))))
+    (oset engine tag (gt-desc engine))))
 
 (cl-defmethod gt-init ((engine gt-engine) task)
   "Preprocessing text in TASK for ENGINE. Try cache first if possible."
@@ -1632,7 +1636,7 @@ will do the parse and render job. See type `gt-engine' for more description."
            (gt-init engine task)
            (with-slots (id text err res render translator process) task
              (unless (or res err)
-               (gt-log 'next (format "%s: %s prepare to translate" id (eieio-object-class engine)))
+               (gt-log 'next (format "%s: %s prepare to translate" id (gt-desc engine)))
                (let ((ret (cl-call-next-method
                            engine task
                            (lambda (task)
@@ -1640,15 +1644,15 @@ will do the parse and render job. See type `gt-engine' for more description."
                                  (condition-case err1
                                      (if (gt-stream-p engine)
                                          (if gt-http-client-stream-abort-flag
-                                             (gt-log 'next (format "%s: %s translate streaming abort!" id (eieio-object-class engine)))
+                                             (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-desc engine)))
                                            (gt-next-for-stream render task))
-                                       (gt-log 'next (format "%s: %s translate success!" id (eieio-object-class engine)))
+                                       (gt-log 'next (format "%s: %s translate success!" id (gt-desc engine)))
                                        (gt-next engine task))
                                    (gt-fail task err1))
                                (gt-log 'next (format "%s: ----- expired -----" id)))))))
                  (if (processp ret) (setf process ret))))))
   (:method ((engine gt-engine) _task _next)
-           (user-error "Method `gt-translate' of %s is not implement" (eieio-object-class engine))))
+           (user-error "Method `gt-translate' of %s is not implement" (gt-desc engine))))
 
 (cl-defgeneric gt-parse (_parser task)
   "Parse results of TASK to user-friendly string."
@@ -1886,7 +1890,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
   (condition-case err
       (progn (cl-call-next-method render translator)
              (gt-update-state translator))
-    (error (gt-log 'render (format "%s initialize failed, abort" (eieio-object-class render)))
+    (error (gt-log 'render (format "%s initialize failed, abort" (gt-desc render)))
            (user-error (format "[output init error] %s" err)))))
 
 (cl-defmethod gt-init ((_render gt-render) _translator)
@@ -1945,7 +1949,7 @@ Output to minibuffer by default."
                                ((and (eieio-object-p then) (object-of-class-p then 'gt-render))
                                 (gt-init then translator)
                                 (gt-output then translator))
-                               (t (error "Bad then value specified in %s" (eieio-object-class render))))))
+                               (t (error "Bad then value specified in %s" (gt-desc render))))))
                    (error (setf state 4)
                           (message "[output error] %s" (cadr err))))))))
   (:method ((render gt-render) translator)
@@ -1969,7 +1973,7 @@ Output to minibuffer by default."
       (when (= state 0)
         (setf tasks (append tasks (list task)))
         (gt-log (format "%d" (length tasks))
-          (format "add task %s: (%s/%s)" id (eieio-object-class engine) (eieio-object-class render)))))))
+          (format "add task %s: (%s/%s)" id (gt-desc engine) (gt-desc render)))))))
 
 (defun gt-update-state (translator)
   "Update state for TRANSLATOR."
@@ -1981,7 +1985,7 @@ Output to minibuffer by default."
          (setf state 1)))
       (1
        (gt-log 'translator
-         (format "<2> %s prepared" (eieio-object-class render)))
+         (format "<2> %s prepared" (gt-desc render)))
        (setf state 2))
       (2
        (when (= total (length (cl-remove-if-not (lambda (task) (or (oref task err) (oref task res))) tasks)))
@@ -2045,9 +2049,9 @@ Output to minibuffer by default."
     ;; log
     (gt-log 'translator (format "version: %s\ntarget: %s\nbounds: %s\ntext: %s\ntaker: %s, engines: %s, render: %s"
                                 version target bounds text
-                                (eieio-object-class taker)
+                                (gt-desc taker)
                                 (mapcar (lambda (en) (oref en tag)) engines)
-                                (eieio-object-class render)))))
+                                (gt-desc render)))))
 
 (cl-defgeneric gt-start (translator)
   "Start a new translation with TRANSLATOR."

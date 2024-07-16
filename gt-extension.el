@@ -816,6 +816,9 @@ Otherwise, join the results use the default logic."
                              (list (string-join (ensure-list res) "\n")))))))
       (gt-insert-text-at-marker insert-text beg end))))
 
+(cl-defmethod gt-desc ((render gt-insert-render))
+  (format "gt-insert-render/%s" (oref render type)))
+
 
 ;;; [Render] Render with Overlay
 
@@ -957,7 +960,7 @@ Otherwise, join the results use the default logic."
 (cl-defmethod gt-init ((render gt-overlay-render) translator)
   (with-slots (bounds state) translator
     (unless (cdr bounds)
-      (error "%s only works for buffer bounds, abort" (eieio-object-class render)))
+      (error "%s only works for buffer bounds, abort" (gt-desc render)))
     (unless (buffer-live-p (car bounds))
       (error "Source buffer is unavailable, abort"))))
 
@@ -1007,6 +1010,9 @@ Otherwise, join the results use the default logic."
                    finally (if (cddr bounds) (goto-char start)))
           (deactivate-mark)
           (message "ok."))))))
+
+(cl-defmethod gt-desc ((render gt-overlay-render))
+  (format "gt-overlay-render/%s" (oref render type)))
 
 
 ;;; [Render] Alert Render

@@ -229,12 +229,12 @@ will be used as the default translator."
       (list (desc1 taker (if (consp taker) (format "%s" taker)
                            (cl-flet ((desc2 (slot) (when (slot-boundp taker slot)
                                                      (format "%s: %s" slot (slot-value taker slot)))))
-                             (format "<%s> %s" (eieio-object-class taker)
+                             (format "<%s> %s" (gt-desc taker)
                                      (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", ")))))
             (desc1 engines (mapconcat (lambda (en) (concat (format "%s" (oref en tag)) (if (gt-stream-p en) " (stream)")))
                                       (ensure-list (gt-ensure-plain engines)) ", "))
             (desc1 render (if (consp render) (format "%s" render)
-                            (format "<%s>" (eieio-object-class (gt-ensure-plain render)))))))))
+                            (gt-desc (gt-ensure-plain render))))))))
 
 (defun gt-set-taker (&optional translator taker)
   "Set TRANSLATOR's TAKER to one from `gt-preset-takers'."

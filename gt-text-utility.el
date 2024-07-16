@@ -53,7 +53,7 @@
     (unless _engines (setf _engines (gt-text-utility-engine)))
     (setf _engines (ensure-list _engines))
     (unless (and (not (cdr _engines)) (cl-typep (car _engines) 'gt-text-utility-engine))
-      (user-error "%s should use only one gt-text-utility-engine as engine" (eieio-object-class translator)))))
+      (user-error "%s should use only one gt-text-utility-engine as engine" (gt-desc translator)))))
 
 (cl-defmethod gt-target ((taker gt-taker) (_ gt-text-utility) &rest _)
   (let ((tgts (if (slot-boundp taker 'langs)
