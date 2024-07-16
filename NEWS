@@ -1,3 +1,6 @@
+Version 3.0.8
+  - Remove compact code, no longer support v2
+
 Version 3.0.7
   - Abstract trait `gt-validator` to make taker/render support :if slot
 

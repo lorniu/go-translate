@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.7
+;; Version: 3.0.8
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -73,11 +73,6 @@
 (require 'gt-engine-echo)
 (require 'gt-text-utility)
 
-;; Compat old version
-(ignore-errors
-  (add-to-list 'load-path (expand-file-name "v2" (file-name-directory (or load-file-name (buffer-file-name)))))
-  (require 'go-translate-v2))
-
 ;;; Mask these commands in M-x
 (dolist (cmd '(gt-prompt-next-target
                gt-buffer-render--cycle-next
@@ -92,7 +87,7 @@
                gt-posframe-render-auto-close-handler
                gt-stardict-switch-dict
                gt-overlay-render-save-to-kill-ring))
-  (put cmd 'completion-predicate (lambda (&rest _) nil)))
+  (put cmd 'completion-predicate #'ignore))
 
 
 ;;; Presets

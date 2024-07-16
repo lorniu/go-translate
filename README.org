@@ -2,14 +2,6 @@
 
 * Go Translate
 
-#+begin_quote
-*Breaking changes!!!*
-
-*A new version v3 is released, and many APIs are changed. Please read the document and migrate your config.*
-
-*The old APIs will be removed in the near future.*
-#+end_quote
-
 This is a translation framework on Emacs, with high configurability and extensibility.
 
 [[README-zh.org][点击查看《中文版文档》]]
