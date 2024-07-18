@@ -404,7 +404,7 @@ TAG is extra message show in the middle if not nil."
   "Define keybinds for `gt-buffer-render-local-map'."
   (gt-buffer-render-key ("t" "Cycle Next")        #'gt-buffer-render--cycle-next)
   (gt-buffer-render-key ("T" "Toggle Polyglot")   #'gt-buffer-render--toggle-polyglot)
-  (gt-buffer-render-key ("y" "TTS")               #'gt-do-speak)
+  (gt-buffer-render-key ("y" "TTS")               (lambda () (interactive) (let (gt-tts-last-engine) (gt-do-speak))))
   (gt-buffer-render-key ("O" "Browser")           #'gt-buffer-render--browser)
   (gt-buffer-render-key ("c" "Del Cache")         #'gt-buffer-render--delete-cache)
   (gt-buffer-render-key ("C")                     #'gt-purge-cache)

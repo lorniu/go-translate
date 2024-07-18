@@ -1859,7 +1859,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
               ;; 2. play current task
               (setq engine (oref task engine))
               (unless (cl-find-method #'gt-speak '() `(,(eieio-object-class engine) t t))
-                (user-error "No TTS service found at point"))
+                (user-error "No TTS service found on current engine `%s'" (oref engine tag)))
               (let ((part (or (get-char-property (point) 'gt-part) 0))
                     (col (lambda (l c) (push (format "%s. %s" l (substring-no-properties c)) items))))
                 (if (use-region-p)
@@ -1870,7 +1870,9 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                   (when-let (r (and (not err) (or (get-pos-property (point) 'gt-brief) (nth part (ensure-list res)))))
                     (funcall col tgt r)))
                 (when items
-                  (let* ((cand (completing-read "Text to Speech: " (gt-make-completion-table items)))
+                  (let* ((cand (completing-read
+                                (format "Text to Speech (with %s): " (oref engine tag))
+                                (gt-make-completion-table items)))
                          (lang (if (string-match (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")) cand)
                                    (prog1 (intern-soft (match-string 1 cand))
                                      (setq cand (substring cand (match-end 0))))
