@@ -891,7 +891,13 @@ If called interactively, delete overlays around point or in region. With
 `current-prefix-arg' non nil, delete all overlays in the buffer."
   (interactive (cond (current-prefix-arg (list (point-min) (point-max)))
                      ((use-region-p) (list (region-beginning) (region-end)))
-                     (t (list (point) nil))))
+                     (t (list
+                         (if (and (> (point) 1) ; for overlay before point
+                                  (not (gt-overlay-render-get-overlays (point)))
+                                  (gt-overlay-render-get-overlays (1- (point))))
+                             (1- (point))
+                           (point))
+                         nil))))
   (mapc #'delete-overlay (gt-overlay-render-get-overlays beg end)))
 
 (defun gt-overlay-render-save-to-kill-ring ()
@@ -976,6 +982,7 @@ Otherwise, join the results use the default logic."
                                      (types '(help-echo replace after before)))
                                  (if (memq type types) type
                                    (intern (completing-read "Display with overlay as: " types nil t))))
+                   with hooks = `((lambda (o &rest _) (delete-overlay o)))
                    for (beg . end) in (cdr bounds) for i from 0
                    do (save-excursion
                         (goto-char beg)
@@ -986,27 +993,30 @@ Otherwise, join the results use the default logic."
                         (setq end (point)))
                    do (gt-delete-render-overlays beg end)
                    for src = (buffer-substring beg end)
-                   do (goto-char end)
-                   for fres = (gt-overlay-render-format
-                               render src
-                               (mapcar (lambda (tr) (nth i (plist-get tr :result))) ret)
-                               (mapcar (lambda (tr) (plist-get tr :prefix)) ret))
-                   for ov = (make-overlay beg (point) nil t)
-                   do (let* ((sface (oref render sface))
-                             (sface (unless (eq type 'replace) (gt-ensure-plain sface src))))
-                        (pcase type
-                          ('help-echo (overlay-put ov 'help-echo fres))
-                          ('after (overlay-put ov 'after-string fres))
-                          ('before (overlay-put ov 'before-string fres)))
-                        (overlay-put ov 'gt fres)
-                        (overlay-put ov 'evaporate t)
-                        (overlay-put ov 'pointer 'arrow)
-                        (overlay-put ov 'modification-hooks `((lambda (o &rest _) (delete-overlay o))))
-                        (overlay-put ov 'keymap gt-overlay-render-map)
-                        (if (eq type 'replace)
-                            (progn (overlay-put ov 'display fres)
-                                   (overlay-put ov 'help-echo src))
-                          (if sface (overlay-put ov 'face sface))))
+                   do (save-excursion
+                        (goto-char end)
+                        (let* ((ov (make-overlay beg (point) nil t t))
+                               (fres (gt-overlay-render-format
+                                      render src
+                                      (mapcar (lambda (tr) (nth i (plist-get tr :result))) ret)
+                                      (mapcar (lambda (tr) (plist-get tr :prefix)) ret)))
+                               (sface (oref render sface))
+                               (sface (unless (eq type 'replace) (gt-ensure-plain sface src))))
+                          (pcase type
+                            ('help-echo (overlay-put ov 'help-echo fres))
+                            ('after (overlay-put ov 'after-string fres))
+                            ('before (overlay-put ov 'before-string fres)))
+                          (overlay-put ov 'gt fres)
+                          (overlay-put ov 'evaporate t)
+                          (overlay-put ov 'pointer 'arrow)
+                          (overlay-put ov 'insert-in-front-hooks hooks)
+                          (overlay-put ov 'insert-behind-hooks hooks)
+                          (overlay-put ov 'modification-hooks hooks)
+                          (overlay-put ov 'keymap gt-overlay-render-map)
+                          (if (eq type 'replace)
+                              (progn (overlay-put ov 'display fres)
+                                     (overlay-put ov 'help-echo src))
+                            (if sface (overlay-put ov 'face sface)))))
                    finally (if (cddr bounds) (goto-char start)))
           (deactivate-mark)
           (message "ok."))))))
