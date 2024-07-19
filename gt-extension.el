@@ -1163,7 +1163,7 @@ target, engines and render in the buffer for the following translation."
           (buf (or (get-buffer bufname)
                    (progn
                      (unless (file-exists-p gt-ripe-words-file)
-                       (write-region 1 1 gt-ripe-words-file))
+                       (write-region (point-min) (point-min) gt-ripe-words-file))
                      (find-file-noselect gt-ripe-words-file)))))
      (with-current-buffer buf
        (unless (equal (buffer-name) bufname)
