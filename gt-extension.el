@@ -33,81 +33,6 @@
 (require 'gt-faces)
 
 
-;;; [Http Client] request with curl instead of `url.el'
-
-;; implements via package `plz', you should install it before use this
-
-(defclass gt-plz-http-client (gt-http-client)
-  ((extra-args
-    :initarg :args
-    :type list
-    :documentation "Extra arguments passed to curl programe.")))
-
-(defvar plz-curl-program)
-(defvar plz-curl-default-args)
-(defvar plz-http-end-of-headers-regexp)
-
-(declare-function plz "ext:plz.el" t t)
-(declare-function plz-error-message "ext:plz.el" t t)
-(declare-function plz-error-curl-error "ext:plz.el" t t)
-(declare-function plz-error-response "ext:plz.el" t t)
-(declare-function plz-response-status "ext:plz.el" t t)
-(declare-function plz-response-body "ext:plz.el" t t)
-
-(defvar gt-plz-initialize-error-message
-  "\n\nTry to install curl and specify the program like this to solve the problem:\n
-  (setq plz-curl-program \"c:/msys64/usr/bin/curl.exe\")\n
-Or switch http client to `gt-url-http-client' instead:\n
-  (setq gt-default-http-client (gt-url-http-client))")
-
-(cl-defmethod gt-request :before ((_ gt-plz-http-client) &rest _)
-  (unless (and (require 'plz nil t) (executable-find plz-curl-program))
-    (error "You should have `plz.el' and `curl' installed before using `gt-plz-http-client'")))
-
-(cl-defmethod gt-request ((client gt-plz-http-client) &key url filter done fail data headers retry)
-  (ignore retry)
-  (let ((plz-curl-default-args
-         (if (slot-boundp client 'extra-args)
-             (append (oref client extra-args) plz-curl-default-args)
-           plz-curl-default-args)))
-    (plz (if data 'post 'get) url
-      :headers (cons `("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) headers)
-      :body data
-      :as 'string
-      :filter (when filter
-                (lambda (proc string)
-                  (with-current-buffer (process-buffer proc)
-                    (save-excursion
-                      (goto-char (point-max))
-                      (insert string)
-                      (goto-char (point-min))
-                      (when (re-search-forward plz-http-end-of-headers-regexp nil t)
-                        (save-restriction
-                          (narrow-to-region (point) (point-max))
-                          (funcall filter)))))))
-      :then (lambda (raw)
-              (when done (funcall done raw)))
-      :else (lambda (err)
-              (let ((ret ;; try to compat with error object of url.el, see `url-retrieve' for details
-                     (or (plz-error-message err)
-                         (when-let (r (plz-error-curl-error err))
-                           (list 'curl-error
-                                 (concat (format "%s" (or (cdr r) (car r)))
-                                         (pcase (car r)
-                                           (2 (when (memq system-type '(cygwin windows-nt ms-dos))
-                                                gt-plz-initialize-error-message))))))
-                         (when-let (r (plz-error-response err))
-                           (list 'http (plz-response-status r) (plz-response-body r))))))
-                (if fail (funcall fail ret)
-                  (signal 'user-error ret)))))))
-
-;; Prefer plz/curl as backend
-
-(when (and (null gt-default-http-client)
-           (and (require 'plz nil t) (executable-find plz-curl-program)))
-  (setq gt-default-http-client (gt-plz-http-client)))
-
-
 ;;; [Render] buffer render
 
 (defclass gt-buffer-render (gt-render)
