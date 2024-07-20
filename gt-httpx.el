@@ -55,6 +55,14 @@ DATA should be list of (key . value)."
                          (url-hexify-string (format "%s" (or (cdr arg) 1)))))
                (delq nil data) "&")))
 
+(defun gt-http-binary-p (content-type)
+  "Check if current CONTENT-TYPE is binary."
+  (if (null content-type) nil
+    (cl-destructuring-bind (mime sub) (string-split content-type "/" nil "[ \n\r\t]")
+      (not (or (equal mime "text")
+               (and (equal mime "application")
+                    (string-match-p "json\\|xml\\|php" sub)))))))
+
 
 ;;; Http Client
 
@@ -136,8 +144,8 @@ If request async, return the process behind the request."
     :documentation "Proxy services passed to `url.el', see `url-proxy-services' for details."))
   :documentation "Http Client implemented using `url.el'.")
 
+(defvar url-http-content-type)
 (defvar url-http-end-of-headers)
-
 (defvar url-http-transfer-encoding)
 
 (defvar gt-url-extra-filter nil)
@@ -160,30 +168,29 @@ If request async, return the process behind the request."
          (url-request-extra-headers headers)
          (url-request-method (upcase (format "%s" method)))
          (url-request-data data)
-         (url-mime-encoding-string "identity"))
+         (url-mime-encoding-string "identity")
+         (get-content (lambda ()
+                        (set-buffer-multibyte (not (gt-http-binary-p url-http-content-type)))
+                        (buffer-substring-no-properties (min (1+ url-http-end-of-headers) (point-max)) (point-max)))))
     ;; sync
     (if sync
         (condition-case err
             (with-current-buffer (url-retrieve-synchronously url nil t)
               (unwind-protect
-                  (let ((s (buffer-substring-no-properties url-http-end-of-headers (point-max))))
-                    (if done (funcall done s) s))
+                  (let ((s (funcall get-content))) (if done (funcall done s) s))
                 (kill-buffer (current-buffer))))
           (error (if fail (funcall fail err) (signal 'user-error (cdr err)))))
       ;; async
       (let ((buf (url-retrieve url
                                (lambda (status)
                                  (let ((cb (current-buffer)))
-                                   (set-buffer-multibyte t)
                                    (remove-hook 'after-change-functions #'gt-url-http-extra-filter t)
                                    (unwind-protect
                                        (if-let (err (or (cdr-safe (plist-get status :error))
                                                         (when (or (null url-http-end-of-headers) (= 1 (point-max)))
                                                           "Nothing responsed from server")))
-                                           (if fail (funcall fail err)
-                                             (signal 'user-error err))
-                                         (when done
-                                           (funcall done (buffer-substring-no-properties url-http-end-of-headers (point-max)))))
+                                           (if fail (funcall fail err) (signal 'user-error err))
+                                         (if done (funcall done (funcall get-content))))
                                      (kill-buffer cb))))
                                nil t)))
         (when (and filter (buffer-live-p buf))
@@ -214,6 +221,7 @@ If request async, return the process behind the request."
 (declare-function plz-error-response "ext:plz.el" t t)
 (declare-function plz-response-status "ext:plz.el" t t)
 (declare-function plz-response-body "ext:plz.el" t t)
+(declare-function plz--narrow-to-body "ext:plz.el" t t)
 
 (defvar gt-plz-initialize-error-message
   "\n\nTry to install curl and specify the program like this to solve the problem:\n
@@ -227,19 +235,27 @@ Or switch http client to `gt-url-http-client' instead:\n
 
 (cl-defmethod gt-request ((client gt-plz-http-client) &key url method headers data filter done fail sync retry)
   (ignore retry)
-  (let ((plz-curl-default-args
-         (if (slot-boundp client 'extra-args)
-             (append (oref client extra-args) plz-curl-default-args)
-           plz-curl-default-args))
-        (headers (cons `("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) headers)))
+  (let ((plz-curl-default-args (if (slot-boundp client 'extra-args)
+                                   (append (oref client extra-args) plz-curl-default-args)
+                                 plz-curl-default-args))
+        (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
+                            (widen)
+                            (let* ((content-type (mail-fetch-field "content-type"))
+                                   (binaryp (gt-http-binary-p content-type)))
+                              (set-buffer-multibyte (not binaryp))
+                              (goto-char (point-min))
+                              (plz--narrow-to-body)
+                              (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
+                              (buffer-string))))
+        (headers `(("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) ,@headers)))
     ;; sync
     (if sync
         (condition-case err
-            (let ((r (plz method url :headers headers :body data :as 'string)))
+            (let ((r (plz method url :headers headers :body data :as string-or-binary :decode nil :then 'sync)))
               (if done (funcall done r) r))
           (error (if fail (funcall fail err) (signal 'user-error (cdr err)))))
       ;; async
-      (plz method url :headers headers :body data :as 'string
+      (plz method url :headers headers :body data :as string-or-binary :decode nil
         :filter (when filter
                   (lambda (proc string)
                     (with-current-buffer (process-buffer proc)
