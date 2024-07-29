@@ -1,4 +1,4 @@
-;;; gt-httpx.el --- Http Client Components -*- lexical-binding: t -*-
+;;; gt-httpx.el --- Http Client -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2024 lorniu <lorniu@gmail.com>
 ;; Author: lorniu <lorniu@gmail.com>
@@ -30,30 +30,22 @@
 ;;  - Support streaming request
 ;;  - Support retry for timeout
 ;;  - Support config proxies for backends
-;;  - Support file upload/download (TODO)
+;;  - Support file upload/download
 ;;
 
 ;;; Code:
 
 (require 'cl-lib)
-(require 'url)
 (require 'eieio)
+(require 'url)
 
-(declare-function gt-log "ext:gt-core")
-(declare-function gt-single--eieio-childp "ext:gt-core")
+(if (fboundp 'gt-log)
+    (declare-function gt-log "ext:gt-core")
+  (defalias 'gt-log 'ignore))
 
-(unless (fboundp 'gt-single) ; suppress compiler error
+(if (fboundp 'gt-single)
+    (declare-function gt-single--eieio-childp "ext:gt-core")
   (defclass gt-single () () :abstract t))
-
-(defun gt-format-params (data)
-  "Format DATA to k=v style query string.
-DATA should be list of (key . value)."
-  (if (or (null data) (stringp data)) data
-    (mapconcat (lambda (arg)
-                 (format "%s=%s"
-                         (url-hexify-string (format "%s" (car arg)))
-                         (url-hexify-string (format "%s" (or (cdr arg) 1)))))
-               (delq nil data) "&")))
 
 (defun gt-http-binary-p (content-type)
   "Check if current CONTENT-TYPE is binary."
@@ -62,6 +54,39 @@ DATA should be list of (key . value)."
       (not (or (equal mime "text")
                (and (equal mime "application")
                     (string-match-p "json\\|xml\\|php" sub)))))))
+
+(defun gt-format-params (alist)
+  "Format ALIST to k=v style query string."
+  (mapconcat (lambda (arg)
+               (format "%s=%s"
+                       (url-hexify-string (format "%s" (car arg)))
+                       (url-hexify-string (format "%s" (or (cdr arg) 1)))))
+             (delq nil alist) "&"))
+
+(defvar gt-multipart-boundary "gt-boundary-O0o0O69Oo")
+
+(defun gt-format-formdata (alist)
+  "Generate multipart/formdata string from ALIST."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (cl-loop for (key . value) in alist for i from 1
+             for filep = nil for contentype = nil
+             do (setq key (format "%s" key))
+             do (if (consp value) ; ((afile "~/aaa.jpg" "image/jpeg"))
+                    (setq contentype (or (cadr value) "application/octet-stream")
+                          value (format "%s" (car value)) filep t)
+                  (setq value (format "%s" value)))
+             for newline = "\r\n"
+             do (insert "--" gt-multipart-boundary newline)
+             if filep do (let ((fn (url-encode-url (url-file-nondirectory value))))
+                           (insert "Content-Disposition: form-data; name=\"" key "\" filename=\"" fn "\"" newline)
+                           (insert "Content-Type: " contentype newline newline)
+                           (insert-file-contents-literally value)
+                           (goto-char (point-max)))
+             else do (insert "Content-Disposition: form-data; name=\"" key "\"" newline newline value)
+             if (< i (length alist)) do (insert newline)
+             else do (insert newline "--" gt-multipart-boundary "--"))
+    (buffer-substring-no-properties (point-min) (point-max))))
 
 
 ;;; Http Client
@@ -81,29 +106,28 @@ DATA should be list of (key . value)."
 (cl-defgeneric gt-request (http-client &rest _args &key url method headers data filter done fail sync retry &allow-other-keys)
   "Send HTTP request using the given HTTP-CLIENT.
 
-Optional keyword arguments:
+Keyword arguments:
   - URL: The URL to send the request to.
-  - METHOD: Request method. If nil guess by data.
-  - HEADERS: Additional headers to include in the request.
-  - DATA: The data to include in the request.
+  - METHOD: Request method, symbol like \\='post. If nil guess by data.
+  - HEADERS: Additional headers to include in the request. Alist.
+  - DATA: The data to include in the request. If this is a string, it will be
+          sent directly as request body. If this is a list and every element
+          is (key . value) then this will be joined to a string like a=1&b=2 and
+          then be sent. If this is a list and some element is (key filename)
+          format, then the list will be normalized as multipart formdata string
+          and be sent.
   - FILTER: A function to be called every time when some data returned.
   - DONE: A function to be called when the request succeeds.
   - FAIL: A function to be called when the request fails.
-  - RETRY: how many times it can retry for timeout
-  - SYNC: non-nil means request synchronized
+  - RETRY: How many times it can retry for timeout. Number.
+  - SYNC: Non-nil means request synchronized. Boolean.
 
 If request async, return the process behind the request."
-  (:method :around ((client gt-http-client) &rest args &key url method headers data filter done fail sync retry)
+  (:method :around ((client gt-http-client) &rest args &key url method _headers data filter done fail sync retry)
            ;; normalize and validate
            (if (and (null filter) (null done)) (setq sync t args `(:sync t ,@args)))
            (cl-assert (and url (or (and sync (not filter)) (and (not sync) (or filter done)))))
            (if (null method) (setq args `(:method ,(if data 'post 'get) ,@args)))
-           (if (listp data) (setq data (gt-format-params data) args `(:data ,data ,@args)))
-           ;; log
-           (gt-log (eieio-object-class client)
-             (format "> %s\n> %s" client url)
-             (if headers (format "> HEADER: %s" headers))
-             (if data (format "> DATA:   %s" data)))
            ;; sync
            (if sync (apply #'cl-call-next-method client args)
              ;; async
@@ -165,20 +189,36 @@ If request async, return the process behind the request."
          (message-log-max nil)
          (url-user-agent (or (oref client user-agent) gt-user-agent))
          (url-proxy-services (or (oref client proxy-services) url-proxy-services))
-         (url-request-extra-headers headers)
-         (url-request-method (upcase (format "%s" method)))
-         (url-request-data data)
+         (formdatap (and (consp data)
+                         (or (string-match-p "multipart/formdata"
+                                             (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
+                             (cl-some (lambda (x) (consp (cdr x))) data))))
+         (url-request-data (funcall (if (atom data) #'identity ; string
+                                      (if formdatap #'gt-format-formdata #'gt-format-params)) ; alist
+                                    data))
+         (url-request-extra-headers (progn
+                                      (when formdatap
+                                        (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
+                                              (concat "multipart/form-data; boundary=" gt-multipart-boundary)))
+                                      headers))
+         (url-request-method (string-to-unibyte (upcase (format "%s" method))))
          (url-mime-encoding-string "identity")
-         (get-content (lambda ()
-                        (set-buffer-multibyte (not (gt-http-binary-p url-http-content-type)))
-                        (buffer-substring-no-properties (min (1+ url-http-end-of-headers) (point-max)) (point-max)))))
+         (get-resp-content (lambda ()
+                             (set-buffer-multibyte (not (gt-http-binary-p url-http-content-type)))
+                             (buffer-substring-no-properties (min (1+ url-http-end-of-headers) (point-max)) (point-max)))))
+    ;; log
+    (gt-log (eieio-object-class client)
+      (format "> %s\n> %s" client url)
+      (if url-request-extra-headers (format "> HEADER: %S" url-request-extra-headers))
+      (if url-request-data (format "> DATA:   %s" url-request-data)))
     ;; sync
     (if sync
         (condition-case err
-            (with-current-buffer (url-retrieve-synchronously url nil t)
+            (let ((buf (url-retrieve-synchronously url nil t)))
               (unwind-protect
-                  (let ((s (funcall get-content))) (if done (funcall done s) s))
-                (kill-buffer (current-buffer))))
+                  (with-current-buffer buf
+                    (let ((s (funcall get-resp-content))) (if done (funcall done s) s)))
+                (ignore-errors (kill-buffer buf))))
           (error (if fail (funcall fail err) (signal 'user-error (cdr err)))))
       ;; async
       (let ((buf (url-retrieve url
@@ -188,9 +228,9 @@ If request async, return the process behind the request."
                                    (unwind-protect
                                        (if-let (err (or (cdr-safe (plist-get status :error))
                                                         (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                                          "Nothing responsed from server")))
+                                                          (list 'empty-response "Nothing responsed from server"))))
                                            (if fail (funcall fail err) (signal 'user-error err))
-                                         (if done (funcall done (funcall get-content))))
+                                         (if done (funcall done (funcall get-resp-content))))
                                      (kill-buffer cb))))
                                nil t)))
         (when (and filter (buffer-live-p buf))
@@ -200,9 +240,9 @@ If request async, return the process behind the request."
         (get-buffer-process buf)))))
 
 
-;;; request with curl implemented via package `plz.el'
+;;; request with `curl' by package `plz.el'
 
-;; you should install `plz' before use this
+;; you should install `plz.el' first before use this
 
 (defclass gt-plz-http-client (gt-http-client)
   ((extra-args
@@ -235,27 +275,57 @@ Or switch http client to `gt-url-http-client' instead:\n
 
 (cl-defmethod gt-request ((client gt-plz-http-client) &key url method headers data filter done fail sync retry)
   (ignore retry)
-  (let ((plz-curl-default-args (if (slot-boundp client 'extra-args)
-                                   (append (oref client extra-args) plz-curl-default-args)
-                                 plz-curl-default-args))
-        (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
-                            (widen)
-                            (let* ((content-type (mail-fetch-field "content-type"))
-                                   (binaryp (gt-http-binary-p content-type)))
-                              (set-buffer-multibyte (not binaryp))
-                              (goto-char (point-min))
-                              (plz--narrow-to-body)
-                              (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
-                              (buffer-string))))
-        (headers `(("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) ,@headers)))
+  (let* ((plz-curl-default-args (if (slot-boundp client 'extra-args)
+                                    (append (oref client extra-args) plz-curl-default-args)
+                                  plz-curl-default-args))
+         (formdatap (and (consp data)
+                         (or (string-match-p "multipart/formdata"
+                                             (or (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case) ""))
+                             (cl-some (lambda (x) (consp (cdr x))) data))))
+         (data (funcall (if (atom data) #'identity ; string
+                          (if formdatap #'gt-format-formdata #'gt-format-params)) ; alist
+                        data))
+         (string-or-binary (lambda () ; decode according content-type. there is no builtin way to do this in plz
+                             (widen)
+                             (let* ((content-type (mail-fetch-field "content-type"))
+                                    (binaryp (gt-http-binary-p content-type)))
+                               (set-buffer-multibyte (not binaryp))
+                               (goto-char (point-min))
+                               (plz--narrow-to-body)
+                               (unless binaryp (decode-coding-region (point-min) (point-max) 'utf-8))
+                               (buffer-string)))))
+    ;; headers
+    (when formdatap
+      (setf (alist-get "Content-Type" headers nil nil #'string-equal-ignore-case)
+            (concat "multipart/form-data; boundary=" gt-multipart-boundary)))
+    (unless (alist-get "User-Agent" headers nil nil #'string-equal-ignore-case)
+      (push `("User-Agent" . ,(or (oref client user-agent) gt-user-agent)) headers))
+    ;; log
+    (gt-log (eieio-object-class client)
+      (format "> %s\n> %s" client url)
+      (if headers (format "> HEADER: %s" headers))
+      (if data (format "> DATA:   %s" data))
+      (if plz-curl-default-args (format "> EXTRA: %s" plz-curl-default-args)))
     ;; sync
     (if sync
         (condition-case err
-            (let ((r (plz method url :headers headers :body data :as string-or-binary :decode nil :then 'sync)))
+            (let ((r (plz method url
+                       :headers headers
+                       :body data
+                       :body-type (if formdatap 'binary 'text)
+                       :decode nil
+                       :as string-or-binary
+                       :then 'sync)))
               (if done (funcall done r) r))
-          (error (if fail (funcall fail err) (signal 'user-error (cdr err)))))
+          (error (if fail (funcall fail err)
+                   (signal 'user-error (cdr err)))))
       ;; async
-      (plz method url :headers headers :body data :as string-or-binary :decode nil
+      (plz method url
+        :headers headers
+        :body data
+        :body-type (if formdatap 'binary 'text)
+        :decode nil
+        :as string-or-binary
         :filter (when filter
                   (lambda (proc string)
                     (with-current-buffer (process-buffer proc)
