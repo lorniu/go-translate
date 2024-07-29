@@ -838,38 +838,36 @@ translator or a list to provide more validation data."
 (defvar gt-log-buffer-name "*gt-log*"
   "Log buffer for translator.")
 
-(defmacro gt-log (tag &rest messages)
+(defun gt-log (tag &rest messages)
   "Log MESSAGES to `gt-log-buffer-name'.
 TAG is a label for message being logged."
   (declare (indent 1))
-  `(if gt-debug-p (gt-do-log ,tag ,@messages)))
-
-(defun gt-do-log (tag &rest messages)
-  (with-current-buffer (get-buffer-create gt-log-buffer-name)
-    (goto-char (point-max))
-    (if (and (null messages) (stringp tag))
-        (insert tag)
-      (let* ((tag (when tag
-                    (concat
-                     (gt-face-lazy (cl-subseq (format "%-.1f" (time-to-seconds)) 6) 'gt-logger-buffer-timestamp-face)
-                     (gt-face-lazy (if (ignore-errors (string-blank-p tag)) tag (format " [%s]" tag)) 'gt-logger-buffer-tag-face)
-                     " ")))
-             (count (if (numberp (car messages)) (pop messages) (length tag)))
-             (messages (mapconcat (lambda (s) (format "%s" s)) (delq nil messages) "\n"))
-             (msg (if (string-blank-p messages)
-                      messages
-                    (with-temp-buffer
-                      (insert messages)
-                      (goto-char (point-min))
-                      (unless (= (length tag) count)
-                        (insert "\n")
-                        (goto-char (point-min)))
-                      (while (re-search-forward "\n" nil t)
-                        (save-excursion
-                          (beginning-of-line)
-                          (insert (make-string count ? ))))
-                      (buffer-string)))))
-        (insert (or tag "") (or msg "") "\n")))))
+  (when gt-debug-p
+    (with-current-buffer (get-buffer-create gt-log-buffer-name)
+      (goto-char (point-max))
+      (if (and (null messages) (stringp tag))
+          (insert tag)
+        (let* ((tag (when tag
+                      (concat
+                       (gt-face-lazy (cl-subseq (format "%-.1f" (time-to-seconds)) 6) 'gt-logger-buffer-timestamp-face)
+                       (gt-face-lazy (if (ignore-errors (string-blank-p tag)) tag (format " [%s]" tag)) 'gt-logger-buffer-tag-face)
+                       " ")))
+               (count (if (numberp (car messages)) (pop messages) (length tag)))
+               (messages (mapconcat (lambda (s) (format "%s" s)) (delq nil messages) "\n"))
+               (msg (if (string-blank-p messages)
+                        messages
+                      (with-temp-buffer
+                        (insert messages)
+                        (goto-char (point-min))
+                        (unless (= (length tag) count)
+                          (insert "\n")
+                          (goto-char (point-min)))
+                        (while (re-search-forward "\n" nil t)
+                          (save-excursion
+                            (beginning-of-line)
+                            (insert (make-string count ? ))))
+                        (buffer-string)))))
+          (insert (or tag "") (or msg "") "\n"))))))
 
 (defmacro gt-log-funcall (fmt &rest objects)
   `(gt-log ""
