@@ -1597,11 +1597,10 @@ This is used for streaming output for _RENDER."
 
 ;;; Text to Speech
 
-(defcustom gt-tts-speaker (or (executable-find "mpv")
-                              (executable-find "mplayer")
-                              (executable-find "cvlc"))
+(defcustom gt-tts-speaker (cl-find-if #'executable-find (list "mpv" "mplayer" "cvlc"))
   "The program used to speak the translation result.
-It also can be a command with options like `mpv --af=xxx'."
+It also can be a command with options like `mpv --af=xxx'.
+The value should not contain any space in the command path."
   :type 'string
   :group 'go-translate)
 
@@ -1631,7 +1630,7 @@ If WAIT is not nil, play after current process finished."
   (cl-flet ((speak ()
               (let ((proc (make-process
                            :name (format "gt-tts-process-%s" (+ 1000 (random 1000)))
-                           :command (append (split-string gt-tts-speaker) (list "-"))
+                           :command (append (split-string-shell-command gt-tts-speaker) (list "-"))
                            :buffer nil
                            :noquery t
                            :sentinel (lambda (_ s) (if (string-match-p "finished" s) (message "")))
