@@ -1397,7 +1397,7 @@ previous one. This is non-destructive."
   "Switch to next target in prompt minibuffer.
 If BACKWARDP is not nil then switch to previous one."
   (interactive)
-  (let ((gt-skip-lang-rules-p current-prefix-arg))
+  (let ((gt-skip-lang-rules-p (or current-prefix-arg (string-blank-p (minibuffer-contents)))))
     (setq gt-prompt-target
           (gt-target (oref gt-current-translator taker)
                      (make-instance (eieio-object-class gt-current-translator)
