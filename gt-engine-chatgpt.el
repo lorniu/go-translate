@@ -52,6 +52,10 @@ Can also put into .authinfo file as:
   "API host of ChatGPT."
   :type 'string
   :group 'go-translate-chatgpt)
+(defcustom gt-chatgpt-endpoint "/v1/chat/completions"
+  "API endpoint of ChatGPT."
+  :type 'string
+  :group 'go-translate-chatgpt)
 
 (defcustom gt-chatgpt-key nil
   "Auth Key of ChatGPT. Recommend to save in .authinfo file instead."
@@ -102,7 +106,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
     (with-slots (host key model temperature stream) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
-      (gt-request :url (concat (or host gt-chatgpt-host) "/v1/chat/completions")
+      (gt-request :url (concat (or host gt-chatgpt-host) gt-chatgpt-endpoint)
                   :headers `(("Content-Type" . "application/json")
                              ("Authorization" . ,(concat "Bearer " (encode-coding-string key 'utf-8))))
                   :data (encode-coding-string
