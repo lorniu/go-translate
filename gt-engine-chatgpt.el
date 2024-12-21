@@ -38,6 +38,7 @@
 (defclass gt-chatgpt-engine (gt-engine)
   ((tag         :initform 'ChatGPT)
    (host        :initarg :host :initform nil)
+   (path        :initarg :path :initform nil)
    (model       :initarg :model :initform nil)
    (temperature :initarg :temperature :initform nil)
    (key         :initarg :key :initform 'apikey
@@ -50,6 +51,11 @@ Can also put into .authinfo file as:
 
 (defcustom gt-chatgpt-host "https://api.openai.com"
   "API host of ChatGPT."
+  :type 'string
+  :group 'go-translate-chatgpt)
+
+(defcustom gt-chatgpt-path "/v1/chat/completions"
+  "API endpoint of ChatGPT."
   :type 'string
   :group 'go-translate-chatgpt)
 
@@ -99,10 +105,10 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 (cl-defmethod gt-translate ((engine gt-chatgpt-engine) task next)
   (gt-ensure-key engine)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host key model temperature stream) engine
+    (with-slots (host path key model temperature stream) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
-      (gt-request :url (concat (or host gt-chatgpt-host) "/v1/chat/completions")
+      (gt-request :url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path))
                   :headers `(("Content-Type" . "application/json")
                              ("Authorization" . ,(concat "Bearer " (encode-coding-string key 'utf-8))))
                   :data (encode-coding-string
