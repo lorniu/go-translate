@@ -222,7 +222,7 @@ will be used as the default translator."
   (with-slots (taker engines render _taker _engines _render) translator
     (cl-macrolet ((desc1 (name &rest body)
                     `(if (not (slot-boundp translator ',(intern (format "_%s" name)))) "unbound"
-                       (when-let (,name (or ,name ,(intern (format "_%s" name))))
+                       (when-let* ((,name (or ,name ,(intern (format "_%s" name)))))
                          (if (gt-functionp ,name)
                              (replace-regexp-in-string "[ \n\t]+" " " (format "%s" ,name))
                            ,@body)))))

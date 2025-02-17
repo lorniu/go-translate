@@ -582,9 +582,9 @@ When `space' in DISPLAY, prepend a space to the STR."
                        if (eq k 'space) append v into spaces
                        else append (list k v) into normals
                        finally (return (cons normals spaces)))))
-      (when-let (normals (car ds))
+      (when-let* ((normals (car ds)))
         (setq r (propertize r 'display normals)))
-      (when-let (spaces (cdr ds))
+      (when-let* ((spaces (cdr ds)))
         (setq r (concat (propertize " " 'display (cons 'space spaces)) r)))
       r)))
 
@@ -617,7 +617,7 @@ When `space' in DISPLAY, prepend a space to the STR."
 (defun gt-lookup-password (&rest params)
   "Query password stored in '.authinfo'.
 PARAMS contains search keys like :user, :host same as `auth-source-search'."
-  (when-let (secret (plist-get (car (apply 'auth-source-search params)) :secret))
+  (when-let* ((secret (plist-get (car (apply 'auth-source-search params)) :secret)))
     (if (functionp secret)
         (funcall secret)
       secret)))
@@ -920,7 +920,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 (cl-defmethod gt-cache-get ((cacher gt-memory-cacher) key)
   (with-slots (storage expired) cacher
-    (when-let (cache (ignore-errors (gethash key storage)))
+    (when-let* ((cache (ignore-errors (gethash key storage))))
       (if (> (time-to-seconds) (cdr cache))
           (remhash key storage)
         (gt-log 'memory-cacher (format "get [%s] from caches (%s)" key (hash-table-count storage)))
@@ -1017,7 +1017,7 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
                                (gt-cache-set gt-default-cacher ckey raw)))
                            (funcall done raw)))))
           ;; try to get from cache first
-          (if-let (r (and cache (gt-cache-get gt-default-cacher ckey)))
+          (if-let* ((r (and cache (gt-cache-get gt-default-cacher ckey))))
               (progn (gt-log 'cacher (format "Find %s in cache..." ckey))
                      (if donefn (funcall donefn r) r))
             (cl-remf args :cache)
@@ -1206,7 +1206,7 @@ specific MODE."
                    (point))))
         (when (> end beg)
           (list (cons beg end))))
-    (when-let (rt (bounds-of-thing-at-point thing))
+    (when-let* ((rt (bounds-of-thing-at-point thing)))
       (list rt))))
 
 (cl-defgeneric gt-forward-thing (thing _mode)
@@ -1275,7 +1275,7 @@ If it is a bound, return a list of sub-bounds."
                     (goto-char (point-min))
                     (let (bds)
                       (while (not (save-excursion (skip-chars-forward " \r\n\t\f") (eobp)))
-                        (when-let (bd (gt-forward-thing thing mode))
+                        (when-let* ((bd (gt-forward-thing thing mode)))
                           (cl-destructuring-bind (a . b) bd
                             (when (or (null pred) (funcall pred (buffer-substring a b)))
                               (push (cons a b) bds)))))
@@ -1390,7 +1390,7 @@ previous one. This is non-destructive."
 (defun gt-prompt-prefix (target)
   (when target
     (format "[%s%s] "
-            (if-let (src (car target)) (format "%s > " src) "")
+            (if-let* ((src (car target))) (format "%s > " src) "")
             (mapconcat (lambda (s) (format "%s" s)) (ensure-list (cdr target)) ", "))))
 
 (defun gt-prompt-next-target (&optional backwardp)
@@ -1470,7 +1470,7 @@ If BACKWARDP is not nil then switch to previous one."
   (let (cacher condition)
     (when gt-cache-p
       (let ((cc (gt-ensure-plain
-                 (if (slot-boundp engine 'cache) (if-let (c (gt-ensure-plain (oref engine cache) task)) c) t)
+                 (if (slot-boundp engine 'cache) (if-let* ((c (gt-ensure-plain (oref engine cache) task))) c) t)
                  task)))
         (cond ((null cc))
               ((eq cc t) (setq cacher gt-default-cacher condition nil))
@@ -1489,14 +1489,14 @@ If BACKWARDP is not nil then switch to previous one."
     ;; if stream, not cache
     (if (gt-stream-p engine) (oset engine cache nil))
     ;; query cache first
-    (when-let (cacher (car-safe (gt-current-cacher engine task)))
+    (when-let* ((cacher (car-safe (gt-current-cacher engine task))))
       (setf cache (gt-cache-get cacher task)))
     ;; only translate the parts not in cache
     (if (and cache (cl-every #'identity cache))
         (gt-next engine task)
       (let ((text-left (if cache (cl-loop for c in text for r in cache unless r collect c) text)))
         ;; join with delimiter if possible
-        (if-let (delimiter (if (slot-boundp engine 'delimiter) (oref engine delimiter) gt-text-delimiter))
+        (if-let* ((delimiter (if (slot-boundp engine 'delimiter) (oref engine delimiter) gt-text-delimiter)))
             (setf text (string-join text-left (concat "\n\n" delimiter "\n\n")))
           (setf text text-left))))))
 
@@ -1546,16 +1546,16 @@ will do the parse and render job. See type `gt-engine' for more description."
              (with-slots (parse delimiter then) engine
                ;; parse
                (when res
-                 (when-let (parser (and (slot-boundp engine 'parse) parse))
+                 (when-let* ((parser (and (slot-boundp engine 'parse) parse)))
                    (if (gt-functionp parser)
                        (funcall parser task)
                      (gt-parse parser task)))
                  ;; split with delimiter if possible
-                 (when-let (delimiter (and (stringp res) (if (slot-boundp engine 'delimiter) delimiter gt-text-delimiter)))
+                 (when-let* ((delimiter (and (stringp res) (if (slot-boundp engine 'delimiter) delimiter gt-text-delimiter))))
                    (setf res (mapcar (lambda (item) (string-trim item "\n+")) (split-string res delimiter))))
                  (setf res (ensure-list res))
                  ;; run res-hook if possible
-                 (when-let (hook (plist-get meta :res-hook))
+                 (when-let* ((hook (plist-get meta :res-hook)))
                    (setf res (funcall hook res))))
                ;; resume text and merge cache to res
                (setf text (oref translator text))
@@ -1722,11 +1722,11 @@ Otherwise try to TTS with local program or using selected engine.
 
 When TTS with specific engine, you can specify the language with `lang.' prefix."
   (interactive)
-  (if-let (url (get-char-property (point) 'gt-tts-url))
+  (if-let* ((url (get-char-property (point) 'gt-tts-url)))
       ;; 1. play the url
       (gt-play-audio url)
     (let (items engine)
-      (if-let (task (get-char-property (point) 'gt-task))
+      (if-let* ((task (get-char-property (point) 'gt-task)))
           (with-slots (src tgt res err translator) task
             (with-slots (text target) translator
               ;; 2. play current task
@@ -1738,9 +1738,9 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                 (if (use-region-p)
                     (cl-loop with text = (buffer-substring (region-beginning) (region-end))
                              for l in (gt-langs-maybe text (list src tgt)) do (funcall col l text))
-                  (when-let (r (nth part text))
+                  (when-let* ((r (nth part text)))
                     (funcall col (car target) r))
-                  (when-let (r (and (not err) (or (get-pos-property (point) 'gt-brief) (nth part (ensure-list res)))))
+                  (when-let* ((r (and (not err) (or (get-pos-property (point) 'gt-brief) (nth part (ensure-list res))))))
                     (funcall col tgt r)))
                 (when items
                   (let* ((cand (completing-read

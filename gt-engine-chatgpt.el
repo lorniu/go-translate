@@ -95,10 +95,10 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 (cl-defmethod gt-ensure-key ((engine gt-chatgpt-engine))
   (with-slots (host key) engine
     (unless (stringp key)
-      (if-let (apikey (or (gt-lookup-password
-                           :user (if key (format "%s" key) "apikey")
-                           :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
-                          gt-chatgpt-key))
+      (if-let* ((apikey (or (gt-lookup-password
+                             :user (if key (format "%s" key) "apikey")
+                             :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
+                            gt-chatgpt-key)))
           (setf key apikey)
         (user-error "You should provide a apikey for gt-chatgpt-engine")))))
 

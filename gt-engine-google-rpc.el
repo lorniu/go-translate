@@ -133,7 +133,7 @@ you can customize it according to your country region."
                                 (re-search-forward "^\\([0-9]+\\)$")
                                 (setq end (- (point) (length (match-string 1))))
                                 (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
-                                (if-let (data (and (string= (gt-aref json 0 0) "wrb.fr") (gt-aref json 0 2)))
+                                (if-let* ((data (and (string= (gt-aref json 0 0) "wrb.fr") (gt-aref json 0 2))))
                                     (progn (setq code (aref (json-read-from-string data) 0))
                                            (erase-buffer)
                                            (insert code)

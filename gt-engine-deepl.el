@@ -112,7 +112,7 @@ Mainly fill the text to suitable length."
                                  ))
 
 (defun gt-deepl-get-lang (lang)
-  (if-let (mapping (assoc lang gt-deepl-langs-mapping))
+  (if-let* ((mapping (assoc lang gt-deepl-langs-mapping)))
       (cdr mapping)
     (user-error "Language %s is not supported by DeepL.
 Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
@@ -120,9 +120,9 @@ Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
 (cl-defmethod gt-ensure-key ((engine gt-deepl-engine))
   (with-slots (key) engine
     (unless (stringp key)
-      (if-let (auth-key (gt-lookup-password
-                         :user (if key (format "%s" key) "auth-key")
-                         :host "api.deepl.com"))
+      (if-let* ((auth-key (gt-lookup-password
+                           :user (if key (format "%s" key) "auth-key")
+                           :host "api.deepl.com")))
           (setf key auth-key)
         (user-error "You should provide a auth-key for gt-deepl-engine")))))
 
@@ -135,7 +135,7 @@ Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
                              ("Authorization"   . ,(concat "DeepL-Auth-Key " key)))
                   :data    `(("text"            . ,(gt-deepl-fill-input text))
                              ("target_lang"     . ,(gt-deepl-get-lang tgt))
-                             ,(if-let (src (gt-deepl-get-lang src)) `("source_lang" . ,src))
+                             ,(if-let* ((src (gt-deepl-get-lang src))) `("source_lang" . ,src))
                              ,@gt-deepl-extra-params)
                   :done (lambda (raw)
                           (setf res raw)

@@ -226,9 +226,9 @@ If request async, return the process behind the request."
                                  (let ((cb (current-buffer)))
                                    (remove-hook 'after-change-functions #'gt-url-http-extra-filter t)
                                    (unwind-protect
-                                       (if-let (err (or (cdr-safe (plist-get status :error))
-                                                        (when (or (null url-http-end-of-headers) (= 1 (point-max)))
-                                                          (list 'empty-response "Nothing responsed from server"))))
+                                       (if-let* ((err (or (cdr-safe (plist-get status :error))
+                                                          (when (or (null url-http-end-of-headers) (= 1 (point-max)))
+                                                            (list 'empty-response "Nothing responsed from server")))))
                                            (if fail (funcall fail err) (signal 'user-error err))
                                          (if done (funcall done (funcall get-resp-content))))
                                      (kill-buffer cb))))
@@ -342,13 +342,13 @@ Or switch http client to `gt-url-http-client' instead:\n
         :else (lambda (err)
                 (let ((ret ;; try to compat with error object of url.el, see `url-retrieve' for details
                        (or (plz-error-message err)
-                           (when-let (r (plz-error-curl-error err))
+                           (when-let* ((r (plz-error-curl-error err)))
                              (list 'curl-error
                                    (concat (format "%s" (or (cdr r) (car r)))
                                            (pcase (car r)
                                              (2 (when (memq system-type '(cygwin windows-nt ms-dos))
                                                   gt-plz-initialize-error-message))))))
-                           (when-let (r (plz-error-response err))
+                           (when-let* ((r (plz-error-response err)))
                              (list 'http (plz-response-status r) (plz-response-body r))))))
                   (if fail (funcall fail ret)
                     (signal 'user-error ret))))))))

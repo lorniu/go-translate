@@ -134,7 +134,7 @@
                  do (insert (propertize (car wf) 'face 'gt-youdao-dict-label-face) "  " (cdr wf))
                  do (insert (if (= (length .word-wfs) i) "\n\n" (if (> (current-column) fill-column) "\n" "\t"))))
         ;; 考试
-        (when-let (et (and .exam-type (mapconcat #'identity .exam-type " / ")))
+        (when-let* ((et (and .exam-type (mapconcat #'identity .exam-type " / "))))
           (insert (propertize et 'face 'gt-youdao-dict-phonetic-face 'display '(height 0.7))))
         ;; 返回
         (setf res (if (or .exp-ce .exp-ec)
@@ -171,7 +171,7 @@
                   for item across (alist-get 'entries (alist-get 'data json))
                   for i from 1
                   for ent = (propertize (alist-get 'entry item) 'face 'gt-youdao-suggest-entry-face)
-                  for exp = (if-let (ex (alist-get 'explain item)) (propertize (concat "   " ex) 'wrap-prefix "   "))
+                  for exp = (if-let* ((ex (alist-get 'explain item))) (propertize (concat "   " ex) 'wrap-prefix "   "))
                   collect (concat (if (> i 1) (gt-line-height-separator 18)) ent
                                   (if exp (concat "\n" (gt-line-height-separator 8) exp))))))
         (with-temp-buffer

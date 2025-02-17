@@ -126,15 +126,15 @@ Notice, this can be overrided by `window-config' slot of render instance."
 
 (defun gt-buffer-render--browser ()
   (interactive)
-  (if-let (url (get-char-property (point) 'gt-url))
+  (if-let* ((url (get-char-property (point) 'gt-url)))
       (progn (browse-url url)
              (message "Opening %s... Done!" url))
     (message "No url found on current result.")))
 
 (defun gt-buffer-render--delete-cache ()
   (interactive)
-  (when-let ((task (get-pos-property (point) 'gt-task))
-             (key (gt-cache-key task (or (get-pos-property (point) 'gt-part) 0))))
+  (when-let* ((task (get-pos-property (point) 'gt-task))
+              (key (gt-cache-key task (or (get-pos-property (point) 'gt-part) 0))))
     (gt-cache-set gt-default-cacher key nil)
     (message "Delete %s from cacher" key)))
 
@@ -184,7 +184,7 @@ as argument that return a length.")
     (goto-char (min (point-max) (+ (point-min) gt-buffer-render-source-text-limit)))
     (move-to-column fill-column)
     (skip-chars-backward " \t\n")
-    (when-let (bd (bounds-of-thing-at-point 'word))
+    (when-let* ((bd (bounds-of-thing-at-point 'word)))
       (goto-char (cdr bd)))
     (when (> (- (point-max) 20) (point))
       (cons (point) (point-max)))))
@@ -262,7 +262,7 @@ If FOLD non nil, only make part of the text visible."
       (gt-keybinds render translator)
       ;; state
       (read-only-mode 1)
-      (if-let (w (get-buffer-window nil t)) (set-window-point w  (point)))
+      (if-let* ((w (get-buffer-window nil t))) (set-window-point w  (point)))
       ;; execute the hook if exists
       (run-hooks 'gt-buffer-render-init-hook))))
 
@@ -276,7 +276,7 @@ If FOLD non nil, only make part of the text visible."
           ;; refresh source text
           (goto-char (point-min))
           (unless (cdr text)
-            (when-let (prop (text-property-search-forward 'gt-source-text))
+            (when-let* ((prop (text-property-search-forward 'gt-source-text)))
               (delete-region (prop-match-beginning prop) (prop-match-end prop))
               (when (or (cdr ret) (not (get-pos-property 1 'gt-mark (car (ensure-list (plist-get (car ret) :result))))))
                 (let ((bd (gt-buffer-insert-source-text (car text) t)))
@@ -312,7 +312,7 @@ TAG is extra message show in the middle if not nil."
   (with-slots (target) translator
     (let ((line (append
                  '(" ")
-                 (when-let (src (car target))
+                 (when-let* ((src (car target)))
                    (list
                     "[" (propertize (format "%s" src) 'face 'gt-buffer-render-header-lang-face) "]"
                     (if tag (concat " ― " (propertize (format "%s" tag) 'face 'gt-buffer-render-header-desc-face)) "")
@@ -367,7 +367,7 @@ TAG is extra message show in the middle if not nil."
       (display-buffer buf (or window-config gt-buffer-render-window-config)))))
 
 (cl-defmethod gt-output ((render gt-buffer-render) translator)
-  (when-let (buf (get-buffer (or (oref render buffer-name) gt-buffer-render-buffer-name)))
+  (when-let* ((buf (get-buffer (or (oref render buffer-name) gt-buffer-render-buffer-name))))
     (gt-buffer-render-output buf render translator)
     (when (= (oref translator state) 3)
       (if gt-buffer-render-follow-p
@@ -467,7 +467,7 @@ Manually close the frame with `q'.")
       (add-hook 'post-command-hook #'gt-posframe-render-auto-close-handler))))
 
 (cl-defmethod gt-output ((render gt-posframe-pop-render) translator)
-  (when-let (buf (get-buffer gt-posframe-pop-render-buffer))
+  (when-let* ((buf (get-buffer gt-posframe-pop-render-buffer)))
     (let ((gt-buffer-render-output-hook gt-posframe-pop-render-output-hook))
       (gt-buffer-render-output buf render translator)
       (posframe-refresh buf))))
@@ -523,7 +523,7 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
                               :poshandler (unless position gt-posframe-pin-render-poshandler)))))))
     (set-frame-parameter gt-posframe-pin-render-frame 'drag-internal-border t)
     (set-frame-parameter gt-posframe-pin-render-frame 'drag-with-header-line t)
-    (when-let (color (or (oref render fri-color) gt-pin-posframe-fringe-color))
+    (when-let* ((color (or (oref render fri-color) gt-pin-posframe-fringe-color)))
       (set-face-background 'fringe color  gt-posframe-pin-render-frame)))
   ;; render
   (let ((gt-buffer-render-init-hook gt-posframe-pin-render-init-hook))
@@ -546,7 +546,7 @@ Other operations in the childframe buffer, just like in 'gt-buffer-render'.")
   (deactivate-mark)
   (when (= (oref translator state) 3)
     (let ((ret (gt-extract render translator)))
-      (when-let (err (cl-find-if (lambda (r) (<= (plist-get r :state) 1)) ret))
+      (when-let* ((err (cl-find-if (lambda (r) (<= (plist-get r :state) 1)) ret)))
         (kill-new "")
         (error "%s" (plist-get err :result)))
       (kill-new (mapconcat (lambda (r) (string-join (plist-get r :result) "\n")) ret "\n\n"))
@@ -656,13 +656,13 @@ Otherwise, join the results use the default logic."
                (gt-stream-p (oref (car tasks) engine)))
       (with-slots (markers engine) (car tasks)
         (let ((type (oref render type))
-              (beg (if-let (p (caadr bounds))
+              (beg (if-let* ((p (caadr bounds)))
                        (save-excursion
                          (goto-char p)
                          (skip-chars-forward "\n" (cdadr bounds))
                          (point))
                      (point)))
-              (end (if-let (p (cdadr bounds))
+              (end (if-let* ((p (cdadr bounds)))
                        (save-excursion
                          (goto-char p)
                          (skip-chars-backward " \t\n" (caadr bounds))
@@ -675,7 +675,7 @@ Otherwise, join the results use the default logic."
   (with-slots (bounds state) translator
     (when (= 3 state)
       (let ((ret (gt-extract render translator)))
-        (when-let (err (cl-find-if (lambda (tr) (<= (plist-get tr :state) 1)) ret))
+        (when-let* ((err (cl-find-if (lambda (tr) (<= (plist-get tr :state) 1)) ret)))
           (user-error "Error in translation, %s" (plist-get err :result)))
         (with-current-buffer (car bounds)
           (with-slots (rfmt sface) render
@@ -709,7 +709,7 @@ Otherwise, join the results use the default logic."
                      do (let (p)
                           (if (eq type 'replace)
                               (delete-region beg end)
-                            (when-let (face (and (eq type 'after) (gt-ensure-plain sface src)))
+                            (when-let* ((face (and (eq type 'after) (gt-ensure-plain sface src))))
                               (delete-region beg end)
                               (insert (propertize src 'face face))))
                           (setq p (point))
@@ -899,7 +899,7 @@ Otherwise, join the results use the default logic."
   (with-slots (bounds state) translator
     (when (= 3 state)
       (let ((ret (gt-extract render translator)))
-        (when-let (err (cl-find-if (lambda (tr) (<= (plist-get tr :state) 1)) ret))
+        (when-let* ((err (cl-find-if (lambda (tr) (<= (plist-get tr :state) 1)) ret)))
           (user-error "Error in translation, %s" (plist-get err :result)))
         (with-current-buffer (car bounds)
           (cl-loop with start = (point-marker)
@@ -1029,7 +1029,7 @@ target, engines and render in the buffer for the following translation."
                                   (cl-destructuring-bind (_ eg rd)
                                       (ignore-errors (gt-translator-info translator))
                                     (list (prop (concat
-                                                 (if-let (src (car target)) (concat "[" (prop src) "] → "))
+                                                 (if-let* ((src (car target))) (concat "[" (prop src) "] → "))
                                                  "[" (mapconcat (lambda (s) (prop s)) (cdr target) ", ") "]")
                                                 #'cycle-next-target t)
                                           (if eg (concat "  Engines: " (prop eg #'set-engines)))
@@ -1152,7 +1152,7 @@ target, engines and render in the buffer for the following translation."
     (setq gt-fresh-words-last nil)
     (let* ((car (if (cdr bounds) (cl-subseq bounds 0 2) (car text)))
            (pred (lambda (word)
-                   (and (if-let (p (oref taker pick-pred)) (funcall p word) t)
+                   (and (if-let* ((p (oref taker pick-pred))) (funcall p word) t)
                         (> (string-bytes word) 2)
                         (not (string-match-p "^[0-9]+$" word))
                         (gt-word-fresh-p word)
