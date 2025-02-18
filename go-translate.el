@@ -6,7 +6,7 @@
 ;; URL: https://github.com/lorniu/go-translate
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience
-;; Version: 3.0.8
+;; Version: 3.0.9
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 

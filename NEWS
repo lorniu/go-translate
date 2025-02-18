@@ -1,3 +1,7 @@
+Version 3.0.9
+  - Reimplement http-clients to separate file
+  - Make http client supporting both download/upload
+
 Version 3.0.8
   - Remove compact code, no longer support v2
 
