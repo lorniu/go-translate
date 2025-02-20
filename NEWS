@@ -1,3 +1,6 @@
+Version 3.0.10
+  - Add new engine `gt-osxdict-engine`, translating with Dictionary.app
+
 Version 3.0.9
   - Reimplement http-clients to separate file `gt-httpx.el`
   - Make http client supporting both download/upload and so on
