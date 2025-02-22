@@ -219,6 +219,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道词典/有道近义词。主要用于中英互译
 - =gt-stardict-engine=, StarDict，支持外挂字典，可以用于离线翻译
 - =gt-libre-engine=, LibreTranslate, 可以使用网络服务，也可以搭建本地服务
+- =gt-osxdict-engine=, 借助命令 osx-dictionary 调用苹果系统内置的翻译
 
 通过 =:engines= 为翻译器指定引擎。一个翻译器可以有一个或多个引擎，也可以指定一个返回引擎列表的函数:
 #+begin_src emacs-lisp

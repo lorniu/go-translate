@@ -216,6 +216,7 @@ The built-in Engine implementations are:
 - =gt-youdao-dict-engine/gt-youdao-suggest-engine=, 有道翻译，有道近义词
 - =gt-stardict-engine=, StarDict，for offline translate
 - =gt-libre-engine=, LibreTranslate, support both online and offline translate
+- =gt-osxdict-engine=, invoke Dictionary.app through command osx-dictionary, for offline translate on macOS
 
 Specify engines for translator via =:engines=. A translator can have one or more engines, or you can specify a function that returns the engines:
 #+begin_src emacs-lisp

@@ -67,6 +67,7 @@
 (require 'gt-engine-google-rpc)
 (require 'gt-engine-deepl)
 (require 'gt-engine-stardict)
+(require 'gt-engine-osxdict)
 (require 'gt-engine-youdao)
 (require 'gt-engine-chatgpt)
 (require 'gt-engine-libre)
@@ -136,6 +137,7 @@ of `gt-default-translator' at any time in `gt-do-setup'."
       (LibreTranslate       . ,(gt-libre-engine))
       (GoogleRPC            . ,(gt-google-rpc-engine))
       (Google-Summary       . ,(gt-google-engine :parse (gt-google-summary-parser)))
+      (OSX-Dictionary       . ,(gt-osxdict-engine))
       (Bionic_Reading       . ,(gt-echo-engine :do '(clean br) :tag "Bionic Reading"))))
   "Preset engines.
 
