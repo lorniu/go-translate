@@ -1743,9 +1743,10 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                   (when-let* ((r (and (not err) (or (get-pos-property (point) 'gt-brief) (nth part (ensure-list res))))))
                     (funcall col tgt r)))
                 (when items
-                  (let* ((cand (completing-read
-                                (format "Text to Speech (with %s): " (oref engine tag))
-                                (gt-make-completion-table items)))
+                  (let* ((cand (with-temp-buffer
+                                 (completing-read
+                                  (format "Text to Speech (with %s): " (oref engine tag))
+                                  (gt-make-completion-table items))))
                          (lang (if (string-match (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")) cand)
                                    (prog1 (intern-soft (match-string 1 cand))
                                      (setq cand (substring cand (match-end 0))))
