@@ -1165,7 +1165,7 @@ target, engines and render in the buffer for the following translation."
 (declare-function pdf-view-active-region-p "ext:pdf-view.el" t t)
 (declare-function pdf-view-active-region-text "ext:pdf-view.el" t t)
 
-(cl-defmethod gt-text-at-point (_thing (_ (eql 'pdf-view-mode)))
+(cl-defmethod gt-thing-at-point (_thing (_ (eql 'pdf-view-mode)))
   (if (pdf-view-active-region-p)
       (pdf-view-active-region-text)
     (user-error "You should make a selection before translate")))
