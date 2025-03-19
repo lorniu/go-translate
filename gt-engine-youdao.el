@@ -60,11 +60,11 @@
                   (format (oref engine url)
                           (url-hexify-string (format "%s" lang))
                           (url-hexify-string text)))))
-      (gt-request :url url
-                  :done (lambda (raw)
-                          (setf res (gt-parse-html-dom raw) meta url)
-                          (funcall next task))
-                  :fail (lambda (err) (gt-fail task err))))))
+      (gt-request url
+        :done (lambda (raw)
+                (setf res (gt-parse-html-dom raw) meta url)
+                (funcall next task))
+        :fail (lambda (err) (gt-fail task err))))))
 
 (defun gt-youdao-dict--extract (dom)
   "从 DOM 中解析结果。"
@@ -158,30 +158,29 @@
     (when (cdr text)
       (user-error "不支持一次翻译多个单词或句子"))
     (let ((url (format (oref engine url) (url-hexify-string (car text)) (oref engine limit))))
-      (gt-request :url url
-                  :done (lambda (raw) (setf res raw meta url) (funcall next task))
-                  :fail (lambda (err) (gt-fail task err))))))
+      (gt-request url
+        :done (lambda (json) (setf res json meta url) (funcall next task))
+        :fail (lambda (err) (gt-fail task err))))))
 
 (cl-defmethod gt-parse ((_ gt-youdao-suggest-parser) task)
   (with-slots (res meta) task
-    (let ((json (json-read-from-string res)))
-      (unless (= (alist-get 'code (alist-get 'result json)) 200)
-        (user-error (alist-get 'msg (alist-get 'result json))))
-      (let ((lst (cl-loop
-                  for item across (alist-get 'entries (alist-get 'data json))
-                  for i from 1
-                  for ent = (propertize (alist-get 'entry item) 'face 'gt-youdao-suggest-entry-face)
-                  for exp = (if-let* ((ex (alist-get 'explain item))) (propertize (concat "   " ex) 'wrap-prefix "   "))
-                  collect (concat (if (> i 1) (gt-line-height-separator 18)) ent
-                                  (if exp (concat "\n" (gt-line-height-separator 8) exp))))))
-        (with-temp-buffer
-          (insert (string-join lst "\n"))
-          (goto-char (point-min))
-          (while (re-search-forward (format "\\(%s\\)\\(\\. \\|．\\)"
-                                            (mapconcat (lambda (v) (format "%s" v)) gt-word-classes "\\|"))
-                                    nil t)
-            (put-text-property (match-beginning 0) (match-end 0) 'face 'gt-youdao-suggest-cixing-face))
-          (setf res (propertize (buffer-string) 'gt-url meta)))))))
+    (unless (= (alist-get 'code (alist-get 'result res)) 200)
+      (user-error (alist-get 'msg (alist-get 'result res))))
+    (let ((lst (cl-loop
+                for item across (alist-get 'entries (alist-get 'data res))
+                for i from 1
+                for ent = (propertize (alist-get 'entry item) 'face 'gt-youdao-suggest-entry-face)
+                for exp = (if-let* ((ex (alist-get 'explain item))) (propertize (concat "   " ex) 'wrap-prefix "   "))
+                collect (concat (if (> i 1) (gt-line-height-separator 18)) ent
+                                (if exp (concat "\n" (gt-line-height-separator 8) exp))))))
+      (with-temp-buffer
+        (insert (string-join lst "\n"))
+        (goto-char (point-min))
+        (while (re-search-forward (format "\\(%s\\)\\(\\. \\|．\\)"
+                                          (mapconcat (lambda (v) (format "%s" v)) gt-word-classes "\\|"))
+                                  nil t)
+          (put-text-property (match-beginning 0) (match-end 0) 'face 'gt-youdao-suggest-cixing-face))
+        (setf res (propertize (buffer-string) 'gt-url meta))))))
 
 (provide 'gt-engine-youdao)
 

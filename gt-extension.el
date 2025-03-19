@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024 lorniu <lorniu@gmail.com>
 ;; Author: lorniu <lorniu@gmail.com>
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (pdd "0.1"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 

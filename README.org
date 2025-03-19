@@ -123,7 +123,7 @@ Therefore, one needs to understand these components first for better configurati
 Currently there is only one built-in Taker implementation, which can be used in most scenarios:
 : Determine the initial text with 'text',
 : determine the translation languages with 'langs',
-: confirm with 'prompt', 
+: confirm with 'prompt',
 : and extract certain paragraphs, sentences, or words with 'pick'.
 
 If no Taker is specified or if Taker is specified but lacks options, the values ​​of the following variables will be used as default:
@@ -156,7 +156,7 @@ Taker will use =text= to determine the initial text. If there is active region, 
   ;; If it's a string or a function that returns a string, use it as the initial text
   (gt-translator :taker (gt-taker :text "hello world"))                        ; just the string
   (gt-translator :taker (gt-taker :text (lambda () (buffer-substring 10 15)))) ; the returned string
-  (gt-translator :taker (gt-taker :text (lambda () '((10 . 15)))))             ; the returned bounds 
+  (gt-translator :taker (gt-taker :text (lambda () '((10 . 15)))))             ; the returned bounds
 #+end_src
 
 Taker determine the languages to translate from =langs= in the help of =gt-lang-rules=:
@@ -317,33 +317,33 @@ Set =gt-cache-p= to nil to turn off all caches. Or turn off the cache for engine
 Translation results can be cached in files, SQLite or Redis through extensions. But maybe it's unnecessary.
 #+end_quote
 
-*** gt-url-http-client/gt-plz-http-client (gt-default-http-client)
+*** pdd-url-client/pdd-plz-client (gt-default-http-client)
 
-Some engines need to fetch translation results over the network, which requires network processing with the help of the =gt-http-client= component.
+Some engines need to fetch translation results over the network, which requires network processing with the help of the =pdd-client= component of package =pdd=.
 
-By default, =gt-url-http-client= is used as the http client, which is inefficient.
+By default, =pdd-url-client= is used as the http client, which is inefficient.
 
-The component =gt-plz-http-client= uses =curl= to send the request, which is much better.
+The component =pdd-plz-client= uses =curl= to send the request, which is much better.
 
-Config =gt-default-http-client= to switch http client. Or just make sure =curl= and [[https://github.com/alphapapa/plz.el][plz]] is exists in your system, then =gt-plz-http-client=
+Config =gt-default-http-client= to switch http client. Or just make sure =curl= and [[https://github.com/alphapapa/plz.el][plz]] is exists in your system, then =pdd-plz-client=
 will be used as the default http client without any other configs.
 
 To send request with proxy, config like this:
 #+begin_src emacs-lisp
-  ;; for gt-url-http-client
+  ;; for pdd-url-client
   (setq gt-default-http-client
-        (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
+        (pdd-url-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
 
-  ;; for gt-plz-http-client
+  ;; for pdd-plz-client
   (setq gt-default-http-client
-        (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
+        (pdd-plz-client :args '("--proxy" "socks5://127.0.0.1:9999")))
 
   ;; dynamic by host of request url
   (setq gt-default-http-client
-        (lambda (host)
-          (if (string-match-p "deepl" host)
-              (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
-            (gt-plz-http-client))))
+        (lambda (url)
+          (if (string-match-p "deepl.com/" url)
+              (pdd-plz-client :args '("--proxy" "socks5://127.0.0.1:9999"))
+            (pdd-plz-client))))
 #+end_src
 
 *** gt-taker
@@ -583,7 +583,7 @@ Set the display mode through =type=:
 - =before=, displays the translation results before the source text
 - =replace=, overlays the translation results on top of the source text
 - =help-echo=, display result only when the mouse is hovered over the source text
-  
+
 It is similar to =gt-insert-render= in many ways, including options:
 - =sface=, propertize the source text with this face after the translation is complete
 - =rfmt=, the output format of the translation result
@@ -746,4 +746,3 @@ In this way, use your imagination, you can do a lot.
 To enable debug, set =gt-debug-p= to t, then you will see the logs in buffer =*gt-log*=.
 
 Welcome your PRs and sugguestions.
-

@@ -108,52 +108,47 @@ With two arguments BEG and END, which are the marker bounds of the result.")
     (with-slots (host path key model temperature stream) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
-      (gt-request :url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path))
-                  :headers `(("Content-Type" . "application/json")
-                             ("Authorization" . ,(concat "Bearer " (encode-coding-string key 'utf-8))))
-                  :data (encode-coding-string
-                         (json-encode
-                          `((model . ,(or model gt-chatgpt-model))
-                            (temperature . ,(or temperature gt-chatgpt-temperature))
-                            (stream . ,stream)
-                            (messages . [((role . system)
-                                          (content . ,gt-chatgpt-system-prompt))
-                                         ((role . user)
-                                          (content . ,(if (functionp gt-chatgpt-user-prompt-template)
-                                                          (funcall gt-chatgpt-user-prompt-template text tgt)
-                                                        (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) text))))])))
-                         'utf-8)
-                  :filter (when stream
-                            (lambda ()
-                              (unless gt-tracking-marker
-                                (setq gt-tracking-marker (make-marker))
-                                (set-marker gt-tracking-marker (point-min)))
-                              (goto-char gt-tracking-marker)
-                              (condition-case err
-                                  (while (re-search-forward "^data: +\\({.+}\\)" nil t)
-                                    (let* ((json (json-read-from-string (decode-coding-string (match-string 1) 'utf-8)))
-                                           (choice (aref (alist-get 'choices json) 0))
-                                           (content (alist-get 'content (alist-get 'delta choice)))
-                                           (finish (alist-get 'finish_reason choice)))
-                                      (if finish
-                                          (progn (message "")
-                                                 (when gt-chatgpt-streaming-finished-hook
-                                                   (with-current-buffer (marker-buffer (car markers))
-                                                     (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers)))))
-                                        (setf res (concat res content))
-                                        (set-marker gt-tracking-marker (point))
-                                        (unless (string-blank-p (concat res))
-                                          (funcall next task)))))
-                                (error (unless (string-prefix-p "json" (format "%s" (car err)))
-                                         (signal (car err) (cdr err)))))))
-                  :done (unless stream
-                          (lambda (raw)
-                            (with-slots (res) task
-                              (let* ((json (json-read-from-string raw))
-                                     (str (alist-get 'content (alist-get 'message (let-alist json (aref .choices 0))))))
-                                (setf res str))
-                              (funcall next task))))
-                  :fail (lambda (err) (gt-fail task err))))))
+      (gt-request (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path))
+        :headers `(("Content-Type" . "application/json")
+                   ("Authorization" . ,(concat "Bearer " (encode-coding-string key 'utf-8))))
+        :data `((model . ,(or model gt-chatgpt-model))
+                (temperature . ,(or temperature gt-chatgpt-temperature))
+                (stream . ,stream)
+                (messages . [((role . system)
+                              (content . ,gt-chatgpt-system-prompt))
+                             ((role . user)
+                              (content . ,(if (functionp gt-chatgpt-user-prompt-template)
+                                              (funcall gt-chatgpt-user-prompt-template text tgt)
+                                            (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) text))))]))
+        :filter (when stream
+                  (lambda ()
+                    (unless gt-tracking-marker
+                      (setq gt-tracking-marker (make-marker))
+                      (set-marker gt-tracking-marker (point-min)))
+                    (goto-char gt-tracking-marker)
+                    (condition-case err
+                        (while (re-search-forward "^data: +\\({.+}\\)" nil t)
+                          (let* ((json (json-read-from-string (decode-coding-string (match-string 1) 'utf-8)))
+                                 (choice (aref (alist-get 'choices json) 0))
+                                 (content (alist-get 'content (alist-get 'delta choice)))
+                                 (finish (alist-get 'finish_reason choice)))
+                            (if finish
+                                (progn (message "")
+                                       (when gt-chatgpt-streaming-finished-hook
+                                         (with-current-buffer (marker-buffer (car markers))
+                                           (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers)))))
+                              (setf res (concat res content))
+                              (set-marker gt-tracking-marker (point))
+                              (unless (string-blank-p (concat res))
+                                (funcall next task)))))
+                      (error (unless (string-prefix-p "json" (format "%s" (car err)))
+                               (signal (car err) (cdr err)))))))
+        :done (unless stream
+                (lambda (json)
+                  (with-slots (res) task
+                    (setf res (alist-get 'content (alist-get 'message (let-alist json (aref .choices 0))))))
+                  (funcall next task)))
+        :fail (lambda (err) (gt-fail task err))))))
 
 (cl-defmethod gt-stream-p ((engine gt-chatgpt-engine))
   (oref engine stream))
@@ -180,16 +175,15 @@ alloy, echo, fable, onyx, nova, or shimmer."
 (cl-defmethod gt-speak ((engine gt-chatgpt-engine) text _lang)
   (gt-ensure-key engine)
   (with-slots (host key) engine
-    (gt-request :url (concat (or host gt-chatgpt-host) "/v1/audio/speech")
-                :headers `(("Content-Type" . "application/json")
-                           ("Authorization" . ,(concat "Bearer " key)))
-                :data (json-encode
-                       `((input . ,text)
-                         (model . ,gt-chatgpt-tts-model)
-                         (speed . ,gt-chatgpt-tts-speed)
-                         (voice . ,gt-chatgpt-tts-voice)))
-                :done #'gt-play-audio
-                :cache (length text))))
+    (gt-request (concat (or host gt-chatgpt-host) "/v1/audio/speech")
+      :headers `(("Content-Type" . "application/json")
+                 ("Authorization" . ,(concat "Bearer " key)))
+      :data `((input . ,text)
+              (model . ,gt-chatgpt-tts-model)
+              (speed . ,gt-chatgpt-tts-speed)
+              (voice . ,gt-chatgpt-tts-voice))
+      :done #'gt-play-audio
+      :cache (length text))))
 
 (provide 'gt-engine-chatgpt)
 

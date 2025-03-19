@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024 lorniu <lorniu@gmail.com>
 ;; Author: lorniu <lorniu@gmail.com>
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (pdd "0.1"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -994,20 +994,32 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
 
 ;;; Http Client
 
-(require 'gt-httpx)
+(require 'pdd)
 
 (defvar plz-curl-program)
 
+;; FIXME: compact, maybe will be removed later
+(defalias 'gt-url-http-client 'pdd-url-client)
+(defalias 'gt-plz-http-client 'pdd-plz-client)
+
 (defvar gt-default-http-client
   (if (and (require 'plz nil t) (executable-find plz-curl-program))
-      (gt-plz-http-client)
-    (gt-url-http-client)))
+      (pdd-plz-client)
+    (pdd-url-client))
+  "Client used by `gt-request' by default.
+See the descriptions from `pdd-default-client'.")
 
-(cl-defmethod gt-request (&rest args &key url method headers data filter done fail sync retry cache)
-  "Simple wrapper for http client, and add cache support."
+(cl-defun gt-request (url &rest args &key method
+                          params headers data resp filter done fail fine sync retry cache)
+  "Send request for URL with pdd client specified by `gt-default-http-client'.
+All the ARGS like METHOD, PARAMS, HEADERS, DATA, RESP, FILTER, DONE, FAIL, FINE,
+SYNC, RETRY are just like those in method `pdd'.  If CACHE, return from local
+cache first."
+  (declare (indent 1))
   (ignore method headers filter sync retry)
-  (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
-    (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
+  (let* ((pdd-default-client gt-default-http-client)
+         (client (pdd-ensure-default-client (cons url args))))
+    (if (and client (eieio-object-p client) (object-of-class-p client 'pdd-client))
         (let* ((ckey (sha1 (format "%s%s" url data)))
                (donefn (when done
                          (lambda (raw)
@@ -1021,8 +1033,8 @@ If ONLY-EXPIRED not nil, purge caches expired only.")
               (progn (gt-log 'cacher (format "Find %s in cache..." ckey))
                      (if donefn (funcall donefn r) r))
             (cl-remf args :cache)
-            (apply #'gt-request client `(:done ,donefn ,@args))))
-      (let ((errmsg "Make sure `gt-default-http-client' is available. eg:\n\n(setq gt-default-http-client (gt-url-http-client))\n\n\n"))
+            (apply #'pdd client url `(:done ,donefn ,@args))))
+      (let ((errmsg "Make sure `gt-default-http-client' is available. eg:\n\n(setq gt-default-http-client (pdd-url-client))\n\n\n"))
         (if fail (funcall fail errmsg) (user-error errmsg))))))
 
 
@@ -1644,12 +1656,12 @@ If WAIT is not nil, play after current process finished."
       (with-temp-buffer
         (let ((buf (current-buffer)) state)
           (if (string-prefix-p "http" data)
-              (progn (gt-request :url data
-                                 :cache 10
-                                 :done (lambda (raw)
-                                         (setq state 'done)
-                                         (with-current-buffer buf (insert raw)))
-                                 :fail (lambda (err) (setq state err)))
+              (progn (gt-request data
+                       :cache 10
+                       :done (lambda (raw)
+                               (setq state 'done)
+                               (with-current-buffer buf (insert raw)))
+                       :fail (lambda (err) (setq state err)))
                      (while (null state)
                        (accept-process-output nil 0.5)))
             (insert data))

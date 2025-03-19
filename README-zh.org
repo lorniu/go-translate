@@ -13,7 +13,7 @@
 当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意文本转换的场合 (Text to Text):
 - 比如内置的 Text Utility，集成了文本的加密解密、求取哈希、生成二维码等功能
 - 比如可以扩展为 ChatGPT 的客户端 (TODO)
-  
+
 ** 基本使用
 
 首先，需要通过 MELPA 或者其他途径下载并加载本包。
@@ -322,45 +322,45 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 可以通过扩展将翻译结果缓存进文件、SQLite 或 Redis 等。但感觉没必要。
 #+end_quote
 
-*** gt-url-http-client/gt-plz-http-client (gt-default-http-client)
+*** pdd-url-client/pdd-plz-client (gt-default-http-client)
 
-某些引擎需要通过网络获取翻译结果，这需要借助 =gt-http-client= 组件进行网络处理。
+某些引擎需要通过网络获取翻译结果，这需要借助 =pdd= 包的 =pdd-client= 组件进行网络处理。
 
-默认情况下网络请求是通过 =gt-url-http-client= 处理的，它的底层是 url.el，效率很低。
+默认情况下网络请求是通过 =pdd-url-client= 处理的，它的底层是 url.el，效率很低。
 
-组件 =gt-plz-http-client= 实现了通过 curl 进行 http 请求的目的，效果好很多很多。
+组件 =pdd-plz-client= 实现了通过 curl 进行 http 请求的目的，效果好很多很多。
 
-可以通过 =gt-default-http-client= 对请求客户端进行配置。当然，如果检测到系统内已经存在 curl 程序并安装了 [[https://github.com/alphapapa/plz.el][plz]] 包，组件 =gt-plz-http-client= 将自动设定为默认请求器。
+可以通过 =gt-default-http-client= 对请求客户端进行配置。当然，如果检测到系统内已经存在 curl 程序并安装了 [[https://github.com/alphapapa/plz.el][plz]] 包，组件 =pdd-plz-client= 将自动设定为默认请求器。
 
 如果想让请求走代理，这样设置:
 #+begin_src emacs-lisp
-  ;; 如果是 gt-url-http-client
+  ;; 如果是 pdd-url-client
   (setq gt-default-http-client
-        (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
+        (pdd-url-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
 
-  ;; 如果是 gt-plz-http-client
+  ;; 如果是 pdd-plz-client
   (setq gt-default-http-client
-        (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
+        (pdd-plz-client :args '("--proxy" "socks5://127.0.0.1:9999")))
 #+end_src
 
 若想让不同请求走不同代理，可以仿照下面方式设置:
 #+begin_src emacs-lisp
   (setq gt-default-http-client
-        (lambda (host)
-          (if (string-match-p "google\\|deepl\\|openai" host)
-              (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
-            (gt-plz-http-client))))
+        (lambda (url)
+          (if (string-match-p "google\\|deepl\\|openai" url)
+              (pdd-plz-client :args '("--proxy" "socks5://127.0.0.1:9999"))
+            (pdd-plz-client))))
 
   (setq gt-default-http-client
-        (lambda (host)
-          (let ((proxy? (string-match-p "google\\|deepl\\|openai" host)))
+        (lambda (url)
+          (let ((proxy? (string-match-p "google\\|deepl\\|openai" url)))
             (if (require 'plz nil t)
                 (if proxy?
-                    (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
-                  (gt-plz-http-client))
+                    (pdd-plz-client :args '("--proxy" "socks5://127.0.0.1:9999"))
+                  (pdd-plz-client))
               (if proxy?
-                  (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999")))
-                (gt-url-http-client))))))
+                  (pdd-url-client :proxies '(("http" . "host:9999") ("https" . "host:9999")))
+                (pdd-url-client))))))
 #+end_src
 
 *** gt-taker
@@ -796,4 +796,3 @@ ChatGPT 需要 apikey 才能正常使用:
 
 我使用翻译不多，这个框架纯粹是兴趣使然。因为对翻译工作的认知有限，某些功能设置未必合理。
 因此若有同学和专业人士提出好的想法和建议，必欣然受之。请不吝赐教，谢谢。
-

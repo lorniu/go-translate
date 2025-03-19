@@ -78,23 +78,22 @@ You can also put it into .authinfo file as:
   (gt-ensure-key engine)
   (with-slots (text src tgt res) task
     (with-slots (host path key) engine
-      (gt-request :url (concat (or host gt-libre-host) path)
-                  :data `(("q"      . ,text)
-                          ("source" . ,src)
-                          ("target" . ,tgt)
-                          ("format" . "text")
-                          ("alternatives" . 1)
-                          ,(if key `("api_key" . ,key)))
-                  :done (lambda (raw)
-                          (setf res raw)
-                          (funcall next task))
-                  :fail (lambda (err)
-                          (gt-fail task err))))))
+      (gt-request (concat (or host gt-libre-host) path)
+        :data `(("q"      . ,text)
+                ("source" . ,src)
+                ("target" . ,tgt)
+                ("format" . "text")
+                ("alternatives" . 1)
+                ,(if key `("api_key" . ,key)))
+        :done (lambda (json)
+                (setf res json)
+                (funcall next task))
+        :fail (lambda (err)
+                (gt-fail task err))))))
 
 (cl-defmethod gt-parse ((_ gt-libre-parser) task)
   (with-slots (res) task
-    (let ((json (json-read-from-string (decode-coding-string res 'utf-8))))
-      (setf res (cdr (assoc 'translatedText json))))))
+    (setf res (cdr (assoc 'translatedText res)))))
 
 (provide 'gt-engine-libre)
 

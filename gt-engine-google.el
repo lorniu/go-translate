@@ -111,29 +111,30 @@ you can customize it according to your country region."
   (with-slots (host token token-time) engine
     (if (gt-google-token-available-p engine)
         (funcall done)
-      (gt-request :url (or host gt-google-host)
-                  :headers gt-google-request-headers
-                  :done (lambda (raw)
-                          (with-temp-buffer
-                            (insert raw)
-                            (goto-char (point-min))
-                            (let ((tk (progn
-                                        (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
-                                        (cons (string-to-number (match-string 1))
-                                              (string-to-number (match-string 2))))))
-                              (setf token tk)
-                              (setf token-time (current-time))
-                              (funcall done))))
-                  :fail fail))))
+      (gt-request (or host gt-google-host)
+        :headers gt-google-request-headers
+        :done (lambda (raw)
+                (with-temp-buffer
+                  (insert raw)
+                  (goto-char (point-min))
+                  (let ((tk (progn
+                              (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                              (cons (string-to-number (match-string 1))
+                                    (string-to-number (match-string 2))))))
+                    (setf token tk)
+                    (setf token-time (current-time))
+                    (funcall done))))
+        :fail fail))))
 
 (cl-defmethod gt-translate ((engine gt-google-engine) task next)
   (gt-google-with-token engine
     (lambda ()
       (with-slots (text src tgt res) task
-        (gt-request :url (gt-google-gen-url engine text src tgt)
-                    :headers gt-google-request-headers
-                    :done (lambda (raw) (setf res raw) (funcall next task))
-                    :fail (lambda (err) (gt-fail task err)))))
+        (gt-request (gt-google-gen-url engine text src tgt)
+          :headers gt-google-request-headers
+          :resp 'identity
+          :done (lambda (raw) (setf res raw) (funcall next task))
+          :fail (lambda (err) (gt-fail task err)))))
     (lambda (err)
       (gt-fail task (format "Take token failed, %s" err)))))
 
