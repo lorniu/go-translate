@@ -131,8 +131,7 @@ Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
   (with-slots (text src tgt res) task
     (with-slots (host host-free path pro key) engine
       (gt-request (concat (if pro host host-free) path)
-        :headers `(("Authorization"   . ,(concat "DeepL-Auth-Key " key))
-                   ("Content-Type"    . "application/x-www-form-urlencoded;charset=UTF-8"))
+        :headers `(www-url-u8 (auth "DeepL-Auth-Key" ,key))
         :data    `(("text"            . ,(gt-deepl-fill-input text))
                    ("target_lang"     . ,(gt-deepl-get-lang tgt))
                    ,(if-let* ((src (gt-deepl-get-lang src))) `("source_lang" . ,src))

@@ -85,8 +85,11 @@
     (lambda ()
       (with-slots (text src tgt res) task
         (with-slots (host-tld ig key token) engine
-          (gt-request (format "%s/ttranslatev3?isVertical=1&IID=translator.5022.1&IG=%s" host-tld ig)
-            :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
+          (gt-request (format "%s/ttranslatev3" host-tld)
+            :headers `(www-url-u8)
+            :params  `((isVertical . 1)
+                       (IID . "translator.5022.1")
+                       (IG . ,ig))
             :data    `(("fromLang" . ,(gt-bing-get-lang src))
                        ("to"       . ,(gt-bing-get-lang tgt))
                        ("text"     . ,text)
@@ -190,8 +193,9 @@
     (message "Requesting from %s for %s..." (or host-tld host) lang)
     (gt-bing-with-token engine
       (lambda ()
-        (gt-request (format "%s/tfettts?isVertical=1&IID=translator.5022.2&IG=%s" host-tld ig)
-          :headers '(("content-type" . "application/x-www-form-urlencoded"))
+        (gt-request (format "%s/tfettts" host-tld)
+          :headers '(www-url)
+          :params `((isVertical . 1) (IID . "translator.5022.2") (IG . ,ig))
           :data `(("token" . ,token) ("key" . ,key) ("ssml" . ,(gt-bing-tts-payload lang text)))
           :cache (length text)
           :done #'gt-play-audio
