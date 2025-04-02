@@ -103,7 +103,7 @@
     (gt-taker :text (intern text) :pick (intern pick)
               :prompt (pcase prompt ("buffer" 'buffer) ("minibuffer" t) (_ nil)))))
 
-(defcustom gt-preset-takers
+(defvar gt-preset-takers
   (lambda ()
     `((,(gt-face-lazy "new..." 'bold)  . ,#'gt-define-custom-taker)
       (default                         . ,(gt-taker))
@@ -118,13 +118,9 @@ instance of `gt-taker' and the key is a string or symbol, representing the
 display label of the taker.
 
 Custom your own takers and put them into this list, then change the taker
-of `gt-default-translator' at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-taker")))
-  :group 'gt-do-translate)
+of `gt-default-translator' at any time in `gt-do-setup'.")
 
-(defcustom gt-preset-engines
+(defvar gt-preset-engines
   (lambda ()
     `((Bing                 . ,(gt-bing-engine))
       (DeepL                . ,(gt-deepl-engine))
@@ -146,13 +142,9 @@ instance of `gt-engine' and the key is a string or symbol, representing the
 display label of the engine.
 
 Custom your own engines and put them into this list, then change the engines
-of `gt-default-translator' at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-engine")))
-  :group 'gt-do-translate)
+of `gt-default-translator' at any time in `gt-do-setup'.")
 
-(defcustom gt-preset-renders
+(defvar gt-preset-renders
   (lambda ()
     `((,gt-buffer-render-buffer-name  . ,(gt-buffer-render))
       (insert/after                   . ,(gt-insert-render  :type 'after))
@@ -175,13 +167,9 @@ instance of `gt-render' and the key is a string or symbol, representing the
 display label of the render.
 
 Custom your own render and put them into this list, then change the render
-of `gt-default-translator' at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-render")))
-  :group 'gt-do-translate)
+of `gt-default-translator' at any time in `gt-do-setup'.")
 
-(defcustom gt-preset-translators
+(defvar gt-preset-translators
   (lambda ()
     `((default . ,(gt-translator :taker   (cdar (gt-ensure-plain gt-preset-takers))
                                  :engines (cdar (gt-ensure-plain gt-preset-engines))
@@ -196,19 +184,13 @@ instance of `gt-translator' and the key is a string or symbol, representing the
 display label of the translator.
 
 Custom your own translator and put them into this list, then change the the
-default translator to one of them at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-translator")))
-  :group 'gt-do-translate)
+default translator to one of them at any time in `gt-do-setup'.")
 
-(defcustom gt-default-translator nil
+(defvar gt-default-translator nil
   "The translator used by `gt-do-translate'.
 
 If you leave this nil, then the first translator in `gt-preset-translators'
-will be used as the default translator."
-  :type '(restricted-sexp :match-alternatives (gt-translator-p 'nil))
-  :group 'gt-do-translate)
+will be used as the default translator.")
 
 (defun gt-ensure-default-translator ()
   "Initial `gt-default-translator' if possible and make sure it's valid."
