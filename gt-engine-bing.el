@@ -26,7 +26,7 @@
 
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defgroup go-translate-bing nil
   "Configs for Bing engine."
@@ -36,7 +36,7 @@
 
 (defclass gt-bing-parser (gt-parser) ())
 
-(defclass gt-bing-engine (gt-engine)
+(defclass gt-bing-engine (gt-web-engine)
   ((tag       :initform 'Bing)
    (host      :initform "https://www.bing.com")
    (host-tld  :initform nil)
@@ -45,6 +45,7 @@
    (token     :initform nil)
    (last-time :initform nil)
    (expired-time :initform (* 30 60))
+   (delimit   :initform t)
    (parse     :initform (gt-bing-parser))))
 
 
@@ -54,57 +55,52 @@
 
 (defvar gt-bing-token-maybe-invalid nil)
 
-(defun gt-bing-get-lang (lang)
+(defun gt-bing-lang (lang)
   (or (cdr-safe (assoc lang gt-bing-extra-langs-mapping)) lang))
 
-(defun gt-bing-with-token (engine done)
-  (declare (indent 1))
+(defun gt-bing-token (engine)
   (with-slots (ig key token host host-tld last-time expired-time) engine
-    (if (and token key ig last-time (not gt-bing-token-maybe-invalid)
+    (if (and host-tld token key ig last-time (not gt-bing-token-maybe-invalid)
              (< (- (time-to-seconds) last-time) expired-time))
-        (funcall done)
-      (gt-request :url (concat host "/translator")
-                  :done (lambda (raw)
-                          (with-temp-buffer
-                            (insert raw)
-                            (goto-char (point-min))
-                            (re-search-forward "IG:\"\\([A-Za-z0-9]+\\)\"")
-                            (setf ig (match-string 1))
-                            (re-search-forward "curUrl=\"\\(http[a-z]*\\).*?\\([a-zA-Z]+\\.bing.com\\)")
-                            (setf host-tld (concat (match-string 1) "://" (match-string 2)))
-                            (re-search-forward "var params_AbusePreventionHelper = \\[\\([0-9]+\\), *\"\\([^\"]+\\)")
-                            (setf key (match-string 1) token (match-string 2))
-                            (setf last-time (time-to-seconds))
-                            (setq gt-bing-token-maybe-invalid nil)
-                            (gt-log 'bing (format "url: %s\nkey: %s\ntoken: %s\nig: %s" host-tld key token ig))
-                            (funcall done)))
-                  :fail (lambda (err) (user-error "[BING] Get Token failed. %s" err))))))
+        (pdd-resolve)
+      (gt-request (concat host "/translator")
+        :cache nil
+        :done (lambda (raw)
+                (with-temp-buffer
+                  (save-excursion (insert raw))
+                  (re-search-forward "IG:\"\\([A-Za-z0-9]+\\)\"")
+                  (setf ig (match-string 1))
+                  (re-search-forward "curUrl=\"\\(http[a-z]*\\).*?\\([a-zA-Z]+\\.bing.com\\)")
+                  (setf host-tld (concat (match-string 1) "://" (match-string 2)))
+                  (re-search-forward "var params_AbusePreventionHelper = \\[\\([0-9]+\\), *\"\\([^\"]+\\)")
+                  (setf key (match-string 1) token (match-string 2))
+                  (setf last-time (time-to-seconds))
+                  (setq gt-bing-token-maybe-invalid nil)
+                  (gt-log 'bing (format "url: %s\nkey: %s\ntoken: %s\nig: %s" host-tld key token ig))))))))
 
-(cl-defmethod gt-translate ((engine gt-bing-engine) task next)
-  (gt-bing-with-token engine
+(cl-defmethod gt-execute ((engine gt-bing-engine) task)
+  (pdd-then (gt-bing-token engine)
     (lambda ()
-      (with-slots (text src tgt res) task
+      (with-slots (text src tgt) task
         (with-slots (host-tld ig key token) engine
-          (gt-request :url (format "%s/ttranslatev3?isVertical=1&IID=translator.5022.1&IG=%s" host-tld ig)
-                      :headers `(("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
-                      :data    `(("fromLang" . ,(gt-bing-get-lang src))
-                                 ("to"       . ,(gt-bing-get-lang tgt))
-                                 ("text"     . ,text)
-                                 ("key"      . ,key)
-                                 ("token"    . ,token))
-                      :done (lambda (raw)
-                              (setf res raw)
-                              (funcall next task))
-                      :fail (lambda (err)
-                              (gt-fail task
-                                (pcase (car-safe (cdr-safe err))
-                                  (429 "[429] Too many requests! Please try later")
-                                  (_ err))))))))))
+          (gt-request (format "%s/ttranslatev3" host-tld)
+            :cache (if pdd-active-cacher `(t bing ,src ,tgt ,text))
+            :headers `(www-url-u8)
+            :params `((isVertical . 1) (IG . ,ig) (IID . "translator.5022.1"))
+            :data `(("key"      . ,key)
+                    ("token"    . ,token)
+                    ("text"     . ,text)
+                    ("fromLang" . ,(gt-bing-lang src))
+                    ("to"       . ,(gt-bing-lang tgt)))))))
+    (lambda (err)
+      (signal (car err)
+              (pcase (car-safe (cdr-safe err))
+                (429 '("[429] Too many requests! Please try later"))
+                (_ (cdr err)))))))
 
 (cl-defmethod gt-parse ((_ gt-bing-parser) task)
   (with-slots (res err) task
-    (if-let* ((json (json-read-from-string (decode-coding-string res 'utf-8)))
-              (result (ignore-errors (cdr (assoc 'text (aref (cdr (assoc 'translations (aref json 0))) 0))))))
+    (if-let* ((result (ignore-errors (cdr (assoc 'text (aref (cdr (assoc 'translations (aref res 0))) 0))))))
         (setf res result)
       (setq gt-bing-token-maybe-invalid t) ; refresh token when error occurred
       (setf err res)
@@ -186,17 +182,18 @@
             (cadr lm) (caddr lm) (cadr lm) (cadddr lm)
             gt-bing-tts-speed (encode-coding-string text 'utf-8))))
 
-(cl-defmethod gt-speak ((engine gt-bing-engine) text lang)
+(cl-defmethod gt-speech ((engine gt-bing-engine) text lang)
   (with-slots (host host-tld ig key token) engine
     (message "Requesting from %s for %s..." (or host-tld host) lang)
-    (gt-bing-with-token engine
+    (pdd-then (gt-bing-token engine)
       (lambda ()
-        (gt-request :url (format "%s/tfettts?isVertical=1&IID=translator.5022.2&IG=%s" host-tld ig)
-                    :headers '(("content-type" . "application/x-www-form-urlencoded"))
-                    :data `(("token" . ,token) ("key" . ,key) ("ssml" . ,(gt-bing-tts-payload lang text)))
-                    :cache (length text)
-                    :done #'gt-play-audio
-                    :fail (lambda (err) (message "[BING-TTS] error in request, %s" err)))))))
+        (gt-request (format "%s/tfettts" host-tld)
+          :headers '(www-url)
+          :params `((isVertical . 1) (IG . ,ig) (IID . "translator.5022.2"))
+          :data `(("token" . ,token) ("key" . ,key) ("ssml" . ,(gt-bing-tts-payload lang text)))
+          :cache (length text)
+          :done #'gt-play-audio))
+      (lambda (err) (message "[BING-TTS] error in request, %s" err)))))
 
 (provide 'gt-engine-bing)
 
