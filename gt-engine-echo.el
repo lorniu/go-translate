@@ -26,38 +26,34 @@
 
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defclass gt-echo-engine (gt-engine)
-  ((tag        :initform 'Echo)
-   (do         :initform nil :initarg :do)))
+  ((tag  :initform 'Echo)
+   (do   :initform nil :initarg :do)))
 
 (cl-defmethod initialize-instance :after ((engine gt-echo-engine) &rest _)
-  (with-slots (cache delimiter) engine
-    (setf cache nil delimiter nil)))
+  (with-slots (delimit) engine
+    (setf delimit nil)))
 
-(cl-defmethod gt-translate ((engine gt-echo-engine) task next)
-  (with-slots (text res) task
-    (with-slots (do) engine
-      (setf res text)
-      (cl-labels ((process (sym)
-                    (cond ((eq sym 'clean)
-                           (setf res (mapcar #'substring-no-properties res)))
-                          ((eq sym 'br)
-                           (setf res (mapcar #'gt-prop-for-bionic-reading res)))
-                          ((functionp sym)
-                           (setf res (funcall sym res)))
-                          ((consp sym)
-                           (cl-loop for o in sym do (process o))))))
-        (process do)
-        (funcall next task)))))
+(cl-defmethod gt-execute ((engine gt-echo-engine) task)
+  (cl-labels ((process-step (op data)
+                (pcase op
+                  ('clean (mapcar #'substring-no-properties data))
+                  ('br (mapcar #'gt-prop-for-bionic-reading data))
+                  ((pred functionp) (funcall op data))
+                  ((pred consp) (cl-loop with d = data
+                                         for sub-op in op
+                                         do (setq d (process-step sub-op d))
+                                         finally return d))
+                  (_ data))))
+    (process-step (oref engine do) (oref task text))))
 
 
 
 (defun gt-prop-for-bionic-reading (text)
   (with-temp-buffer
-    (insert text)
-    (goto-char (point-min))
+    (save-excursion (insert text))
     (skip-chars-forward " \t\n\r\f")
     (while (forward-word)
       (cl-destructuring-bind (beg . end) (bounds-of-thing-at-point 'word)

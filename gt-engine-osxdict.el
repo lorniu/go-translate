@@ -35,36 +35,30 @@
 ;;
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defclass gt-osxdict-parser (gt-parser) ())
 
 (defclass gt-osxdict-engine (gt-engine)
   ((tag :initform 'osx-dictionary)
    (program :initarg :program :initform nil :documentation "Path of osx-dictionary")
-   (delimiter :initform nil)
-   (cache :initform nil)
    (parse :initform (gt-osxdict-parser))))
 
 (defvar gt-osxdict-program "osx-dictionary"
   "Executable command or full path of osx-dictionary.")
 
-(cl-defmethod gt-translate ((engine gt-osxdict-engine) task next)
-  (let ((program (or (oref engine program) gt-osxdict-program)))
+(cl-defmethod gt-execute ((engine gt-osxdict-engine) task)
+  (let ((program (or (oref engine program) gt-osxdict-program))
+        (text (oref task text)))
     (unless (executable-find program)
       (user-error (format "[gt-osxdict-engine] Make sure executable `%s' is available'.\n
  Source: https://github.com/itchyny/dictionary.vim/tree/master/autoload/dictionary.m
  Build:  clang -framework CoreServices -framework Foundation dictionary.m -o %s
 " program program)))
-    (with-slots (text res) task
-      (when (cdr text)
-        (user-error "[gt-osxdict-engine] Multiple parts translation is not supported"))
-      (with-temp-buffer
-        (ignore-errors
-          (apply #'call-process program nil t nil text)
-          (setf res (buffer-string))))
-      (if (string-empty-p res) (setf res nil))
-      (funcall next task))))
+    (when (cdr text)
+      (user-error "[gt-osxdict-engine] Multiple parts translation is not supported"))
+    (pdd-process-task program text
+      :done (lambda (str) (unless (string-empty-p str) str)))))
 
 (cl-defmethod gt-parse ((_ gt-osxdict-parser) task)
   (with-slots (res) task

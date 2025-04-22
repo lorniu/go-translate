@@ -26,7 +26,7 @@
 
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defgroup go-translate-deepl nil
   "Configs for DeepL engine."
@@ -37,56 +37,14 @@
 
 (defclass gt-deepl-parser (gt-parser) ())
 
-(defclass gt-deepl-engine (gt-engine)
+(defclass gt-deepl-engine (gt-api-engine)
   ((tag       :initform 'DeepL)
    (host      :initform "https://api.deepl.com")
    (host-free :initform "https://api-free.deepl.com")
    (path      :initform "/v2/translate")
    (parse     :initform (gt-deepl-parser))
-
-   (pro       :initform nil
-              :initarg :pro
-              :documentation "Set t when use PRO version.")
-
-   (key       :initform 'auth-key
-              :initarg :key
-              :documentation "The auth-key of DeepL.
-You can also put it into .authinfo file as:
-  machine api.deepl.com login auth-key password ***")))
-
-
-;;; Utils
-
-(defcustom gt-deepl-fill-enable t
-  "Controller whether try to improve the input and output.
-Default behavior is removing excess linebreaks in input for better
-translation effect, and filling the output for better reading experience.
-You can override the behaviors by :around the method `gt-deepl-fill-input'
-or `gt-deepl-fill-output'."
-  :type 'boolean
-  :group 'go-translate-deepl)
-
-(cl-defmethod gt-deepl-fill-input (text)
-  "Improve the input TEXT for better translation effect.
-Mainly remove excess linebreaks. I want to skip unfill on comments and codes,
-but don't know how to implement easily. To make it better later, maybe."
-  (if gt-deepl-fill-enable
-      (with-temp-buffer
-        (insert text)
-        (let ((fill-column (* 2 (point-max))))
-          (fill-region (point-min) (point-max)))
-        (buffer-string))
-    text))
-
-(cl-defmethod gt-deepl-fill-output (text)
-  "Improve the output TEXT for better reading experience.
-Mainly fill the text to suitable length."
-  (if gt-deepl-fill-enable
-      (with-temp-buffer
-        (insert text)
-        (fill-region (point-min) (point-max))
-        (buffer-string))
-    text))
+   (key       :initform 'auth-key) ; machine api.deepl.com login auth-key password ***
+   (pro       :initform nil :initarg :pro :documentation "If PRO version.")))
 
 
 ;;; Engine
@@ -111,53 +69,50 @@ Mainly fill the text to suitable length."
                                  (ru . "RU") ; Russian
                                  ))
 
-(defun gt-deepl-get-lang (lang)
+(defun gt-deepl-lang (lang)
   (if-let* ((mapping (assoc lang gt-deepl-langs-mapping)))
       (cdr mapping)
     (user-error "Language %s is not supported by DeepL.
 Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
 
-(cl-defmethod gt-ensure-key ((engine gt-deepl-engine))
-  (with-slots (key) engine
-    (unless (stringp key)
-      (if-let* ((auth-key (gt-lookup-password
-                           :user (if key (format "%s" key) "auth-key")
-                           :host "api.deepl.com")))
-          (setf key auth-key)
-        (user-error "You should provide a auth-key for gt-deepl-engine")))))
+(cl-defmethod gt-key ((engine gt-deepl-engine))
+  (gt-ensure-key-for-engine (key) engine
+    (gt-lookup-password
+     :user (if key (format "%s" key) "auth-key")
+     :host "api.deepl.com")))
 
-(cl-defmethod gt-translate ((engine gt-deepl-engine) task next)
-  (gt-ensure-key engine)
-  (with-slots (text src tgt res) task
-    (with-slots (host host-free path pro key) engine
-      (gt-request :url (concat (if pro host host-free) path)
-                  :headers `(("Content-Type"    . "application/x-www-form-urlencoded;charset=UTF-8")
-                             ("Authorization"   . ,(concat "DeepL-Auth-Key " key)))
-                  :data    `(("text"            . ,(gt-deepl-fill-input text))
-                             ("target_lang"     . ,(gt-deepl-get-lang tgt))
-                             ,(if-let* ((src (gt-deepl-get-lang src))) `("source_lang" . ,src))
-                             ,@gt-deepl-extra-params)
-                  :done (lambda (raw)
-                          (setf res raw)
-                          (funcall next task))
-                  :fail (lambda (err)
-                          (gt-fail task (pcase (car-safe (cdr-safe err))
-                                          (403 "[403] Authorization failed. Please supply a valid auth_key parameter")
-                                          (413 "[413] The request size exceeds the limit")
-                                          (414 "[414] Request-URI Too Long")
-                                          (429 "[429] Too many requests. Please wait and resend your request")
-                                          (456 "[456] Quota exceeded. The character limit has been reached")
-                                          (_ err))))))))
+(cl-defmethod gt-execute ((engine gt-deepl-engine) task)
+  (with-slots (text src tgt) task
+    (with-slots (host host-free path pro rate-limit) engine
+      (let ((url (concat (if pro host host-free) path))
+            (headers `(www-url-u8 (auth "DeepL-Auth-Key" ,(gt-key engine))))
+            (data `(("target_lang" . ,(gt-deepl-lang tgt))
+                    ,(if-let* ((src (gt-deepl-lang src))) `("source_lang" . ,src))
+                    ,@gt-deepl-extra-params))
+            (fail (lambda (err)
+                    (signal (car err)
+                            (pcase (car-safe (cdr-safe err))
+                              (403 '("[403] Authorization failed. Please supply a valid auth_key parameter"))
+                              (413 '("[413] The request size exceeds the limit"))
+                              (414 '("[414] Request-URI Too Long"))
+                              (429 '("[429] Too many requests. Please wait and resend your request"))
+                              (456 '("[456] Quota exceeded. The character limit has been reached"))
+                              (_ (cdr err)))))))
+        (gt-dolist-concurrency (item text rate-limit)
+          (gt-request url
+            :cache (if pdd-active-cacher `(t deepl ,src ,tgt ,item))
+            :headers headers
+            :data `(("text" . ,item) ,@data)
+            :fail fail))))))
 
 
 ;;; Parser
 
 (cl-defmethod gt-parse ((_ gt-deepl-parser) task)
-  (with-slots (res meta) task
-    (let* ((json (json-read-from-string res))
-           (str (decode-coding-string (mapconcat #'cdadr (cdar json) "\n") 'utf-8))
-           (hook (lambda (rs) (mapcar #'gt-deepl-fill-output rs))))
-      (setf res str meta (plist-put meta :res-hook hook)))))
+  (cl-loop for item in (oref task res)
+           for str = (decode-coding-string (mapconcat #'cdadr (cdar item) "\n") 'utf-8)
+           collect (string-trim str) into lst
+           finally (oset task res lst)))
 
 (provide 'gt-engine-deepl)
 

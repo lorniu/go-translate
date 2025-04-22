@@ -13,7 +13,7 @@
 当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意文本转换的场合 (Text to Text):
 - 比如内置的 Text Utility，集成了文本的加密解密、求取哈希、生成二维码等功能
 - 比如可以扩展为 ChatGPT 的客户端 (TODO)
-  
+
 ** 基本使用
 
 首先，需要通过 MELPA 或者其他途径下载并加载本包。
@@ -27,7 +27,7 @@
   ;; 结果将显示在 Echo Area 中
 #+end_src
 
-然后选中某段文本，执行命令 =gt-do-translate= 即可。
+然后选中某段文本，执行命令 =gt-translate= 即可。
 
 当然，也可以为翻译器指定更多选项，比如:
 #+begin_src emacs-lisp
@@ -52,10 +52,7 @@
   ;; 结果使用新的 Buffer 渲染出来
 #+end_src
 
-除了通过 =gt-default-translator= 设定默认翻译器，也可以通过 =gt-preset-translators= 配置若干预设翻译器。
-如果 =gt-default-translator= 为 nil，那么 =gt-preset-translators= 中的第一个将会被作为默认翻译器。
-
-定义预设翻译器的语法如下:
+除了通过 =gt-default-translator= 设定默认翻译器，也可以通过 =gt-preset-translators= 配置若干预设翻译器：
 #+begin_src emacs-lisp
   (setq gt-preset-translators
         `((ts-1 . ,(gt-translator
@@ -78,13 +75,8 @@
 - *ts-2*: 使用 Google 在 en, fr 和 ru 间进行翻译，翻译的是光标附近的句子或选中的文本，结果将插入当前 buffer
 - *ts-3*: 使用 Google 翻译 buffer 中所有长度大于 6 的单词，将鼠标放到被翻译的单词上后，翻译结果将以 popup 方式显示
 
-随后就可以通过命令 =gt-do-translate= 进行翻译，并可通过 =gt-do-setup= 在不同翻译器间进行切换。
-
-#+begin_quote
-*强烈建议:*
-
-安装 curl 程序和 [[https://github.com/alphapapa/plz.el][plz.el]] 包。之后请求将会通过 curl 进行发送，效果比内置的 url.el 好很多!
-#+end_quote
+如果 =gt-default-translator= 为 nil，那么 =gt-preset-translators= 中的第一个将会被作为默认翻译器。
+因此就可以通过命令 =gt-translate= 进行翻译，并可通过 =gt-setup= 在不同翻译器间进行切换。
 
 请通过 =M-x customize-group go-translate= 查看更多配置选项，通过阅读之后的章节了解更多配置细节。
 
@@ -103,24 +95,24 @@
   ;; 通过 :taker :engines 和 :render 指定组件; 通过 gt-start 方法执行翻译
   (gt-start (gt-translator :taker ... :engines ... :render ...))
 
-  ;; gt-do-translate 命令使用 gt-default-translator 指向的翻译器执行翻译任务
+  ;; gt-translate 命令使用 gt-default-translator 指向的翻译器执行翻译任务
   (setq gt-default-translator (gt-translator :taker ... :engines ... :render ..))
-  (call-interactively #'gt-do-translate)
+  (call-interactively #'gt-translate)
 #+end_src
 
 因此，完善配置之前，需要对组件进行进一步了解。
 
 *** 用于捕获输入的 =gt-taker= 组件
 
-| slot      | 介绍                        | 值                                                                                 |
-|-----------+-----------------------------+------------------------------------------------------------------------------------|
-| text      | 初始文本                    | 字符串或返回字符串的一个函数，也可以是 'buffer 'word 'paragraph 'sentence 等 symbol |
-| langs     | 要翻译的语言                | 列表，比如 '(en zh), '(en ru it fr)，如果为空，则采用变量 gt-langs 的值             |
-| prompt    | 交互式确认                  | 如果为 t 则通过 Minibuffer 确认，如果为 'buffer 则通过打开一个新 buffer 进行确认     |
-| pick      | 从文本中挑选段落、句子或单词 | 进行挑选的函数，或者 'word 'paragraph 'sentence 等 symbol                          |
-| pick-pred | 用于过滤 pick 到的文字      | 传入字符串，输出布尔类型                                                            |
-| then      | take 之后要执行的逻辑，钩子 | 一个以当前 translator 为参数的函数。可以对 take 到的内容进行最后一步修改             |
-| if        | 过滤                        | 函数或字面量表达式，用于根据输入的内容决定 taker 是否适用于当前翻译任务              |
+| slot      | 介绍                     | 值                                                                           |
+|-----------+--------------------------+------------------------------------------------------------------------------|
+| text      | 初始文本                  | 字符串或返回字符串的一个函数，也可以是 'buffer 'word 'paragraph 'sentence 等 symbol |
+| langs     | 要翻译的语言               | 列表，比如 '(en zh), '(en ru it fr)，如果为空，则采用变量 gt-langs 的值            |
+| prompt    | 交互式确认                | 如果为 t 则通过 Minibuffer 确认，如果为 'buffer 则通过打开一个新 buffer 进行确认     |
+| pick      | 从文本中挑选段落、句子或单词  | 进行挑选的函数，或者 'word 'paragraph 'sentence 等 symbol                       |
+| pick-pred | 用于过滤 pick 到的文字     | 传入字符串，输出布尔类型                                                         |
+| then      | take 之后要执行的逻辑，钩子 | 一个以当前 translator 为参数的函数。可以对 take 到的内容进行最后一步修改              |
+| if        | 过滤                     | 函数或字面量表达式，用于根据输入的内容决定 taker 是否适用于当前翻译任务                 |
 
 当前只内置了一个 Taker 实现，它可以适用大多数场景:
 : 通过 text 决定初始文本，通过 langs 判定翻译语言，通过 prompt 进行确认，通过 pick 从中摘取某些段落、句子或单词
@@ -202,14 +194,14 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 
 *** 用于翻译转换的 =gt-engine= 组件
 
-| slot      | 介绍                          | 值                                                                                  |
-|-----------+-------------------------------+-------------------------------------------------------------------------------------|
-| parse     | 指定解析器                    | 解析器或函数                                                                        |
-| cache     | 配置缓存                      | 如果设为 nil 则为当前 engine 禁用缓存。也可以为不同 engine 指定不同 cacher 或缓存策略 |
-| stream    | 是否开启 stream 模式          | 只有引擎支持流式 API 这个设置才有用。比如，ChatGPT 引擎                              |
-| delimiter | 分隔符                        | 如果不为空，则采取「连接-翻译-分割」的翻译策略                                       |
-| then      | engine 完成后执行的逻辑，钩子 | 一个以当前 task 为参数的函数。可以用于在渲染之前对返回的内容进行最后一步修改          |
-| if        | 过滤                          | 函数或字面量表达式，用于根据输入的内容决定当前 engine 是否参与当前翻译任务            |
+| slot    | 介绍                      | 值                                                               |
+|---------+---------------------------+------------------------------------------------------------------|
+| parse   | 指定解析器                 | 解析器或函数                                                       |
+| cache   | 配置缓存                   | 如果设为 nil 则为当前 engine 禁用缓存。也可以为不同 engine 指定缓存策略   |
+| stream  | 是否开启 stream 模式        | 只有引擎支持流式 API 这个设置才有用。比如，ChatGPT 引擎                 |
+| delimit | 分隔符                     | 如果不为空，则采取「连接-翻译-分割」的翻译策略                           |
+| then    | engine 完成后执行的逻辑，钩子 | 一个以当前 task 为参数的函数。可以用于在渲染之前对返回的内容进行最后一步修改 |
+| if      | 过滤                      | 函数或字面量表达式，用于根据输入的内容决定当前 engine 是否参与当前翻译任务   |
 
 内置的 Engine 实现有:
 - =gt-deepl-engine=, DeepL 翻译
@@ -248,32 +240,31 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 可以通过 =cache= 为不同引擎指定不同的缓存策略:
 #+begin_src emacs-lisp
   (gt-translator
-   :engines (list (gt-youdao-dict-engine)       ; 默认缓存机制
-                  (gt-google-engine :cache nil) ; 禁用缓存
-                  (gt-bing-engine :cache 'word) ; 只缓存单词
-                  (gt-deepl-engine :cache (gt-xxx-cacher)))) ; 指定其他缓存器
+   :engines (list (gt-youdao-dict-engine)         ; 默认缓存机制
+                  (gt-google-engine :cache nil)   ; 禁用缓存
+                  (gt-bing-engine :cache 'word))) ; 只缓存单词
 #+end_src
 
 #+begin_quote
 *注意:*
 
-如果是多段落或多单词翻译，默认将会采取:
+如果 delimit 不为 nil，那么多段落或多单词翻译将采取下面策略:
 1. 先将翻译的内容连成一个字符串，
 2. 通过一次翻译得到结果，
 3. 之后再将结果分割开来的翻译策略。
 
 这时传递给 Engine 翻译的文本是一个单独的字符串。
 
-如果将 delimiter 设定为 nil 那么传递给 Engine 的将是一个字符串列表，这时将需要 Engine 有处理列表的能力。
+如果 delimit 为 nil 那么传递给 Engine 的将是一个字符串列表，这时将需要 Engine 有处理列表的能力。
 #+end_quote
 
 *** 用于渲染输出的 =gt-render= 组件
 
-| slot   | 介绍                      | 值                                                                          |
-|--------+---------------------------+-----------------------------------------------------------------------------|
-| prefix | 定制输出中的 Prefix 内容  | 函数或字符串。定制 Prefix 显示格式。Prefix 是输出结果中的语言、引擎提示的文本 |
-| then   | 渲染完成后执行的逻辑，钩子 | 函数或另一个渲染器。可以将渲染任务传递给下一个渲染器，实现多渲染器输出的效果   |
-| if     | 过滤                      | 函数或字面量表达式，用于根据输入的内容决定 render 是否适用于当前翻译任务      |
+| slot   | 介绍                   | 值                                                                 |
+|--------+------------------------+--------------------------------------------------------------------|
+| prefix | 定制输出中的 Prefix 内容 | 函数或字符串。定制 Prefix 显示格式。Prefix 是输出结果中的语言、引擎提示的文本 |
+| then   | 渲染完成后执行的逻辑，钩子 | 函数或另一个渲染器。可以将渲染任务传递给下一个渲染器，实现多渲染器输出的效果    |
+| if     | 过滤                   | 函数或字面量表达式，用于根据输入的内容决定 render 是否适用于当前翻译任务      |
 
 内置的 Render 实现有:
 - =gt-render=, 默认实现，会将结果输出到 Echo Area
@@ -302,65 +293,30 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 #+end_src
 
 ** 常用组件/补充说明
-*** gt-memory-cacher (gt-default-cacher)
+*** pdd-url-backend/pdd-curl-backend (gt-http-backend)
 
-=gt-memory-cacher= 是内置的缓存实现，功能简单直接。只需要将 =gt-cache-p= 设置为 t 即可使用。
+网络请求功能是借助 [[https://github.com/lorniu/pdd.el][pdd.el]] 包实现的。pdd 使用外部程序 =curl= 或内置的 =url.el= 进行请求。
 
-可以通过 =gt-default-cacher= 对缓存进行配置或切换其他缓存实现:
+如果想使用 =curl= 的方式，只需要在系统中安装 curl 和 [[https://github.com/alphapapa/plz.el][plz]] 包。pdd 将会优先使用它们。
+
+当然，你也可以通过 =gt-http-backend= 设定使用哪种方式，并通过 =gt-http-proxy= 来设定代理:
 #+begin_src emacs-lisp
-  (setq gt-default-cacher (gt-memory-cacher :if 'word)) ; 只缓存单词
-  (setq gt-default-cacher (gt-memory-cacher :if '(or word not-src:zh))) ; 只缓存单词和非中文翻译
-  (setq gt-default-cacher (gt-xxxxxx-cacher)) ; 使用其他缓存实现
-#+end_src
+  ;; 显式指定使用的客户端
+  (setq gt-http-backend (pdd-url-backend))  ; 基于 url.el 的
+  (setq gt-http-backend (pdd-curl-backend)) ; 基于 curl based 的
 
-要关闭缓存，可以将总开关 =gt-cache-p= 设为 nil，也可以单独关闭某引擎的缓存:
-#+begin_src emacs-lisp
-  (gt-translator :engines (gt-google-engine :cache nil))
-#+end_src
+  ;; 显式指定使用代理的客户端
+  (setq gt-http-backend (pdd-url-backend :proxy "socks5://127.0.0.1:1080"))
 
-#+begin_quote
-可以通过扩展将翻译结果缓存进文件、SQLite 或 Redis 等。但感觉没必要。
-#+end_quote
+  ;; 单独指定客户端和代理
+  (setq gt-http-backend (pdd-curl-backend))
+  (setq gt-http-proxy "socks5://127.0.0.1:1080")
 
-*** gt-url-http-client/gt-plz-http-client (gt-default-http-client)
-
-某些引擎需要通过网络获取翻译结果，这需要借助 =gt-http-client= 组件进行网络处理。
-
-默认情况下网络请求是通过 =gt-url-http-client= 处理的，它的底层是 url.el，效率很低。
-
-组件 =gt-plz-http-client= 实现了通过 curl 进行 http 请求的目的，效果好很多很多。
-
-可以通过 =gt-default-http-client= 对请求客户端进行配置。当然，如果检测到系统内已经存在 curl 程序并安装了 [[https://github.com/alphapapa/plz.el][plz]] 包，组件 =gt-plz-http-client= 将自动设定为默认请求器。
-
-如果想让请求走代理，这样设置:
-#+begin_src emacs-lisp
-  ;; 如果是 gt-url-http-client
-  (setq gt-default-http-client
-        (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
-
-  ;; 如果是 gt-plz-http-client
-  (setq gt-default-http-client
-        (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
-#+end_src
-
-若想让不同请求走不同代理，可以仿照下面方式设置:
-#+begin_src emacs-lisp
-  (setq gt-default-http-client
-        (lambda (host)
-          (if (string-match-p "google\\|deepl\\|openai" host)
-              (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
-            (gt-plz-http-client))))
-
-  (setq gt-default-http-client
-        (lambda (host)
-          (let ((proxy? (string-match-p "google\\|deepl\\|openai" host)))
-            (if (require 'plz nil t)
-                (if proxy?
-                    (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
-                  (gt-plz-http-client))
-              (if proxy?
-                  (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999")))
-                (gt-url-http-client))))))
+  ;; 当然，你可以配置为动态决定使用什么客户端，走什么代理。比如:
+  (setq gt-http-proxy
+        (lambda (request) ; 配置只有符合条件的网站走代理，其他的不走
+          (when (string-match-p "\\(google.*\\|deepl\\|openai\\)\\.com" (oref request url))
+            "socks5://127.0.0.1:1080")))
 #+end_src
 
 *** gt-taker
@@ -498,7 +454,7 @@ ChatGPT 需要 apikey 才能正常使用:
                        :render (gt-insert-render)))
 #+end_src
 
-另外，可以通过 =gt-do-speak= 尝试其语音播报。
+另外，可以通过 =gt-speak= 尝试其语音播报。
 
 *** gt-buffer-render
 
@@ -511,8 +467,8 @@ ChatGPT 需要 apikey 才能正常使用:
 - 通过 =g= 刷新
 - 通过 =q= 退出
 
-另外，通过 =y= (命令 =gt-do-speak=) 播放语音。可以先选中文本，然后通过 =y= 只播放选取片段的语音。
-这需要这些引擎已经实现了语音播放的功能。另外，在其他任何地方调用 =gt-do-speak= 命令，将会尝试
+另外，通过 =y= (命令 =gt-speak=) 播放语音。可以先选中文本，然后通过 =y= 只播放选取片段的语音。
+这需要这些引擎已经实现了语音播放的功能。另外，在其他任何地方调用 =gt-speak= 命令，将会尝试
 使用操作系统本身的 TTS 功能对当前的文本进行语音播报。
 
 可以通过 =buffer-name/window-config/split-threshold= 等对弹出的窗口进行设定:
@@ -709,9 +665,9 @@ ChatGPT 需要 apikey 才能正常使用:
          :render (gt-posframe-pin-render)))
 #+end_src
 
-*** gt-validator (:if)
+*** gt-valid-trait (:if)
 
-组件 =gt-taker=, =gt-engine= 和 =gt-render= 等都继承了 =gt-validator=, 它通过 =:if= 提供了判定组件可用性的方式,
+组件 =gt-taker=, =gt-engine= 和 =gt-render= 等都继承了 =gt-valid-trait=, 它通过 =:if= 提供了判定组件可用性的方式,
 因此可以大大简化不同场景下 translator 的配置。
 
 槽 =:if= 的值可以是函数，也可以是内置实现的一些 symbol, 或者通过 and/or 连接起来的 form 列表。
@@ -757,13 +713,11 @@ ChatGPT 需要 apikey 才能正常使用:
 #+begin_src emacs-lisp
   ;; 首先，定义引擎，继承自 gt-engine
   (defclass my-reverse-engine (gt-engine)
-    ((delimiter :initform nil)))
+    ((delimit :initform nil)))
 
-  ;; 其次，为引擎实现 gt-translate 方法
-  (cl-defmethod gt-translate ((_ my-reverse-engine) task next)
-    (with-slots (text res) task
-      (setf res (cl-loop for c in text collect (reverse c)))
-      (funcall next task)))
+  ;; 其次，为引擎实现 gt-execute 方法
+  (cl-defmethod gt-execute ((_ my-reverse-engine) task)
+    (cl-loop for c in (oref task text) collect (reverse c)))
 
   ;; 最后，配置使用
   (setq gt-default-translator (gt-translator :engines (my-reverse-engine)))
@@ -796,4 +750,3 @@ ChatGPT 需要 apikey 才能正常使用:
 
 我使用翻译不多，这个框架纯粹是兴趣使然。因为对翻译工作的认知有限，某些功能设置未必合理。
 因此若有同学和专业人士提出好的想法和建议，必欣然受之。请不吝赐教，谢谢。
-
