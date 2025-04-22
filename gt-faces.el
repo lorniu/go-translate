@@ -210,6 +210,40 @@
   :group 'go-translate-faces)
 
 
+;;; LLM/GPT/Chat
+
+(defface gt-chat-system-prompt-logo-face
+  '((t :foreground "lightblue" :bold t))
+  "Face for system prompt logo of Chat."
+  :group 'go-translate-faces)
+
+(defface gt-chat-assistant-prompt-logo-face
+  '((t :foreground "darkblue" :bold t))
+  "Face for assistant prompt logo of Chat."
+  :group 'go-translate-faces)
+
+(defface gt-chat-user-prompt-logo-face
+  '((t :foreground "darkblue" :bold t))
+  "Face for user prompt logo of Chat."
+  :group 'go-translate-faces)
+
+(defface gt-chat-system-prompt-face '((t :foreground "darkgrey"))
+  "Face for system prompt of Chat."
+  :group 'go-translate-faces)
+
+(defface gt-chat-assistant-prompt-face '((t))
+  "Face for assistant prompt of Chat."
+  :group 'go-translate-faces)
+
+(defface gt-chat-user-prompt-face '((t :foreground "darkgreen"))
+  "Face for user prompt of Chat."
+  :group 'go-translate-faces)
+
+(defface gt-chat-buffer-head-line-face '((t :foreground "darkgreen"))
+  "Face for head line of Chat buffer."
+  :group 'go-translate-faces)
+
+
 ;;; Misc
 
 (defface gt-bionic-reading-face '((t :weight bold))

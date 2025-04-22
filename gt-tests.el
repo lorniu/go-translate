@@ -156,6 +156,32 @@ This buffer is for text that is not saved, and for Lisp evaluation.
         (while (< state 4) (sit-for 0.2))
         (should (string-match-p "^love and peace[ \n]+爱与和平$" bag))))))
 
+(defun gt-test-chat-session-1 ()
+  (let* ((name "abc")
+         (items (list (gt-chat-session-item :role 'system :content "you are a assist")
+                      (gt-chat-session-item :role 'user :content "what is your name")
+                      (gt-chat-session-item :role 'assistant :content "I am chatgpt...")
+                      (gt-chat-session-item :role 'user :content "close your eyes")))
+         (session (gt-chat-file-session
+                   :name name
+                   :llm 'openai
+                   :top (oref (car items) id)
+                   :items (nreverse items))))
+    (gt-chat-session-save session)
+    (setq session (gt-chat-session-read 'gt-chat-file-session name))
+    (with-slots (items) session
+      (push (gt-chat-session-item :role 'user :content "open your mouth") items))
+    (gt-chat-session-save session)))
+
+;;(gt-chat-new-session "woooo")
+;;(gt-chat-del-session "woooo")
+;;(gt-chat-get-session "woooo")
+;;(oref gt-chat-current-session top)
+;;(insert (gt-chat-stringify (car (oref gt-chat-current-session items))))
+;;(insert (gt-chat-stringify gt-chat-current-session))
+;;(gt-chat-sessions)
+;;(setq tools (append tools (mapcar #'string-trim (string-split (match-string 1 content) ","))) content (substring content (match-end 0)))
+
 (provide 'gt-tests)
 
 ;;; gt-tests.el ends here
