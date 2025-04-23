@@ -164,7 +164,7 @@
 (cl-defmethod gt-parse ((_ gt-youdao-suggest-parser) task)
   (with-slots (res meta) task
     (unless (= (alist-get 'code (alist-get 'result res)) 200)
-      (user-error (alist-get 'msg (alist-get 'result res))))
+      (user-error (format "有道: %s" (alist-get 'msg (alist-get 'result res)))))
     (let ((lst (cl-loop
                 for item across (alist-get 'entries (alist-get 'data res))
                 for i from 1

@@ -161,7 +161,7 @@
   ;; from system message or maybe set a limit?
   (let* ((items (gt-chat-items session)) messages tools)
     (when-let* ((p (cl-position-if (lambda (c) (eq (oref c role) 'system)) items)))
-      (setq items (subseq items 0 (1+ p))))
+      (setq items (cl-subseq items 0 (1+ p))))
     (dolist (item items)
       (with-slots (role content) item
         (push `((role . ,role) (content . ,(substring-no-properties (or content "")))) messages)))

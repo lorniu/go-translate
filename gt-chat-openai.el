@@ -104,19 +104,18 @@ Can also put into .authinfo file as:
 (cl-defmethod gt-parse ((_ gt-chat-openai-engine-parser) _task))
 
 (cl-defmethod gt-chat-openai-chat ((engine gt-chat-openai-engine) messages done fail)
-  (gt-ensure-key engine)
   (with-slots (host key model temperature) engine
-    (gt-request :url (concat (or host gt-chatgpt-host) "/v1/chat/completions")
-                :headers `(("Content-Type" . "application/json")
-                           ("Authorization" . ,(encode-coding-string (concat "Bearer " key) 'utf-8)))
-                :data (encode-coding-string
-                       (json-encode
-                        `((model . ,(or model gt-chatgpt-model))
-                          (temperature . ,(or temperature gt-chatgpt-temperature))
-                          (messages . ,(if (vectorp messages) messages (vconcat messages)))))
-                       'utf-8)
-                :done done
-                :fail fail)))
+    (gt-request (concat (or host gt-chatgpt-host) "/v1/chat/completions")
+      :headers `(("Content-Type" . "application/json")
+                 ("Authorization" . ,(encode-coding-string (concat "Bearer " (gt-key engine)) 'utf-8)))
+      :data (encode-coding-string
+             (json-encode
+              `((model . ,(or model gt-chatgpt-model))
+                (temperature . ,(or temperature gt-chatgpt-temperature))
+                (messages . ,(if (vectorp messages) messages (vconcat messages)))))
+             'utf-8)
+      :done done
+      :fail fail)))
 
 
 ;;; Wrapper of Session
@@ -374,7 +373,11 @@ Can also put into .authinfo file as:
 
 (defvar gt-chat-buffer-window-config gt-buffer-prompt-window-config)
 
-(defvar gt-chat-engine-models '("gpt-3.5-turbo" "gpt-4o"))
+(defvar gt-chat-engine-models
+  '("gpt-4o-mini" "gpt-4o" "o1-mini"
+    "deepseek-r1" "deepseek-v3"
+    "gemini-2.5-pro-exp-03-25"
+    "claude-3-7-sonnet-20250219"))
 
 ;; Setup
 
@@ -454,7 +457,7 @@ Can also put into .authinfo file as:
 (defvar-local gt-chat-func-args nil)
 
 (defun gt-chat-openai-filter (buf)
-  (message "Typing...")
+  (let (message-log-max) (message "Typing..."))
   (unless gt-chat-last-position (setq gt-chat-last-position (point-min)))
   (goto-char gt-chat-last-position)
   (condition-case err
@@ -529,12 +532,11 @@ Can also put into .authinfo file as:
     (gt-chat-sync-buffer->session)
     (setq gt-chat-tracking-marker nil)
     (let ((engine (car (ensure-list engines))))
-      (gt-ensure-key engine)
-      (with-slots (host key model temperature) engine
+      (with-slots (host model temperature) engine
         (pcase-let* ((`(,messages ,functions) (gt-chat-req-messages gt-chat-current-session))
                      (url (concat (or host gt-chatgpt-host) "/v1/chat/completions"))
                      (headers `(("Content-Type" . "application/json")
-                                ("Authorization" . ,(encode-coding-string (concat "Bearer " key) 'utf-8))))
+                                ("Authorization" . ,(encode-coding-string (concat "Bearer " (gt-key engine)) 'utf-8))))
                      (data    `((model       . ,(or model gt-chatgpt-model))
                                 (temperature . ,(or temperature gt-chatgpt-temperature))
                                 (messages    . ,(if (vectorp messages) messages (vconcat messages)))
@@ -545,10 +547,11 @@ Can also put into .authinfo file as:
                      (data (encode-coding-string (json-encode (append fds data)) 'utf-8)))
           (let ((gt-log-buffer-name "*gt-stream-log*"))
             (gt-log 'openai-request 2 (pp-to-string data)))
-          (gt-request :url url :headers headers :data data
-                      :filter (lambda () (gt-chat-openai-filter bag))
-                      :done (lambda (raw) (let ((gt-log-buffer-name "*gt-stream-log*")) (gt-log 'openai-response 2 raw)))
-                      :fail (lambda (err) (signal 'user-error err))))))))
+          (gt-request url
+            :headers headers :data data
+            :peek (lambda () (gt-chat-openai-filter bag))
+            :done (lambda (raw) (let ((gt-log-buffer-name "*gt-stream-log*")) (gt-log 'openai-response 2 raw)))
+            :fail (lambda (&key error) (signal (car error) (cdr error)))))))))
 
 (defun gt-chat--restore-prompt-buffer (translator)
   (if (equal (buffer-name) gt-chat-buffer-name)
