@@ -48,7 +48,7 @@
 ;;
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defclass gt-stardict-parser (gt-parser) ())
 
@@ -143,40 +143,42 @@
          (gt-stardict-pretty-definition '朗道 definition))
         (t definition)))
 
-(cl-defmethod gt-translate ((engine gt-stardict-engine) task next)
+(cl-defmethod gt-execute ((engine gt-stardict-engine) task)
   (unless (executable-find gt-stardict-program)
     (user-error "You should install `sdcv' first before use `gt-stardict-engine'"))
-  (with-slots (text res) task
-    (with-temp-buffer
-      (apply #'call-process gt-stardict-program nil t nil
-             (append (gt-stardict-build-args engine) (list text)))
-      (setf res (buffer-string))
-      (funcall next task))))
+  (gt-dolist-concurrency (item (oref task text) nil)
+    (pdd-process-task gt-stardict-program
+      (append (gt-stardict-build-args engine) (list item))
+      :fail (lambda () (signal 'error (list "No result found"))))))
 
 (cl-defmethod gt-parse ((_ gt-stardict-parser) task)
   (with-slots (res) task
-    (let ((json (condition-case _ (json-read-from-string res)
-                  (error (user-error res))))
-          (props `(pointer hand help-echo "Click to switch dictionary" keymap ,gt-stardict-map)))
-      (when (= (length json) 0)
-        (user-error (apply #'propertize "No translation result found, sorry :(" props)))
-      (with-temp-buffer
-        (cl-loop for d in (cl-remove-duplicates (mapcar #'cdar json) :test #'string=)
-                 do (insert (apply #'propertize d 'display '(height 0.6) 'face 'gt-stardict-dict-face props) "\n\n")
-                 collect (cl-loop for r across (cl-remove-if-not
-                                                (lambda (item) (string= (cdar item) d)) json)
-                                  for i from 1
-                                  for word = (propertize (alist-get 'word r)
-                                                         'face 'gt-stardict-word-face
-                                                         'display '(raise 0.6))
-                                  for definition = (propertize (gt-stardict-pretty-definition (intern d) (alist-get 'definition r))
-                                                               'display '(raise 0.3)
-                                                               'line-prefix "  "
-                                                               'wrap-prefix "  ")
-                                  collect (concat (if (= i 0) (gt-line-height-separator 10)) word definition) into r1
-                                  finally (return (string-join r1 "\n")))
-                 into rs finally (insert (string-join rs "\n\n")))
-        (setf res (buffer-string))))))
+    (cl-loop for item in res
+             for json = (condition-case _ (json-read-from-string item)
+                          (error (user-error item)))
+             for props = `(pointer hand help-echo "Click to switch dictionary" keymap ,gt-stardict-map)
+             do (when (= (length json) 0)
+                  (user-error (apply #'propertize "No 4translastion3 result found, sorry :(" props)))
+             for str = (with-temp-buffer
+                         (cl-loop
+                          for d in (cl-remove-duplicates (mapcar #'cdar json) :test #'string=)
+                          do (insert (apply #'propertize d 'display '(height 0.6) 'face 'gt-stardict-dict-face props) "\n\n")
+                          collect (cl-loop
+                                   for r across (cl-remove-if-not
+                                                 (lambda (item) (string= (cdar item) d)) json)
+                                   for i from 1
+                                   for word = (propertize (alist-get 'word r)
+                                                          'face 'gt-stardict-word-face
+                                                          'display '(raise 0.6))
+                                   for definition = (propertize (gt-stardict-pretty-definition (intern d) (alist-get 'definition r))
+                                                                'display '(raise 0.3)
+                                                                'line-prefix "  "
+                                                                'wrap-prefix "  ")
+                                   collect (concat (if (= i 0) (gt-line-height-separator 10)) word definition) into r1
+                                   finally (return (string-join r1 "\n")))
+                          into rs finally (insert (string-join rs "\n\n")))
+                         (buffer-string))
+             collect str into lst finally (setf res lst))))
 
 (provide 'gt-engine-stardict)
 

@@ -27,7 +27,7 @@
 
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defgroup go-translate-libre nil
   "Configs for LibreTranslate engine."
@@ -46,55 +46,40 @@ to use third-party or your local service."
 
 (defclass gt-libre-parser (gt-parser) ())
 
-(defclass gt-libre-engine (gt-engine)
-  ((tag       :initform 'LibreTranslate)
-   (host      :initform nil :initarg :host)
-   (path      :initform "/translate")
-   (parse     :initform (gt-libre-parser))
-   (delimiter :initform "21597"
-              ;; Any way to force specific segment not be changed after translate?
-              ;; I don't know! Just set this a random number, to make it work...sometimes.
-              ;; So this maybe failed in translating multiple parts text.
-              )
-   (cache     :initform nil)
-   (key       :initform 'api-key
-              :initarg :key
-              :documentation "The api-key of LibreTranslate.
-You can also put it into .authinfo file as:
-  machine [HOST like libretranslate.com] login api-key password [***]")))
+(defclass gt-libre-engine (gt-api-engine)
+  ((tag         :initform 'LibreTranslate)
+   (host        :initform nil :initarg :host)
+   (path        :initform "/translate")
+   (key         :initform 'api-key :initarg :key) ; machine [HOST like libretranslate.com] login api-key password [***]
+   (parse       :initform (gt-libre-parser))))
 
 
 ;;; Translate
 
-(cl-defmethod gt-ensure-key ((engine gt-libre-engine))
-  (with-slots (host key) engine
-    (unless (stringp key)
-      (setf key
-            (gt-lookup-password
-             :user (if key (format "%s" key) "api-key")
-             :host (url-host (url-generic-parse-url (or host gt-libre-host))))))))
+(cl-defmethod gt-key ((engine gt-libre-engine))
+  (gt-ensure-key-for-engine (host key) engine
+    (gt-lookup-password
+     :user (if key (format "%s" key) "api-key")
+     :host (url-host (url-generic-parse-url (or host gt-libre-host))))
+    t))
 
-(cl-defmethod gt-translate ((engine gt-libre-engine) task next)
-  (gt-ensure-key engine)
-  (with-slots (text src tgt res) task
-    (with-slots (host path key) engine
-      (gt-request :url (concat (or host gt-libre-host) path)
-                  :data `(("q"      . ,text)
-                          ("source" . ,src)
-                          ("target" . ,tgt)
-                          ("format" . "text")
-                          ("alternatives" . 1)
-                          ,(if key `("api_key" . ,key)))
-                  :done (lambda (raw)
-                          (setf res raw)
-                          (funcall next task))
-                  :fail (lambda (err)
-                          (gt-fail task err))))))
+(cl-defmethod gt-execute ((engine gt-libre-engine) task)
+  (with-slots (text src tgt) task
+    (with-slots (host path rate-limit) engine
+      (let* ((key (gt-key engine))
+             (url (concat (or host gt-libre-host) path))
+             (data `(("source" . ,src) ("target" . ,tgt)
+                     ("format" . "text") ("alternatives" . 1)
+                     ,(if (stringp key) `("api_key" . ,key)))))
+        (gt-dolist-concurrency (item text rate-limit)
+          (gt-request url
+            :cache (if pdd-active-cacher `(t libre ,src ,tgt ,item))
+            :data `(("q" . ,item) ,@data)))))))
 
 (cl-defmethod gt-parse ((_ gt-libre-parser) task)
-  (with-slots (res) task
-    (let ((json (json-read-from-string (decode-coding-string res 'utf-8))))
-      (setf res (cdr (assoc 'translatedText json))))))
+  (cl-loop for item in (oref task res)
+           collect (cdr (assoc 'translatedText item)) into lst
+           finally (oset task res lst)))
 
 (provide 'gt-engine-libre)
 

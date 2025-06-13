@@ -4,7 +4,7 @@
 
 ;; Author: lorniu <lorniu@gmail.com>
 ;; URL: https://github.com/lorniu/go-translate
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (pdd "0.1"))
 ;; Keywords: convenience
 ;; Version: 3.0.10
 
@@ -53,25 +53,16 @@
 ;;         :engines (list (gt-google-engine) (gt-bing-engine))
 ;;         :render (gt-buffer-render)))
 ;;
-;; Then start your translate with command `gt-do-translate'.
+;; Then start your translate with command `gt-translate'.
 ;;
 ;; See README.org for details.
 
 ;;; Code:
 
 (require 'transient)
+
 (require 'gt-core)
-(require 'gt-extension)
-(require 'gt-engine-bing)
-(require 'gt-engine-google)
-(require 'gt-engine-google-rpc)
-(require 'gt-engine-deepl)
-(require 'gt-engine-stardict)
-(require 'gt-engine-osxdict)
-(require 'gt-engine-youdao)
-(require 'gt-engine-chatgpt)
-(require 'gt-engine-libre)
-(require 'gt-engine-echo)
+(require 'gt-extensions)
 (require 'gt-text-utility)
 
 ;;; Mask these commands in M-x
@@ -82,7 +73,7 @@
                gt-buffer-render--keyboard-quit
                gt-buffer-render--toggle-readonly
                gt-buffer-render--toggle-polyglot
-               gt-buffer-render--delete-cache
+               gt-buffer-render--clear-cache
                gt-buffer-render--show-tips
                gt-buffer-render--unfold-source-text
                gt-posframe-render-auto-close-handler
@@ -103,7 +94,7 @@
     (gt-taker :text (intern text) :pick (intern pick)
               :prompt (pcase prompt ("buffer" 'buffer) ("minibuffer" t) (_ nil)))))
 
-(defcustom gt-preset-takers
+(defvar gt-preset-takers
   (lambda ()
     `((,(gt-face-lazy "new..." 'bold)  . ,#'gt-define-custom-taker)
       (default                         . ,(gt-taker))
@@ -118,13 +109,9 @@ instance of `gt-taker' and the key is a string or symbol, representing the
 display label of the taker.
 
 Custom your own takers and put them into this list, then change the taker
-of `gt-default-translator' at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-taker")))
-  :group 'gt-do-translate)
+of `gt-default-translator' at any time in `gt-setup'.")
 
-(defcustom gt-preset-engines
+(defvar gt-preset-engines
   (lambda ()
     `((Bing                 . ,(gt-bing-engine))
       (DeepL                . ,(gt-deepl-engine))
@@ -146,13 +133,9 @@ instance of `gt-engine' and the key is a string or symbol, representing the
 display label of the engine.
 
 Custom your own engines and put them into this list, then change the engines
-of `gt-default-translator' at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-engine")))
-  :group 'gt-do-translate)
+of `gt-default-translator' at any time in `gt-setup'.")
 
-(defcustom gt-preset-renders
+(defvar gt-preset-renders
   (lambda ()
     `((,gt-buffer-render-buffer-name  . ,(gt-buffer-render))
       (insert/after                   . ,(gt-insert-render  :type 'after))
@@ -175,13 +158,9 @@ instance of `gt-render' and the key is a string or symbol, representing the
 display label of the render.
 
 Custom your own render and put them into this list, then change the render
-of `gt-default-translator' at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-render")))
-  :group 'gt-do-translate)
+of `gt-default-translator' at any time in `gt-setup'.")
 
-(defcustom gt-preset-translators
+(defvar gt-preset-translators
   (lambda ()
     `((default . ,(gt-translator :taker   (cdar (gt-ensure-plain gt-preset-takers))
                                  :engines (cdar (gt-ensure-plain gt-preset-engines))
@@ -196,19 +175,13 @@ instance of `gt-translator' and the key is a string or symbol, representing the
 display label of the translator.
 
 Custom your own translator and put them into this list, then change the the
-default translator to one of them at any time in `gt-do-setup'."
-  :type '(choice function
-                 (alist :key-type (choice string symbol)
-                        :value-type (sexp :tag "Instance of gt-translator")))
-  :group 'gt-do-translate)
+default translator to one of them at any time in `gt-setup'.")
 
-(defcustom gt-default-translator nil
-  "The translator used by `gt-do-translate'.
+(defvar gt-default-translator nil
+  "The translator used by `gt-translate'.
 
 If you leave this nil, then the first translator in `gt-preset-translators'
-will be used as the default translator."
-  :type '(restricted-sexp :match-alternatives (gt-translator-p 'nil))
-  :group 'gt-do-translate)
+will be used as the default translator.")
 
 (defun gt-ensure-default-translator ()
   "Initial `gt-default-translator' if possible and make sure it's valid."
@@ -231,12 +204,12 @@ will be used as the default translator."
       (list (desc1 taker (if (consp taker) (format "%s" taker)
                            (cl-flet ((desc2 (slot) (when (slot-boundp taker slot)
                                                      (format "%s: %s" slot (slot-value taker slot)))))
-                             (format "<%s> %s" (gt-desc taker)
+                             (format "<%s> %s" (gt-repr taker)
                                      (string-join (remove nil (mapcar #'desc2 '(langs text pick prompt))) ", ")))))
-            (desc1 engines (mapconcat (lambda (en) (concat (format "%s" (oref en tag)) (if (gt-stream-p en) " (stream)")))
+            (desc1 engines (mapconcat (lambda (en) (concat (format "%s" (oref en tag)) (if (oref en stream) " (stream)")))
                                       (ensure-list (gt-ensure-plain engines)) ", "))
             (desc1 render (if (consp render) (format "%s" render)
-                            (gt-desc (gt-ensure-plain render))))))))
+                            (gt-repr (gt-ensure-plain render))))))))
 
 (defun gt-set-taker (&optional translator taker)
   "Set TRANSLATOR's TAKER to one from `gt-preset-takers'."
@@ -298,7 +271,7 @@ will be used as the default translator."
     (gt-ensure-default-translator)
     (message "Switch default translator to: %s" name)))
 
-(transient-define-prefix gt-do-setup ()
+(transient-define-prefix gt-setup ()
   "Setup `gt-default-translator' in user interface provided by transient."
   :transient-non-suffix #'transient--do-exit
   [:description
@@ -313,13 +286,13 @@ will be used as the default translator."
    [("c"  "Switch preset translator..." gt-switch-translator)]]
   (interactive)
   (gt-ensure-default-translator)
-  (transient-setup 'gt-do-setup))
+  (transient-setup 'gt-setup))
 
 
 ;;; Entrance
 
 ;;;###autoload
-(defun gt-do-translate (&optional arg)
+(defun gt-translate (&optional arg)
   "Translate using `gt-default-translator'.
 
 Define your default translator like this:
@@ -328,12 +301,12 @@ Define your default translator like this:
     (gt-translator :engines (gt-bing-engine)))
 
   (setq gt-default-translator
-    (gt-translator :taker (gt-taker :langs \='(en fr) :text \='sentence :prompt t)
+    (gt-translator :taker (gt-taker :langs \\='(en fr) :text \\='sentence :prompt t)
                    :engines (list (gt-google-engine) (gt-deepl-engine))
                    :render (gt-buffer-render)))
 
 Or define several different translators and put them in `gt-preset-translators',
-and switch with `gt-do-setup' at any time.
+and switch with `gt-setup' at any time.
 
 This is just a simple wrapper of `gt-start' method. Create other translate
 commands in the same way using your creativity.
@@ -343,6 +316,17 @@ If ARG is not nil, translate with translator select by `gt-preset-translators'."
   (let ((gt-default-translator (if arg (car (gt-translator-copy-of-presets)) gt-default-translator)))
     (gt-ensure-default-translator)
     (gt-start gt-default-translator)))
+
+;;; for compact
+
+;;;###autoload
+(defalias 'gt-do-setup 'gt-setup)
+
+;;;###autoload
+(defalias 'gt-do-speak 'gt-speak)
+
+;;;###autoload
+(defalias 'gt-do-translate 'gt-translate)
 
 (provide 'go-translate)
 

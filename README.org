@@ -1,5 +1,6 @@
 [[https://melpa.org/#/go-translate][file:https://melpa.org/packages/go-translate-badge.svg]] [[https://stable.melpa.org/#/go-translate][file:https://stable.melpa.org/packages/go-translate-badge.svg]]
 
+
 * Go Translate
 
 This is a translation framework on Emacs, with high configurability and extensibility.
@@ -16,11 +17,13 @@ As a translation framework, it offers many advantages:
 
 It's more than just a translation framework.It's flexible, and can easily be extended to various Text-to-Text conversion scenarios:
 - For example, the built-in Text-Utility component integrates text encryption/decryption, hashing, QR code generation, etc.
-- For example, it can be extended as a client for ChatGPT (TODO)
+- For example, it can be extended as a client for ChatGPT (WIP)
 
-** Basic Usage
+** Installation
 
-First, you need to download and load this package via MELPA or other ways.
+Download and load this package via MELPA or other ways.
+
+** Basic Usage (as a Translator)
 
 For the most basic use, add the following code to the configuration file:
 #+begin_src emacs-lisp
@@ -32,9 +35,7 @@ For the most basic use, add the following code to the configuration file:
   ;; and the result will be displayed in the Echo Area.
 #+end_src
 
-Then select a certain text, and start translation with command =gt-do-translate=.
-
-That's it.
+Then select a certain text, and start translation with command =gt-translate=.
 
 Of course, it is possible to specify more options for the translator, such as:
 #+begin_src emacs-lisp
@@ -49,11 +50,7 @@ Of course, it is possible to specify more options for the translator, such as:
   ;; and output the results with a new Buffer.
 #+end_src
 
-Except config default translator with =gt-default-translator=, you can define several preset translators with =gt-preset-translators=.
-
-The first translator in =gt-preset-translators= will be used as the default one if =gt-default-translator= is nil.
-
-The preset translators are defined like this:
+Except config default translator with =gt-default-translator=, you can define several preset translators with =gt-preset-translators=:
 #+begin_src emacs-lisp
   (setq gt-preset-translators
         `((ts-1 . ,(gt-translator
@@ -76,17 +73,12 @@ This configuration presets three translators:
 - *ts-2*: translate sentence or selected region near the cursor between =en=, =fr= and =ru= via Google, insert the translated result into current buffer
 - *ts-3*: translate all words with length more than 6 in buffer between =en= and =fr= via Google, display the translated result with help echo
 
-Then, translate with command =gt-do-translate= and switch between preset translators with command =gt-do-setup=.
-
-#+begin_quote
-*highly recommended:*
-
-Install the curl program and the [[https://github.com/alphapapa/plz.el][plz.el]] package. The request will then be sent through curl, which is much better than the built-in url.el!
-#+end_quote
+The first translator in =gt-preset-translators= will act as the default translator if =gt-default-translator= is nil.
+So, translate with command =gt-translate= and switch between preset translators with command =gt-setup=.
 
 See more configuration options via =M-x customize-group go-translate=, and read the following chapters for more configuration details.
 
-** More configurations
+** Core Components
 
 The core component of the translation framework is =gt-translator=, which contains the following components:
 - =gt-taker=: used to capture user input, including text and languages to be translated
@@ -98,15 +90,15 @@ Executing the method =gt-start= on the translator will complete a full translati
 
 Therefore, the essence of configuration is to create a translator instance and specify different components according to needs:
 #+begin_src emacs-lisp
-  ;; specify components with ':taker' ':engines' and ':render'; start translation with 'gt-start'
+  ;; specify components with ':taker' ':engines' and ':render'; run translation with 'gt-start'
   (gt-start (gt-translator :taker ... :engines ... :render ...))
 
-  ;; command 'gt-do-translate' use the translator defined in 'gt-default-translator' to do its job
+  ;; command 'gt-translate' use the translator defined in 'gt-default-translator' to do its job
   (setq gt-default-translator (gt-translator :taker ... :engines ... :render ..))
-  (call-interactively #'gt-do-translate)
+  (call-interactively #'gt-translate)
 #+end_src
 
-Therefore, one needs to understand these components first for better configuration.
+So, one needs to understand these components first for better configuration.
 
 *** component =gt-taker= for capturing
 
@@ -123,7 +115,7 @@ Therefore, one needs to understand these components first for better configurati
 Currently there is only one built-in Taker implementation, which can be used in most scenarios:
 : Determine the initial text with 'text',
 : determine the translation languages with 'langs',
-: confirm with 'prompt', 
+: confirm with 'prompt',
 : and extract certain paragraphs, sentences, or words with 'pick'.
 
 If no Taker is specified or if Taker is specified but lacks options, the values ​​of the following variables will be used as default:
@@ -156,7 +148,7 @@ Taker will use =text= to determine the initial text. If there is active region, 
   ;; If it's a string or a function that returns a string, use it as the initial text
   (gt-translator :taker (gt-taker :text "hello world"))                        ; just the string
   (gt-translator :taker (gt-taker :text (lambda () (buffer-substring 10 15)))) ; the returned string
-  (gt-translator :taker (gt-taker :text (lambda () '((10 . 15)))))             ; the returned bounds 
+  (gt-translator :taker (gt-taker :text (lambda () '((10 . 15)))))             ; the returned bounds
 #+end_src
 
 Taker determine the languages to translate from =langs= in the help of =gt-lang-rules=:
@@ -199,14 +191,14 @@ Finally, the initial text is cut and filtered based on =pick= and =pick-pred=. T
 
 *** component =gt-engine= for translating/transforming
 
-| slot      | desc                                                         | value                                                                                                                                     |
-|-----------+--------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------|
-| parse     | Specify parser                                               | A parser or a function                                                                                                                    |
-| cache     | Configure cache                                              | If set to nil, cache is disabled for the current engine. You can also specify different cachers or cache strategies for different engines |
-| stream    | Whether turn on stream query                                 | Boolean. Works only when engines support stream, for example ChatGPT engine.                                                              |
-| delimiter | Delimiter                                                    | If not empty, the translation strategy of "join-translate-split" will be adopted                                                          |
-| then      | The logic to be executed after the engine is completed. Hook | A function that takes current task as argument. Can be used to make final modifications to the translate result before rendering          |
-| if        | Filter                                                       | Function or literal symbol, used to determine whether the current engine should work for current translation task                         |
+| slot    | desc                                                         | value                                                                                                                            |
+|---------+--------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------|
+| parse   | Specify parser                                               | A parser or a function                                                                                                           |
+| cache   | Configure cache                                              | If set to nil, cache is disabled for the current engine. You can also specify different cache strategies for different engines   |
+| stream  | Whether turn on stream query                                 | Boolean. Works only when engines support stream, for example ChatGPT engine.                                                     |
+| delimit | Delimiter                                                    | If not empty, the translation strategy of "join-translate-split" will be adopted                                                 |
+| then    | The logic to be executed after the engine is completed. Hook | A function that takes current task as argument. Can be used to make final modifications to the translate result before rendering |
+| if      | Filter                                                       | Function or literal symbol, used to determine whether the current engine should work for current translation task                |
 
 The built-in Engine implementations are:
 - =gt-deepl-engine=, DeepL Translate
@@ -244,23 +236,22 @@ You can use =if= to filter the engines for current translation task. For example
 You can specify different caching policies for different engines with =cache=:
 #+begin_src emacs-lisp
   (gt-translator :engines
-                 (list (gt-youdao-dict-engine)       ; use default cacher
-                       (gt-google-engine :cache nil) ; disable cache
-                       (gt-bing-engine :cache 'word) ; cache for word only
-                       (gt-deepl-engine :cache (gt-xxx-cacher)))) ; use specify cacher
+                 (list (gt-youdao-dict-engine)         ; use default cacher
+                       (gt-google-engine :cache nil)   ; disable cache
+                       (gt-bing-engine :cache 'word))) ; cache for word only
 #+end_src
 
 #+begin_quote
 *Notice:*
 
-If translate multiple parts text, the default strategy is:
+If `delimit' is non-nil, translate multiple parts will use strategy:
 1. join the parts into a single string,
 2. translate the whole string through the engine,
 3. then split the result into parts.
 
 The text passed to the Engine for translation should be a single string.
 
-If delimiter is set to nil, then a list of strings will be passed to the engine, and the engine should have the ability to process the string list.
+Otherwise, a list of strings will be passed to the engine, and the engine should have the ability to process the string list.
 #+end_quote
 
 *** component =gt-render= for rendering
@@ -296,57 +287,32 @@ The first available render in the list (validate conjunction with =:if=) can be 
                  (gt-buffer-render)))               ; default, render with new buffer
 #+end_src
 
-** Components (Supplementary Notes)
-*** gt-memory-cacher (gt-default-cacher)
+** Extension Components
+*** gt-http-backend
 
-Component =gt-memory-cacher= is the built-in cache implementation. Just set =gt-cache-p= to t to use it.
+The network request is sent with the help of the [[https://github.com/lorniu/pdd.el][pdd.el]] package. It use the built-in =url.el= to send requests.
 
-You can configure the cacher or switch to another cacher by setting =gt-default-cacher=:
+If you prefer =curl=, just ensure =curl= and package [[https://github.com/alphapapa/plz.el][plz]] are on your system, then specify ~gt-http-backend~ to ~(pdd-curl-backend)~:
 #+begin_src emacs-lisp
-  (setq gt-default-cacher (gt-memory-cacher :if 'word)) ; just cache for word
-  (setq gt-default-cacher (gt-memory-cacher :if '(or word src:en))) ; just cache for word or english
-  (setq gt-default-cacher (gt-xxxxxx-cacher)) ; use other cacher
+  ;; specify client explicitly
+  (setq gt-http-backend (pdd-url-backend))  ; base on url.el (default)
+  (setq gt-http-backend (pdd-curl-backend)) ; base on curl
+
+  ;; specify client with proxy explicitly
+  (setq gt-http-backend (pdd-url-backend :proxy "socks5://127.0.0.1:9876"))
+
+  ;; specify client and proxy separately
+  (setq gt-http-backend (pdd-curl-backend))
+  (setq gt-http-proxy "socks5://127.0.0.1:1080")
+
+  ;; also, you can config client or proxy dynamically
+  (setq gt-http-proxy
+        (lambda (request)
+          (when (string-match-p "\\(xxx\\)\\.com" (oref request url))
+            "socks5://127.0.0.1:1080")))
 #+end_src
 
-Set =gt-cache-p= to nil to turn off all caches. Or turn off the cache for engine individually like this:
-#+begin_src emacs-lisp
-  (gt-translator :engines (gt-google-engine :cache nil))
-#+end_src
-
-#+begin_quote
-Translation results can be cached in files, SQLite or Redis through extensions. But maybe it's unnecessary.
-#+end_quote
-
-*** gt-url-http-client/gt-plz-http-client (gt-default-http-client)
-
-Some engines need to fetch translation results over the network, which requires network processing with the help of the =gt-http-client= component.
-
-By default, =gt-url-http-client= is used as the http client, which is inefficient.
-
-The component =gt-plz-http-client= uses =curl= to send the request, which is much better.
-
-Config =gt-default-http-client= to switch http client. Or just make sure =curl= and [[https://github.com/alphapapa/plz.el][plz]] is exists in your system, then =gt-plz-http-client=
-will be used as the default http client without any other configs.
-
-To send request with proxy, config like this:
-#+begin_src emacs-lisp
-  ;; for gt-url-http-client
-  (setq gt-default-http-client
-        (gt-url-http-client :proxies '(("http" . "host:9999") ("https" . "host:9999"))))
-
-  ;; for gt-plz-http-client
-  (setq gt-default-http-client
-        (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999")))
-
-  ;; dynamic by host of request url
-  (setq gt-default-http-client
-        (lambda (host)
-          (if (string-match-p "deepl" host)
-              (gt-plz-http-client :args '("--proxy" "socks5://127.0.0.1:9999"))
-            (gt-plz-http-client))))
-#+end_src
-
-*** gt-taker
+*** gt-taker with prompt
 
 If prompt via minibuffer, the following keys exist in minibuffer:
 - =C-n= and =C-p= switch languages
@@ -457,7 +423,7 @@ It support streaming output with some renders. Examples:
                        :render (gt-insert-render)))
 #+end_src
 
-After all, try text to speech with command =gt-do-speak=.
+After all, try text to speech with command =gt-speak=.
 
 *** gt-buffer-render
 
@@ -470,9 +436,9 @@ In the result buffer, there are many shortcut keys (overview through =?=), such 
 - Refresh via =g=
 - Quit via =q=
 
-Alternatively, play speech via =y= (command =gt-do-speak=). If the active region exists, then only
-speak current selection content. TTS requires that the engine have implemented =gt-speak= method.
-Command =gt-do-speak= can use anywhere else, then it will try to speak text via TTS service of system.
+Alternatively, play speech via =y= (command =gt-speak=). If the active region exists, then only
+speak current selection content. TTS requires that the engine have implemented =gt-speech= method.
+Command =gt-speak= can use anywhere else, then it will try to speak text via TTS service of system.
 
 You can set the buffer window through =buffer-name/window-config/split-threshold=:
 #+begin_src emacs-lisp
@@ -583,7 +549,7 @@ Set the display mode through =type=:
 - =before=, displays the translation results before the source text
 - =replace=, overlays the translation results on top of the source text
 - =help-echo=, display result only when the mouse is hovered over the source text
-  
+
 It is similar to =gt-insert-render= in many ways, including options:
 - =sface=, propertize the source text with this face after the translation is complete
 - =rfmt=, the output format of the translation result
@@ -659,9 +625,9 @@ Here are some usage examples:
          :render (gt-posframe-pin-render)))
 #+end_src
 
-*** gt-validator (:if)
+*** gt-valid-trait (:if)
 
-Component =gt-taker=, =gt-engine= and =gt-render= are inherited from =gt-validator=, which
+Component =gt-taker=, =gt-engine= and =gt-render= are inherited from =gt-valid-trait=, which
 provides a way to determine component availability through =:if= slot. This greatly simplifies
 the configuration of translator for different scenarios.
 
@@ -708,13 +674,11 @@ For example, implement an engine that outputs the captured text in reverse order
 #+begin_src emacs-lisp
   ;; First, define the class, inherit from gt-engine
   (defclass my-reverse-engine (gt-engine)
-    ((delimiter :initform nil)))
+    ((delimit :initform nil)))
 
-  ;; Then, implement the method gt-translate
-  (cl-defmethod gt-translate ((_ my-reverse-engine) task next)
-    (with-slots (text res) task
-      (setf res (cl-loop for c in text collect (reverse c)))
-      (funcall next task)))
+  ;; Then, implement the method gt-execute
+  (cl-defmethod gt-execute ((_ my-reverse-engine) task)
+    (setf res (cl-loop for c in (oref task text) collect (reverse c))))
 
   ;; At last, config and have a try
   (setq gt-default-translator (gt-translator :engines (my-reverse-engine)))
@@ -746,4 +710,3 @@ In this way, use your imagination, you can do a lot.
 To enable debug, set =gt-debug-p= to t, then you will see the logs in buffer =*gt-log*=.
 
 Welcome your PRs and sugguestions.
-

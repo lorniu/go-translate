@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024 lorniu <lorniu@gmail.com>
 ;; Author: lorniu <lorniu@gmail.com>
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (pdd "0.21"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -29,9 +29,9 @@
 
 (require 'cl-lib)
 (require 'subr-x)
-(require 'dom)
 (require 'eieio)
 (require 'text-property-search)
+(require 'pdd)
 
 (defgroup go-translate nil
   "Translation framework on Emacs, with high configurability and extensibility."
@@ -44,7 +44,156 @@
   :group 'go-translate)
 
 
-;;; Components and Variables
+;;; Variables and Components
+
+(defconst gt-lang-codes
+  '((en  . "English")
+    (zh  . "Chinese")
+    (ru  . "Russian")
+    (fr  . "French")
+    (it  . "Italian")
+    (es  . "Spanish")
+    (de  . "German")
+    (ko  . "Korean")
+    (ja  . "Japanese")
+    (yue . "Cantonese")
+    (af  . "Afrikaans")
+    (ak  . "Akan")
+    (am  . "Amharic")
+    (ar  . "Arabic")
+    (as  . "Assamese")
+    (asa . "Asu")
+    (az  . "Azerbaijani")
+    (be  . "Belarusian")
+    (bem . "Bemba")
+    (bez . "Bena")
+    (bg  . "Bulgarian")
+    (bm  . "Bambara")
+    (bn  . "Bengali")
+    (bo  . "Tibetan")
+    (bs  . "Bosnian")
+    (ca  . "Catalan")
+    (cgg . "Chiga")
+    (chr . "Cherokee")
+    (cs  . "Czech")
+    (da  . "Danish")
+    (dav . "Taita")
+    (ebu . "Embu")
+    (ee  . "Ewe")
+    (el  . "Greek")
+    (eo  . "Esperanto")
+    (et  . "Estonian")
+    (eu  . "Basque")
+    (fa  . "Persian")
+    (ff  . "Fulah")
+    (fi  . "Finnish")
+    (fil . "Filipino")
+    (fo  . "Faroese")
+    (ga  . "Irish")
+    (gl  . "Galician")
+    (gsw . "Swiss German")
+    (gu  . "Gujarati")
+    (guz . "Gusii")
+    (gv  . "Manx")
+    (ha  . "Hausa")
+    (haw . "Hawaiian")
+    (he  . "Hebrew")
+    (hi  . "Hindi")
+    (hr  . "Croatian")
+    (hu  . "Hungarian")
+    (hy  . "Armenian")
+    (id  . "Indonesian")
+    (ig  . "Igbo")
+    (ii  . "Sichuan Yi")
+    (is  . "Icelandic")
+    (jmc . "Machame")
+    (ka  . "Georgian")
+    (kab . "Kabyle")
+    (kam . "Kamba")
+    (kde . "Makonde")
+    (kea . "Kabuverdianu")
+    (khq . "Koyra Chiini")
+    (ki  . "Kikuyu")
+    (kk  . "Kazakh")
+    (kl  . "Kalaallisut")
+    (kln . "Kalenjin")
+    (km  . "Khmer")
+    (kn  . "Kannada")
+    (kok . "Konkani")
+    (kw  . "Cornish")
+    (lag . "Langi")
+    (lg  . "Ganda")
+    (lt  . "Lithuanian")
+    (luo . "Luo")
+    (luy . "Luyia")
+    (lv  . "Latvian")
+    (mas . "Masai")
+    (mer . "Meru")
+    (mfe . "Morisyen")
+    (mg  . "Malagasy")
+    (mk  . "Macedonian")
+    (ml  . "Malayalam")
+    (mr  . "Marathi")
+    (ms  . "Malay")
+    (mt  . "Maltese")
+    (my  . "Burmese")
+    (naq . "Nama")
+    (nd  . "North Ndebele")
+    (ne  . "Nepali")
+    (nl  . "Dutch")
+    (nn  . "Norwegian Nynorsk")
+    (nyn . "Nyankole")
+    (om  . "Oromo")
+    (or  . "Oriya")
+    (pa  . "Punjabi")
+    (pl  . "Polish")
+    (ps  . "Pashto")
+    (pt  . "Portuguese")
+    (rm  . "Romansh")
+    (ro  . "Romanian")
+    (rof . "Rombo")
+    (rw  . "Kinyarwanda")
+    (rwk . "Rwa")
+    (saq . "Samburu")
+    (seh . "Sena")
+    (ses . "Koyraboro Senni")
+    (sg  . "Sango")
+    (shi . "Tachelhit")
+    (si  . "Sinhala")
+    (sk  . "Slovak")
+    (sl  . "Slovenian")
+    (sn  . "Shona")
+    (so  . "Somali")
+    (sq  . "Albanian")
+    (sr  . "Serbian")
+    (sv  . "Swedish")
+    (sw  . "Swahili")
+    (ta  . "Tamil")
+    (te  . "Telugu")
+    (teo . "Teso")
+    (th  . "Thai")
+    (ti  . "Tigrinya")
+    (to  . "Tonga")
+    (tr  . "Turkish")
+    (tzm . "Central Morocco Tamazight")
+    (uk  . "Ukrainian")
+    (ur  . "Urdu")
+    (uz  . "Uzbek")
+    (vi  . "Vietnamese")
+    (vun . "Vunjo")
+    (xog . "Soga")
+    (cy  . "Welsh")
+    (yo  . "Yoruba")
+    (zu  . "Zulu")))
+
+(defconst gt-word-classes
+  '(pron adj adv adt art aux conj prep det abbr int vt vi v n a))
+
+(defvar gt-current-command nil)
+
+(defvar gt-current-translator nil)
+
+(defvar-local gt-tracking-marker nil)
 
 (defclass gt-single ()
   ((insts :allocation :class :initform nil))
@@ -60,12 +209,12 @@
       (prog1 inst
         (oset-default class insts `((,key . ,inst) ,@insts))))))
 
-(defclass gt-validator ()
+(defclass gt-valid-trait ()
   ((if :initarg :if
      :type (or function symbol list)
-     :documentation "See `gt-valid' for details."))
+     :documentation "See `gt-validate' for details."))
   :abstract t
-  :documentation "Use to detect whether component is available")
+  :documentation "Add :if to detect whether component is available")
 
 (defclass gt-task ()
   ((text
@@ -88,20 +237,17 @@
     :documentation "Extra data passed in translation.")
    (res
     :initform nil
-    :type (or string list function)
+    :type (or string list vector function)
     :documentation "Translation result.")
    (err
     :initform nil
     :documentation "Translation error.")
-   (cache
-    :initform nil
-    :documentation "Used to temporarily save the data from cache.")
    (markers
     :initform nil
     :documentation "Markers tracking output bounds.")
-   (process
+   (proc
     :initform nil
-    :documentation "Which process current task running.")
+    :documentation "A pdd-task represents the backend process.")
 
    (id
     :initform (gensym "task-")
@@ -116,16 +262,17 @@
     :documentation "Engine of current task.")
    (render
     :initarg :render
-    :documentation "Render of current task.")
+    :documentation "Renderer of current task.")
    (translator
     :initarg :translator
+    :initform nil
     :documentation "Translator of current task."))
   :documentation
-  "An object contains basic translation infomations.
+  "An object contains basic translation informations.
 Its life cycle is in one translation. It is created by translator, then derived
-to engines for result, at last extracted by render for output.")
+to engine for result, at last extracted by renderer for output.")
 
-(defclass gt-taker (gt-single gt-validator)
+(defclass gt-taker (gt-single gt-valid-trait)
   ((text
     :initarg :text
     :type (or function symbol string)
@@ -151,7 +298,7 @@ to engines for result, at last extracted by render for output.")
     :initarg :then
     :documentation "A function with current translator as argument.
 Used to do extra works after taking done. For example, one can filter the
-source text list to remove unnecessary elements, or modifiy the translate
+source text list to remove unnecessary elements, or modify the translate
 target as a final step."))
   :documentation
   "A component used to take the translate source text and targets for translator.
@@ -173,7 +320,7 @@ Or use the default value or corresponding variables as:
 
 Then use the taker in the translator and start your translation.")
 
-(defclass gt-parser (gt-single gt-validator)
+(defclass gt-parser (gt-single gt-valid-trait)
   ((tag
     :initarg :tag
     :initform nil
@@ -184,60 +331,73 @@ Then use the taker in the translator and start your translation.")
 to a user-friendly string. One engine can have different parsers, but can only
 use one of them at a time.")
 
-(defclass gt-engine (gt-single gt-validator)
+(defclass gt-engine (gt-single gt-valid-trait)
   ((tag
     :initarg :tag
     :type (or string symbol)
     :documentation "Display label for this engine.")
    (parse
     :initarg :parse
-    :initform (gt-parser)
+    :initform (make-instance 'gt-parser)
     :type (or function gt-parser)
     :documentation "Used to generate user-friendly result from response.")
-   (delimiter
-    :initarg :delimiter
-    :type (or null string)
+   (delimit
+    :initarg :delimit
+    :initform nil
+    :type (or null t string)
     :documentation "The delimiter for multiple paragraphs or parts translation.")
    (stream
     :initarg :stream
+    :initform nil
     :type boolean
-    :initform nil
     :documentation "Enable stream support for this engine.
-This effect both engine and render. If this is t, then retrieve results
-part by part. Render supporting stream output should refresh the display
+This effect both engine and renderer. If this is t, then retrieve results
+part by part. Renderer supporting stream output should refresh the display
 every time new data arrived.")
-   (cache
-    :initarg :cache
-    :type (or symbol function gt-cacher)
-    :documentation "Cache style used by the engine.
-If this is nil, current engine will use no cache at all.
-If this is literally symbol, see `gt-valid-literally' for details.
-If this is a cacher, then cache using the cacher instead.")
-   (salt
-    :initarg :salt
-    :initform nil
-    :documentation "Distinguish from... now for cache key only.")
    (then
     :initarg :then
     :type function
-    :documentation "Function run after result are responsed and parsed.
+    :documentation "Function run after result are response and parsed.
 Take current task as argument. you can do extra works for current task
 before rendering."))
   :documentation "Translate engine, retrieve the result and parse it.
 
-If `delimiter' is non nil, the translation for multiple paragraphs or parts will
+If `delimit' is non nil, the translation for multiple paragraphs or parts will
 take a strategy as `join-translate-split'. That is, join the source text list to
-a single string separated by `delimiter', translate the whole string, and then
-split the result by `delimiter' into multiple parts. This assumes that the
-`delimiter' in string is kept by engine in the translation progress.
-
-Set `delimiter' to nil to avoid this strategy. In that case, a string list will
-be passed to the engine, and a translated string list is expected.
+a single string separated by `delimit', translate the whole string, and then
+split the result by `delimit' into multiple parts. This assumes that the
+`delimit' in string is kept by engine in the translation progress. This is
+sometimes a more efficient way to get a lot of results. In this case, a string
+list will be passed to the engine, and a translated string list is expected.
 
 Also in some cases, you should turn the cache off by setting `no-cache' to t."
   :abstract t)
 
-(defclass gt-render (gt-single gt-validator)
+(defclass gt-web-engine (gt-engine)
+  ((cache :initarg :cache
+          :type (or symbol function)
+          :initform 'word
+          :documentation "Cache style used by the component.
+If this is nil, current component will use no cache at all.
+If this is literally symbol, see `gt-valid-literally' for details."))
+  "Translate engine which use http request for results."
+  :abstract t)
+
+(defclass gt-api-engine (gt-web-engine)
+  ((key
+    :initarg :key
+    :initform nil
+    :type (or null symbol function string)
+    :documentation "Optional API key")
+   (rate-limit
+    :initarg :rate-limit
+    :initform nil
+    :type (or null (integer 1 *) float)
+    :documentation "Limit request concurrency"))
+  "Engine which get result from http api."
+  :abstract t)
+
+(defclass gt-render (gt-single gt-valid-trait)
   ((output
     :initarg :output
     :initform nil
@@ -247,37 +407,36 @@ Also in some cases, you should turn the cache off by setting `no-cache' to t."
     :initarg :then
     :initform nil
     :type (or function gt-render null)
-    :documentation "Chain results to next render if possible.
+    :documentation "Chain results to next renderer if possible.
 If this is a function, pass current translator as argument and execute it only.")
    (prefix
     :initarg :prefix
     :type (or function t)
-    :documentation "Custom prefix displayed in the render.
+    :documentation "Custom prefix displayed in the renderer.
 If this is nil, then don't display prefix. If this is function use its return value
 as prefix. If this is a string, use the string as prefix."))
   :documentation
-  "A component used to output the all the results made by translator.
-Method `gt-init' only works once before output, method `gt-output' will run after
-every task finished.")
+  "A component used to output results of translator.
+Method `gt-init' only works once before output, method `gt-output' will run after every task finished.")
 
 (defclass gt-translator ()
   ((text
-    :type list
-    :initform nil
     :initarg :text
+    :initform nil
+    :type list
     :documentation "The text taken by taker, and prepare to translate.
-This should be a list, every element is a string as one pargraph or one part.
+This should be a list, every element is a string as one paragraph or one part.
 This list will be sent to translate engines later.")
 
    (bounds
-    :type list
     :initform nil
+    :type list
     :documentation "The bounds in buffer corresponds to the `text' slot.
 The first element is the working buffer, while rest are buffer bounds.")
 
    (target
-    :type list
     :initform nil
+    :type list
     :documentation "The target taken by taker.
 
 This should be a list. Generally, the first element is the source language and
@@ -304,7 +463,7 @@ targets.")
     :documentation "The inner state of the translator for current translation:
 0: new translator
 1: all tasks added
-2: render prepared
+2: renderer prepared
 3: all result parsed
 4: translate abort")
 
@@ -361,12 +520,12 @@ translation progress unless you are confident in what you are doing.")
    (bag :initform nil))
   :documentation "Core component of the translation.
 
-The basic components of a translator is taker, engines and render:
+The basic components of a translator is taker, engines and renderer:
 1. Use `gt-taker' to capture the source text and target
 2. Then use one or more `gt-engine' to get the translate result
 3. At last use a `gt-render' to output the results to user.
 
-The start a translation, call `gt-start' on a translator instance like this:
+The run a translation, call `gt-start' on a translator instance like this:
 
   (gt-start (make-instance `gt-translator
                    :taker (gt-taker)
@@ -375,159 +534,19 @@ The start a translation, call `gt-start' on a translator instance like this:
 
 That is: 1) define the translator 2) executable `gt-start'.")
 
-(defconst gt-lang-codes
-  '((en . "English")
-    (zh . "Chinese")
-    (ru . "Russian")
-    (fr . "French")
-    (it . "Italian")
-    (es . "Spanish")
-    (de . "German")
-    (ko . "Korean")
-    (ja . "Japanese")
-    (yue . "Cantonese")
-    (af . "Afrikaans")
-    (ak . "Akan")
-    (am . "Amharic")
-    (ar . "Arabic")
-    (as . "Assamese")
-    (asa . "Asu")
-    (az . "Azerbaijani")
-    (be . "Belarusian")
-    (bem . "Bemba")
-    (bez . "Bena")
-    (bg . "Bulgarian")
-    (bm . "Bambara")
-    (bn . "Bengali")
-    (bo . "Tibetan")
-    (bs . "Bosnian")
-    (ca . "Catalan")
-    (cgg . "Chiga")
-    (chr . "Cherokee")
-    (cs . "Czech")
-    (da . "Danish")
-    (dav . "Taita")
-    (ebu . "Embu")
-    (ee . "Ewe")
-    (el . "Greek")
-    (eo . "Esperanto")
-    (et . "Estonian")
-    (eu . "Basque")
-    (fa . "Persian")
-    (ff . "Fulah")
-    (fi . "Finnish")
-    (fil . "Filipino")
-    (fo . "Faroese")
-    (ga . "Irish")
-    (gl . "Galician")
-    (gsw . "Swiss German")
-    (gu . "Gujarati")
-    (guz . "Gusii")
-    (gv . "Manx")
-    (ha . "Hausa")
-    (haw . "Hawaiian")
-    (he . "Hebrew")
-    (hi . "Hindi")
-    (hr . "Croatian")
-    (hu . "Hungarian")
-    (hy . "Armenian")
-    (id . "Indonesian")
-    (ig . "Igbo")
-    (ii . "Sichuan Yi")
-    (is . "Icelandic")
-    (jmc . "Machame")
-    (ka . "Georgian")
-    (kab . "Kabyle")
-    (kam . "Kamba")
-    (kde . "Makonde")
-    (kea . "Kabuverdianu")
-    (khq . "Koyra Chiini")
-    (ki . "Kikuyu")
-    (kk . "Kazakh")
-    (kl . "Kalaallisut")
-    (kln . "Kalenjin")
-    (km . "Khmer")
-    (kn . "Kannada")
-    (kok . "Konkani")
-    (kw . "Cornish")
-    (lag . "Langi")
-    (lg . "Ganda")
-    (lt . "Lithuanian")
-    (luo . "Luo")
-    (luy . "Luyia")
-    (lv . "Latvian")
-    (mas . "Masai")
-    (mer . "Meru")
-    (mfe . "Morisyen")
-    (mg . "Malagasy")
-    (mk . "Macedonian")
-    (ml . "Malayalam")
-    (mr . "Marathi")
-    (ms . "Malay")
-    (mt . "Maltese")
-    (my . "Burmese")
-    (naq . "Nama")
-    (nd . "North Ndebele")
-    (ne . "Nepali")
-    (nl . "Dutch")
-    (nn . "Norwegian Nynorsk")
-    (nyn . "Nyankole")
-    (om . "Oromo")
-    (or . "Oriya")
-    (pa . "Punjabi")
-    (pl . "Polish")
-    (ps . "Pashto")
-    (pt . "Portuguese")
-    (rm . "Romansh")
-    (ro . "Romanian")
-    (rof . "Rombo")
-    (rw . "Kinyarwanda")
-    (rwk . "Rwa")
-    (saq . "Samburu")
-    (seh . "Sena")
-    (ses . "Koyraboro Senni")
-    (sg . "Sango")
-    (shi . "Tachelhit")
-    (si . "Sinhala")
-    (sk . "Slovak")
-    (sl . "Slovenian")
-    (sn . "Shona")
-    (so . "Somali")
-    (sq . "Albanian")
-    (sr . "Serbian")
-    (sv . "Swedish")
-    (sw . "Swahili")
-    (ta . "Tamil")
-    (te . "Telugu")
-    (teo . "Teso")
-    (th . "Thai")
-    (ti . "Tigrinya")
-    (to . "Tonga")
-    (tr . "Turkish")
-    (tzm . "Central Morocco Tamazight")
-    (uk . "Ukrainian")
-    (ur . "Urdu")
-    (uz . "Uzbek")
-    (vi . "Vietnamese")
-    (vun . "Vunjo")
-    (xog . "Soga")
-    (cy . "Welsh")
-    (yo . "Yoruba")
-    (zu . "Zulu")))
+(cl-defgeneric gt-reset (_component &rest _args)
+  "Reset states for COMPONENT."
+  nil)
 
-(defconst gt-word-classes
-  '(pron adj adv adt art aux conj prep det abbr int vt vi v n a))
+(cl-defgeneric gt-init (_component &rest _args)
+  "Initialize states for COMPONENT."
+  nil)
 
-(defvar gt-current-command nil)
+(cl-defgeneric gt-update (_component &rest _args)
+  "Update states for COMPONENT."
+  nil)
 
-(defvar gt-current-translator nil)
-
-(defvar-local gt-tracking-marker nil)
-
-(cl-defgeneric gt-init (object &rest _args)
-  "Initialization for OBJECT.")
-
-(cl-defgeneric gt-desc (object)
+(cl-defgeneric gt-repr (object)
   "Return the string representation of the OBJECT."
   (format "%s" (eieio-object-class object)))
 
@@ -639,6 +658,7 @@ If KEEP-CURSOR is not nil, keep the cursor at front."
 
 (defun gt-parse-html-dom (str)
   "Parse html STR and return the DOM body."
+  (require 'dom)
   (with-temp-buffer
     (insert str)
     (xml-remove-comments (point-min) (point-max))
@@ -752,14 +772,40 @@ This is a generic method, improve it for specific LANG as you wish."
       (equal (thing-at-point 'word) text))))
 
 
-;;; Validator Trait
+;;; Validate Trait
 
-;; add validate feature to `taker/engine/render/cache' through `:if' slot
+;; add validate feature to `taker/engine/render' through `:if' slot
+
+(cl-defmethod gt-validate ((component gt-valid-trait) carrier)
+  "Determine if current COMPONENT is available through `if' slot.
+Slot value can be a function, a symbol or a list. CARRIER maybe a task, a
+translator or a list to provide more validation data."
+  (let (text src tgt)
+    (cond ((cl-typep carrier 'gt-task)
+           (setq text (oref (oref carrier translator) text)
+                 src (oref carrier src)
+                 tgt (oref carrier tgt)))
+          ((cl-typep carrier 'gt-translator)
+           (setq text (oref carrier text)
+                 src (car (oref carrier target))
+                 tgt (cdr (oref carrier target))))
+          ((consp carrier)
+           (setq text (car carrier)
+                 src (cadr carrier)
+                 tgt (caddr carrier)))
+          (t (user-error "Carrier type is not supported")))
+    (with-slots (if) component
+      (cond ((not (slot-boundp component 'if)) t)
+            ((and (functionp if) (= 2 (car (func-arity if))))
+             (funcall if component carrier))
+            ((and (functionp if) (= 1 (car (func-arity if))))
+             (funcall if carrier))
+            (t (gt-valid-literally if text src tgt))))))
 
 (cl-defgeneric gt-valid-literally (v text src tgt)
   "Check literally symbol or form V to determine next step.
 
-It can be used by cacher and engine.
+It can be used by cache and engine.
 
 V should be a symbol like `word', `parts', `src:en', `tgt:en', `selection',
 `xxx-mode', `read-only', or symbol with `not-' or `no-' prefix such as
@@ -772,84 +818,56 @@ V also can be a list form grouping above symbols with `and/or', for example:
 TEXT, SRC and TGT are translation text and targets.
 
 This is a generic method, you can extend the V as you wish."
-  (:method :around (v text src tgt)
-           (cond ((or (null v) (eq v t)) v)
-                 ((symbolp v)
-                  (setq text (ensure-list text))
-                  (let ((vn (symbol-name v)) (notp nil))
-                    (when (string-match "^not?-\\(.*\\)" vn) ; not-xxx style
-                      (setq vn (match-string 1 vn))
-                      (setq v (intern vn))
-                      (setq notp t))
-                    (funcall
-                     (if notp #'not #'identity)
-                     (cl-call-next-method v text src text))))
-                 ((consp v) ; compose as: (or word (and not-parts src:zh))
-                  (unless (member (car v) '(or and)) (push 'or v))
-                  (funcall (if (eq (pop v) 'or) #'cl-some #'cl-every) #'identity
-                           (mapcar (lambda (x) (gt-valid-literally x text src tgt)) v)))))
   (let ((vn (symbol-name v)))
-    (cond
-     ((eq v 'word) (and (car text) ; text is word
-                        (not (cdr text))
-                        (gt-word-p (intern-soft src) (car text))))
-     ((eq v 'parts) (cdr text)) ; text is multiple parts
-     ((eq v 'selection) (use-region-p)) ; use region is active
-     ((eq v 'read-only) buffer-read-only) ; buffer is read-only
-     ((string-suffix-p "-mode" vn) ; major-mode or minor-mode
-      (if (boundp v) (symbol-value v) (eq major-mode v)))
-     ((string-match "^\\(src\\|tgt\\):\\(.+\\)" vn)
-      (member (match-string 2 vn) ; src/tgt is specific one, as src:en
-              (mapcar (lambda (item) (format "%s" item))
-                      (ensure-list (if (equal (match-string 1 vn) "src") src tgt))))))))
+    (cond ((eq v 'word)
+           (and (car text) ; text is word
+                (not (cdr text))
+                (gt-word-p (intern-soft src) (car text))))
+          ((eq v 'parts) (cdr text)) ; text is multiple parts
+          ((eq v 'selection) (use-region-p)) ; use region is active
+          ((eq v 'read-only) buffer-read-only) ; buffer is read-only
+          ((string-suffix-p "-mode" vn) ; major-mode or minor-mode
+           (if (boundp v) (symbol-value v) (eq major-mode v)))
+          ((string-match "^\\(src\\|tgt\\):\\(.+\\)" vn)
+           (member (match-string 2 vn) ; src/tgt is specific one, as src:en
+                   (mapcar (lambda (item) (format "%s" item))
+                           (ensure-list (if (equal (match-string 1 vn) "src") src tgt))))))))
 
-(cl-defgeneric gt-valid (component &rest _args)
-  "Validate COMPONENT, return t if it's available."
-  (:method ((component gt-validator) carrier)
-           "Determine if current COMPONENT is available through `if' slot.
-Slot value can be a function, a symbol or a list. CARRIER maybe a task, a
-translator or a list to provide more validation data."
-           (let (text src tgt)
-             (cond
-              ((cl-typep carrier 'gt-task)
-               (setq text (oref (oref carrier translator) text)
-                     src (oref carrier src)
-                     tgt (oref carrier tgt)))
-              ((cl-typep carrier 'gt-translator)
-               (setq text (oref carrier text)
-                     src (car (oref carrier target))
-                     tgt (cdr (oref carrier target))))
-              ((consp carrier)
-               (setq text (car carrier)
-                     src (cadr carrier)
-                     tgt (caddr carrier)))
-              (t (user-error "Carrier type is not supported")))
-             (with-slots (if) component
-               (cond ((not (slot-boundp component 'if)) t)
-                     ((and (functionp if) (= 2 (car (func-arity if))))
-                      (funcall if component carrier))
-                     ((and (functionp if) (= 1 (car (func-arity if))))
-                      (funcall if carrier))
-                     (t (gt-valid-literally if text src tgt)))))))
+(cl-defmethod gt-valid-literally :around (v text src tgt)
+  (cond ((or (null v) (eq v t)) v)
+        ((symbolp v)
+         (setq text (ensure-list text))
+         (let ((vn (symbol-name v)) (notp nil))
+           (when (string-match "^not?-\\(.*\\)" vn) ; not-xxx style
+             (setq vn (match-string 1 vn))
+             (setq v (intern vn))
+             (setq notp t))
+           (funcall
+            (if notp #'not #'identity)
+            (cl-call-next-method v text src text))))
+        ((consp v) ; compose as: (or word (and not-parts src:zh))
+         (unless (member (car v) '(or and)) (push 'or v))
+         (funcall (if (eq (pop v) 'or) #'cl-some #'cl-every) #'identity
+                  (mapcar (lambda (x) (gt-valid-literally x text src tgt)) v)))))
 
 
 ;;; Logging
 
-(defvar gt-log-buffer-name "*gt-log*"
+(defvar gt-log-buffer "*gt-log*"
   "Log buffer for translator.")
 
 (defun gt-log (tag &rest messages)
-  "Log MESSAGES to `gt-log-buffer-name'.
+  "Log MESSAGES to `gt-log-buffer'.
 TAG is a label for message being logged."
   (declare (indent 1))
   (when gt-debug-p
-    (with-current-buffer (get-buffer-create gt-log-buffer-name)
+    (with-current-buffer (get-buffer-create gt-log-buffer)
       (goto-char (point-max))
       (if (and (null messages) (stringp tag))
           (insert tag)
         (let* ((tag (when tag
                       (concat
-                       (gt-face-lazy (cl-subseq (format "%-.1f" (time-to-seconds)) 6) 'gt-logger-buffer-timestamp-face)
+                       (gt-face-lazy (cl-subseq (format "%-.2f" (time-to-seconds)) 6) 'gt-logger-buffer-timestamp-face)
                        (gt-face-lazy (if (ignore-errors (string-blank-p tag)) tag (format " [%s]" tag)) 'gt-logger-buffer-tag-face)
                        " ")))
                (count (if (numberp (car messages)) (pop messages) (length tag)))
@@ -875,155 +893,67 @@ TAG is a label for message being logged."
       (format ,(if (string-match-p "^[ \n]" fmt) fmt (concat "gt-" fmt))
               ,@(cl-loop
                  for o in objects collect
-                 `(let ((obj ,o)) (if (eieio-object-p obj) (gt-desc obj) obj))))
+                 `(let ((obj ,o)) (if (eieio-object-p obj) (gt-repr obj) obj))))
       'font-lock-doc-face)))
-
-
-;;; Caching
-
-(defclass gt-cacher (gt-validator)
-  ((storage :initform nil :documentation "Where to save the caches."))
-  "Used to cache the translate results."
-  :abstract t)
-
-(defcustom gt-cache-alive-time (* 30 60)
-  "Default cache alive time."
-  :type 'integer
-  :group 'go-translate)
-
-(defvar gt-default-cacher nil)
-
-;; generic
-
-(defun gt-cacher-barking ()
-  (unless gt-default-cacher
-    (user-error "Make sure `gt-default-cacher' is properly configured. eg:\n
- (setq gt-default-cacher (gt-memory-cacher))")))
-
-(cl-defgeneric gt-cache-get (_cacher _key &rest _)
-  "Query result of KEY from CACHER."
-  (:argument-precedence-order _key _cacher)
-  (gt-cacher-barking))
-
-(cl-defgeneric gt-cache-set (_cacher _key &rest _)
-  "Save result of KEY to CACHER."
-  (:argument-precedence-order _key _cacher)
-  (gt-cacher-barking))
-
-(cl-defgeneric gt-cache-purge (cacher &optional only-expired)
-  "Purge the storage of CACHER.
-If ONLY-EXPIRED not nil, purge caches expired only.")
-
-;; implement of caching in memory
-
-(defclass gt-memory-cacher (gt-cacher gt-single) ())
-
-(cl-defmethod gt-cache-get ((cacher gt-memory-cacher) key)
-  (with-slots (storage expired) cacher
-    (when-let* ((cache (ignore-errors (gethash key storage))))
-      (if (> (time-to-seconds) (cdr cache))
-          (remhash key storage)
-        (gt-log 'memory-cacher (format "get [%s] from caches (%s)" key (hash-table-count storage)))
-        (car cache)))))
-
-(cl-defmethod gt-cache-set ((cacher gt-memory-cacher) key value)
-  (with-slots (storage) cacher
-    (unless storage
-      (setf storage (make-hash-table :test #'equal)))
-    (if (null value)
-        (remhash key storage)
-      (let ((existp (gethash key storage))
-            (etime (+ (time-to-seconds) gt-cache-alive-time)))
-        (puthash key (cons value etime) storage)
-        (gt-cache-purge cacher t)
-        (gt-log 'memory-cacher
-          (format "%s [%s] to caches (%s)" (if existp "update" "add") key (hash-table-count storage)))))))
-
-(cl-defmethod gt-cache-purge ((cacher gt-memory-cacher) &optional only-expired)
-  (with-slots (storage) cacher
-    (when storage
-      (if only-expired
-          (maphash (lambda (key value)
-                     (when (> (time-to-seconds) (cdr value))
-                       (remhash key storage)))
-                   storage)
-        (clrhash storage)))))
-
-;; caching task
-
-(cl-defmethod gt-valid ((cacher gt-cacher) (task gt-task) pred text)
-  (with-slots (src tgt) task
-    (or (and (null pred) (not (slot-boundp cacher 'if)))
-        (let ((pred (or pred (oref cacher if))))
-          (or (and (functionp pred) (funcall pred task))
-              (gt-valid-literally pred text src tgt))))))
-
-(cl-defmethod gt-cache-key ((task gt-task) &optional n)
-  "Generate caching key for the Nth text in TASK."
-  (with-slots (text src tgt engine parse) task
-    (sha1 (format "%s:%s:%s:%s:%s:%s"
-                  (nth (or n 0) (ensure-list text)) src tgt
-                  (gt-desc engine)
-                  (gt-desc (oref engine parse))
-                  (or (oref engine salt) "1")))))
-
-(cl-defmethod gt-cache-get (cacher (task gt-task))
-  (let ((results (cl-loop
-                  for i from 1 to (length (ensure-list (oref task text)))
-                  collect (gt-cache-get cacher (gt-cache-key task (1- i))))))
-    (when (cl-some #'identity results)
-      (gt-log 'render (format "%s: result from cache!" (oref task id))))
-    results))
-
-(cl-defmethod gt-cache-set (cacher (task gt-task) &optional pred)
-  (with-slots (text src tgt res) task
-    (cl-loop for c in text
-             for r in res
-             for i from 0
-             if (gt-valid cacher task pred c)
-             do (gt-cache-set cacher (gt-cache-key task i) r))))
-
-(defun gt-purge-cache (cacher)
-  "Purge storage of CACHER."
-  (interactive (list gt-default-cacher))
-  (when (y-or-n-p (format "Purge all caches from %s now?" (gt-desc cacher)))
-    (gt-cacher-barking)
-    (gt-cache-purge (or cacher gt-default-cacher))
-    (message "Cache purged.")))
 
 
 ;;; Http Client
 
-(require 'gt-httpx)
+(defcustom gt-http-backend pdd-backend
+  "Http client used by `gt-request' by default.
+See the descriptions from `pdd-http-backend'."
+  :type 'sexp
+  :group 'go-translate)
 
-(defvar plz-curl-program)
+(defcustom gt-http-proxy pdd-proxy
+  "Proxy used by http request.
+See the descriptions from `pdd-proxy'."
+  :type '(choice string function)
+  :group 'go-translate)
 
-(defvar gt-default-http-client
-  (if (and (require 'plz nil t) (executable-find plz-curl-program))
-      (gt-plz-http-client)
-    (gt-url-http-client)))
+(defcustom gt-http-timeout pdd-timeout
+  "Timeout for http request.
+See the descriptions from `pdd-timeout'."
+  :type 'natnum
+  :group 'go-translate)
 
-(cl-defmethod gt-request (&rest args &key url method headers data filter done fail sync retry cache)
-  "Simple wrapper for http client, and add cache support."
-  (ignore method headers filter sync retry)
-  (let ((client (gt-ensure-plain gt-default-http-client (url-host (url-generic-parse-url url)))))
-    (if (and client (eieio-object-p client) (object-of-class-p client 'gt-http-client))
-        (let* ((ckey (sha1 (format "%s%s" url data)))
-               (donefn (when done
-                         (lambda (raw)
-                           ;; try to cache the result
-                           (when cache
-                             (let ((gt-cache-alive-time (if (numberp cache) cache gt-cache-alive-time)))
-                               (gt-cache-set gt-default-cacher ckey raw)))
-                           (funcall done raw)))))
-          ;; try to get from cache first
-          (if-let* ((r (and cache (gt-cache-get gt-default-cacher ckey))))
-              (progn (gt-log 'cacher (format "Find %s in cache..." ckey))
-                     (if donefn (funcall donefn r) r))
-            (cl-remf args :cache)
-            (apply #'gt-request client `(:done ,donefn ,@args))))
-      (let ((errmsg "Make sure `gt-default-http-client' is available. eg:\n\n(setq gt-default-http-client (gt-url-http-client))\n\n\n"))
+(defcustom gt-http-max-retry pdd-max-retry
+  "Max retry times for http request.
+See the descriptions from `pdd-max-retry'."
+  :type 'natnum
+  :group 'go-translate)
+
+(cl-defun gt-request (url &rest args &key fail max-retry &allow-other-keys)
+  "Send request for URL with pdd backend specified by `gt-http-backend'.
+All the ARGS like FAIL, MAX-RETRY are just like those of method `pdd'."
+  (declare (indent 1))
+  (let* ((pdd-debug gt-debug-p)
+         (pdd-proxy gt-http-proxy)
+         (pdd-timeout gt-http-timeout)
+         (pdd-max-retry (or max-retry gt-http-max-retry))
+         (pdd-log-redirect #'gt-log)
+         (pdd-backend gt-http-backend)
+         (pdd-backend (pdd-ensure-default-backend (cons url args))))
+    (if (and pdd-backend (eieio-object-p pdd-backend)
+             (object-of-class-p pdd-backend 'pdd-http-backend))
+        (apply #'pdd url args)
+      (let ((errmsg "Make sure `gt-http-backend' is available. eg:\n\n(setq gt-http-backend (pdd-url-backend))\n\n\n"))
         (if fail (funcall fail errmsg) (user-error errmsg))))))
+
+(cl-defmacro gt-dolist-concurrency ((var items &optional (rate-limit nil supplied)) &rest body)
+  "Helper to make concurrency requests for ITEMS.
+LIMIT should be a float or interger used to create queue with :rate or :limit.
+Bind VAR to item of ITEMS which can be used in BODY."
+  (declare (indent 1))
+  (let ((sym (gensym)))
+    `(let* ((,sym ,(if supplied rate-limit (or rate-limit 6)))
+            (pdd-active-queue
+             ,(if sym `(pcase ,sym
+                         ((pred integerp) (pdd-queue :limit ,sym))
+                         ((pred floatp) (pdd-queue :rate ,sym))
+                         (_ pdd-active-queue))
+                'pdd-active-queue)))
+       (pdd-all (mapcar (lambda (,var) ,@body) ,items)))))
 
 
 ;;; Taker
@@ -1068,7 +998,7 @@ a to b or a to c if this is nil."
 (defcustom gt-taker-text 'word
   "The initial text taken by taker of translator.
 
-If the region is actived, take the selection text. Otherwise, if this is a
+If the region is activated, take the selection text. Otherwise, if this is a
 symbol, then try to use `thing-at-point' to take the text at point. If this
 is a function then invoke it and use its result as the initial text. Specially
 if this is t, take the text interactively.
@@ -1406,7 +1336,7 @@ If BACKWARDP is not nil then switch to previous one."
     (overlay-put gt-prompt-overlay 'before-string (gt-prompt-prefix gt-prompt-target))))
 
 (cl-defgeneric gt-prompt (_taker translator _type)
-  "Prompt user with inital text and target, then update TRANSLATOR with new values."
+  "Prompt user with initial text and target for TRANSLATOR."
   (:method :before ((_taker gt-taker) translator _type)
            (when (cdr (oref translator text)) ; for solo part only
              (user-error "Multiple part text cannot be prompted")))
@@ -1463,136 +1393,261 @@ If BACKWARDP is not nil then switch to previous one."
   :type 'boolean
   :group 'go-translate)
 
+(defcustom gt-cache-ttl (* 30 60)
+  "Default cache alive time."
+  :type 'integer
+  :group 'go-translate)
+
+(defvar gt-cache-store (make-hash-table :test #'equal))
+
 (defconst gt-text-delimiter "314141592926666")
 
-(defun gt-current-cacher (engine task)
-  "Return the cacher used by ENGINE for current TASK."
-  (let (cacher condition)
-    (when gt-cache-p
-      (let ((cc (gt-ensure-plain
-                 (if (slot-boundp engine 'cache) (if-let* ((c (gt-ensure-plain (oref engine cache) task))) c) t)
-                 task)))
-        (cond ((null cc))
-              ((eq cc t) (setq cacher gt-default-cacher condition nil))
-              ((symbolp cc) (setq cacher gt-default-cacher condition cc))
-              (t (setq cacher cc condition nil)))))
-    (cl-values cacher condition)))
+(cl-defgeneric gt-execute (engine &rest _args)
+  "Execute the translate or transform logics for ENGINE."
+  (user-error "Method `gt-execute' of %s is not implement" (gt-repr engine)))
 
 (cl-defmethod initialize-instance :after ((engine gt-engine) &rest _)
   (unless (slot-boundp engine 'tag)
-    (oset engine tag (gt-desc engine))))
+    (oset engine tag (gt-repr engine))))
 
-(cl-defmethod gt-init ((engine gt-engine) task)
-  "Preprocessing text in TASK for ENGINE. Try cache first if possible."
-  (with-slots (id text cache) task
-    (gt-log-funcall "init (%s %s)" engine id)
-    ;; if stream, not cache
-    (if (gt-stream-p engine) (oset engine cache nil))
-    ;; query cache first
-    (when-let* ((cacher (car-safe (gt-current-cacher engine task))))
-      (setf cache (gt-cache-get cacher task)))
-    ;; only translate the parts not in cache
-    (if (and cache (cl-every #'identity cache))
-        (gt-next engine task)
-      (let ((text-left (if cache (cl-loop for c in text for r in cache unless r collect c) text)))
-        ;; join with delimiter if possible
-        (if-let* ((delimiter (if (slot-boundp engine 'delimiter) (oref engine delimiter) gt-text-delimiter)))
-            (setf text (string-join text-left (concat "\n\n" delimiter "\n\n")))
-          (setf text text-left))))))
+(cl-defmethod gt-init :after ((engine gt-engine) _task)
+  (with-slots (delimit) engine
+    (when (eq delimit t) (setf delimit gt-text-delimiter))))
 
-(cl-defgeneric gt-translate (engine task &optional next)
-  "Translate or transform text in TASK and parse the results using ENGINE.
+(cl-defmethod gt-execute :around ((engine gt-engine) task)
+  "The primary method return the result or a `pdd-task' contains the result.
+This around method add the init and finalize progress to the primary method."
+  (gt-log-funcall "translate (%s %s)" engine (oref task id))
+  (gt-init engine task)
+  (with-slots (id text src tgt res err proc render) task
+    (with-slots (delimit stream) engine
+      (unless (or res err)
+        (gt-log 'next (format "%s: %s prepare to translate" id (gt-repr engine)))
+        ;; join with delimiter if necessary (join-process-split)
+        (when (and delimit (not (oref engine stream)))
+          (setf text (string-join text (concat "\n\n" delimit "\n\n"))))
+        ;; enable caching if necessary
+        (let* ((cache-pred nil)
+               (pdd-active-cacher
+                (when (and gt-cache-p
+                           (not stream)
+                           (slot-exists-p engine 'cache)
+                           (slot-boundp engine 'cache)
+                           (setq cache-pred (oref engine cache))
+                           (if (functionp cache-pred)
+                               (funcall cache-pred task)
+                             (gt-valid-literally cache-pred
+                                                 (cl-reduce
+                                                  (lambda (longest-so-far current-string)
+                                                    (if (> (length current-string) (length longest-so-far))
+                                                        current-string
+                                                      longest-so-far))
+                                                  (ensure-list text))
+                                                 src tgt)))
+                  (pdd-cacher :ttl gt-cache-ttl :key '(url data) :store 'gt-cache-store))))
+          ;; execute the engine and postprocess the results
+          (setf proc
+                (pdd-chain (cl-call-next-method engine task)
+                  (lambda (result)
+                    (if (gt-task-expired-p task)
+                        (gt-log 'next (format "%s: ----- expired -----" id))
+                      (if (oref engine stream)
+                          (if (gt-task-cancelled-p task)
+                              (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-repr engine)))
+                            (gt-output render task))
+                        (gt-log 'next (format "%s: %s translate success!" id (gt-repr engine)))
+                        (setf res (if delimit (car (ensure-list result)) result))
+                        (gt-finalize engine task))))
+                  :fail (lambda (reason) (gt-task-fail task reason)))))))))
 
-The raw response will save into `res' slot of translator. Then NEXT runs, that
-will do the parse and render job. See type `gt-engine' for more description."
-  (:method :around ((engine gt-engine) task &optional _next)
-           (gt-log-funcall "translate (%s %s)" engine (oref task id))
-           (gt-init engine task)
-           (with-slots (id text err res render translator process) task
-             (unless (or res err)
-               (gt-log 'next (format "%s: %s prepare to translate" id (gt-desc engine)))
-               (let ((ret (cl-call-next-method
-                           engine task
-                           (lambda (task)
-                             (if (equal (oref translator version) (oref task version))
-                                 (condition-case err1
-                                     (if (gt-stream-p engine)
-                                         (if gt-http-client-stream-abort-flag
-                                             (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-desc engine)))
-                                           (gt-next-for-stream render task))
-                                       (gt-log 'next (format "%s: %s translate success!" id (gt-desc engine)))
-                                       (gt-next engine task))
-                                   (gt-fail task err1))
-                               (gt-log 'next (format "%s: ----- expired -----" id)))))))
-                 (if (processp ret) (setf process ret))))))
-  (:method ((engine gt-engine) _task _next)
-           (user-error "Method `gt-translate' of %s is not implement" (gt-desc engine))))
+(cl-defmethod gt-finalize ((engine gt-engine) task)
+  (gt-log-funcall "finalize (%s %s)" engine (oref task id))
+  (with-slots (text res meta translator) task
+    (with-slots (parse delimit then) engine
+      ;; parse
+      (when res
+        (when-let* ((parser (and (slot-boundp engine 'parse) parse)))
+          (if (gt-functionp parser)
+              (funcall parser task)
+            (gt-parse parser task)))
+        ;; split with delimiter if possible
+        (when delimit
+          (setf res (mapcar (lambda (item) (string-trim item "\n+")) (split-string res delimit))))
+        (setf res (ensure-list res))
+        ;; run res-hook if possible
+        (when-let* ((hook (plist-get meta :res-hook)))
+          (setf res (funcall hook res))))
+      ;; verify
+      (unless res
+        (user-error "No translate result found"))
+      (unless (= (length (remove nil res)) (length (oref translator text)))
+        (user-error "Source text and result text have no same length"))
+      ;; invoke then when it is exists
+      (when (and (slot-boundp engine 'then) then (gt-functionp then))
+        (funcall then task))
+      ;; all right, render
+      (gt-update translator)
+      (gt-output (oref translator render) translator))))
 
-(cl-defgeneric gt-parse (_parser task)
-  "Parse results of TASK to user-friendly string."
+(cl-defgeneric gt-parse (_parser _task)
+  "Replace res of TASK to user-friendly string using PARSER."
   (:method :before ((parser gt-parser) task)
            (gt-log-funcall "parse (%s %s)" parser (oref task id)))
-  (:method ((_ gt-parser) _task) nil))
-
-(cl-defgeneric gt-stream-p (_engine)
-  "Whether streaming query is on for ENGINE."
   nil)
 
-(cl-defgeneric gt-next (_engine task)
-  "Chain to the parse and render phase for TASK."
-  (:method ((engine gt-engine) task)
-           (gt-log-funcall "next (%s %s)" engine (oref task id))
-           (with-slots (text res meta cache translator) task
-             (with-slots (parse delimiter then) engine
-               ;; parse
-               (when res
-                 (when-let* ((parser (and (slot-boundp engine 'parse) parse)))
-                   (if (gt-functionp parser)
-                       (funcall parser task)
-                     (gt-parse parser task)))
-                 ;; split with delimiter if possible
-                 (when-let* ((delimiter (and (stringp res) (if (slot-boundp engine 'delimiter) delimiter gt-text-delimiter))))
-                   (setf res (mapcar (lambda (item) (string-trim item "\n+")) (split-string res delimiter))))
-                 (setf res (ensure-list res))
-                 ;; run res-hook if possible
-                 (when-let* ((hook (plist-get meta :res-hook)))
-                   (setf res (funcall hook res))))
-               ;; resume text and merge cache to res
-               (setf text (oref translator text))
-               (if cache (setf res (cl-loop for c in cache if (null c) collect (pop res) else collect c)))
-               ;; verify
-               (unless res
-                 (user-error "No translate result found"))
-               (unless (= (length (remove nil res)) (length text))
-                 (user-error "Source text and result text have no same length"))
-               ;; set cache if possible
-               (cl-destructuring-bind (cacher condition) (gt-current-cacher engine task)
-                 (when cacher (gt-cache-set cacher task condition)))
-               ;; invoke then when it is exists
-               (when (and (slot-boundp engine 'then) then (gt-functionp then))
-                 (funcall then task))
-               ;; all right, render
-               (gt-update-state translator)
-               (gt-output (oref translator render) translator)))))
+(cl-defgeneric gt-key (api-engine)
+  "Return the api key for API-ENGINE."
+  (:method ((engine gt-api-engine)) (oref engine key)))
 
-(cl-defgeneric gt-next-for-stream (_render task)
-  "Output result in TASK to specific marker position directly.
-Notice, the result should propertized with `gt-result' to avoid issue.
-This is used for streaming output for _RENDER."
-  (:method :around ((render gt-render) task)
-           (with-slots (markers) task
-             (if (null markers)
-                 (progn
-                   (setq gt-http-client-stream-abort-flag t)
-                   (message "Stream output is unavailable for current task."))
-               (setf markers (ensure-list markers))
-               (cl-call-next-method render task))))
-  (:method ((_render gt-render) task)
-           (with-slots (markers res) task
-             (save-excursion
-               (gt-insert-text-at-marker
-                (propertize (string-join (ensure-list res) "\n") 'gt-result 'stream)
-                (car markers) (cdr markers) t)))))
+(defmacro gt-ensure-key-for-engine (slots engine &rest body)
+  (declare (indent 2))
+  (unless (memq 'key slots) (push 'key slots))
+  `(with-slots ,slots ,engine
+     (if (stringp key) key
+       (if-let* ((key-found (progn ,@body)))
+           (setf key key-found)
+         (user-error "You should provide a %s for `%s'"
+                     (if (symbolp key) key "api key")
+                     (gt-repr ,engine))))))
+
+
+;;; Renderer
+
+(cl-defgeneric gt-output (render translator-or-task)
+  "Output TRANSLATOR-OR-TASK with RENDER.
+When output a task, hint that this is for a stream request.")
+
+(cl-defgeneric gt-extract-data (render translator)
+  "Extract TRANSLATOR's responses that to be consumed by RENDER.")
+
+(cl-defmethod gt-init :around ((render gt-render) translator)
+  "Initialize the RENDER. Only invoke once before output."
+  (gt-log-funcall "init (%s %s)" render translator)
+  (let (message-log-max)
+    (message "Processing..."))
+  (condition-case err
+      (progn (cl-call-next-method render translator)
+             (gt-update translator))
+    (error (gt-log 'render (format "%s initialize failed, abort" (gt-repr render)))
+           (user-error (format "[output init error] %s" err)))))
+
+(cl-defmethod gt-output :around ((render gt-render) (translator gt-translator))
+  (with-slots (state) translator
+    (gt-log-funcall "output (%s %s) %s" render translator state)
+    (when (<= state 4)
+      (with-slots (output then) render
+        ;; error handler & functionp case
+        (condition-case err
+            (if (gt-functionp output)
+                (funcall output render translator)
+              (cl-call-next-method render translator)
+              ;; chain next render if possible
+              (when (and (= state 3) then)
+                (cond ((gt-functionp then)
+                       (funcall then translator))
+                      ((and (eieio-object-p then) (object-of-class-p then 'gt-render))
+                       (gt-init then translator)
+                       (gt-output then translator))
+                      (t (error "Bad then value specified in %s" (gt-repr render))))))
+          (error (setf state 4)
+                 (message "[output error] %s" (cadr err))))))))
+
+(cl-defmethod gt-output ((render gt-render) (translator gt-translator))
+  "The default RENDER which outputing results to echo area for TRANSLATOR."
+  (when (= 3 (oref translator state))
+    (cl-loop with data = (gt-extract-data render translator)
+             with multip = (cdr (oref translator text))
+             for item in data
+             for (prefix result) = (gt-plist-let item (list (concat "[" .prefix "]" (if multip "\n" " ")) .result))
+             collect (concat (if (cdr data) (propertize prefix 'face 'gt-render-prefix-face))
+                             (if (consp result) (string-join result "\n") result))
+             into lst finally (message "%s" (string-join lst "\n")))))
+
+(cl-defmethod gt-output :around ((render gt-render) (task gt-task))
+  (with-slots (markers res) task
+    (if (null markers)
+        (when (pdd-task-p res)
+          (pdd-signal res 'cancel)
+          (message "Stream output is unavailable for current task."))
+      (setf markers (ensure-list markers))
+      (cl-call-next-method render task))))
+
+(cl-defmethod gt-output ((_render gt-render) (task gt-task))
+  (with-slots (markers res) task
+    (save-excursion
+      (gt-insert-text-at-marker
+       (propertize (string-join (ensure-list res) "\n") 'gt-result 'stream)
+       (car markers) (cdr markers) t))))
+
+(cl-defmethod gt-extract-data ((render gt-render) translator)
+  (with-slots (text tasks) translator
+    (cl-loop with tgts = (cl-delete-duplicates (mapcar (lambda (item) (oref item tgt)) tasks))
+             with engines = (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))
+             for task in tasks
+             for (tgt res err engine) = (gt-orefs task tgt res err engine)
+             for state = (if err 1 (if res 2 0)) ; 0 loading 1 error 2 result
+             for prefix = (with-slots (prefix) render
+                            (if (and (slot-boundp render 'prefix) (not (eq prefix t)))
+                                (when prefix
+                                  ;; custom prefix with :prefix slot
+                                  (if (gt-functionp prefix)
+                                      (funcall prefix task)
+                                    (format "%s" prefix)))
+                              (when (or (cdr tgts) (cdr engines))
+                                ;; style as: en.Google.Detail
+                                (let ((lst (list (if (cdr tgts) tgt)
+                                                 (if (cdr engines) (oref engine tag))
+                                                 (if (cdr engines) (ignore-errors (oref (oref engine parse) tag))))))
+                                  (concat
+                                   (mapconcat (lambda (item) (format "%s" item)) (remove nil lst) ".")
+                                   (if (and (cdr engines) (oref engine stream)) " (stream)"))))))
+             for result = (pcase state (0 "Loading...") (1 err) (2 res))
+             collect (list :result result :prefix prefix :state state :task task :tgt tgt :stream (oref engine stream)) into lst
+             finally (return ;; sort by target, then by engine
+                      (if (cdr tgts)
+                          (cl-loop for tgt in tgts append
+                                   (cl-remove-if-not (lambda (entry) (equal tgt (plist-get entry :tgt))) lst))
+                        lst)))))
+
+
+;;; Task
+
+(cl-defmethod gt-init ((task gt-task))
+  "Initial new TASK for translator."
+  (with-slots (id engine render translator) task
+    (with-slots (tasks state) translator
+      (when (= state 0)
+        (setf tasks (nconc tasks (list task)))
+        (gt-log (format "%d" (length tasks))
+          (format "add task %s: (%s/%s)" id (gt-repr engine) (gt-repr render)))))))
+
+(defun gt-task-fail (task error)
+  "Render ERROR message and terminate the TASK."
+  (declare (indent 1))
+  (gt-log-funcall "task-fail (%s)" (oref task id))
+  (with-slots (id err render translator) task
+    (unless (gt-task-expired-p task)
+      (setf err (if (consp error)
+                    (mapconcat (lambda (r)
+                                 (format (if (string-suffix-p "error" (format "%s" r)) "[%s]" "%s") r))
+                               (cl-remove-if (lambda (r) (memq r '(error user-error))) error)
+                               " ")
+                  (or error "")))
+      (gt-update translator)
+      (gt-output render translator))
+    (gt-log 'next (format "%s: [----- error -----] %s" id error))
+    (gt-log nil 1 (with-temp-buffer
+                    (let ((standard-output (current-buffer)))
+                      (backtrace)
+                      (buffer-string))))))
+
+(defun gt-task-expired-p (task)
+  (with-slots (version translator) task
+    (not (equal version (oref translator version)))))
+
+(defun gt-task-cancelled-p (task)
+  (when (vectorp task)
+    (eq (car-safe (aref (oref task proc) 3)) 'cancel)))
 
 
 ;;; Text to Speech
@@ -1610,12 +1665,16 @@ The value should not contain any space in the command path."
 
 (defvar gt-tts-speak-process nil)
 
+(cl-defgeneric gt-speech (engine _text &optional _lang)
+  "Speak TEXT with LANG by ENGINE."
+  (user-error "No TTS service found on engine `%s'" (oref engine tag)))
+
 (defun gt-interrupt-speak-process ()
   (when (and gt-tts-speak-process (process-live-p gt-tts-speak-process))
     (ignore-errors (kill-process gt-tts-speak-process))
     (setq gt-tts-speak-process nil)))
 
-(cl-defmethod gt-play-audio (data &optional wait)
+(defun gt-play-audio (data &optional wait)
   "Play DATA with `gt-tts-playing-process'.
 DATA is raw audio data or audio url, or a buffer contains the raw data.
 If WAIT is not nil, play after current process finished."
@@ -1644,75 +1703,74 @@ If WAIT is not nil, play after current process finished."
       (with-temp-buffer
         (let ((buf (current-buffer)) state)
           (if (string-prefix-p "http" data)
-              (progn (gt-request :url data
-                                 :cache 10
-                                 :done (lambda (raw)
-                                         (setq state 'done)
-                                         (with-current-buffer buf (insert raw)))
-                                 :fail (lambda (err) (setq state err)))
+              (progn (gt-request data
+                       :cache 10
+                       :done (lambda (raw)
+                               (setq state 'done)
+                               (with-current-buffer buf (insert raw)))
+                       :fail (lambda (err) (setq state err)))
                      (while (null state)
                        (accept-process-output nil 0.5)))
             (insert data))
           (if (and state (not (eq state 'done))) (signal 'user-error state))
           (speak))))))
 
-(cl-defgeneric gt-speak (engine text &optional lang)
-  "Speak TEXT with LANG by ENGINE."
-  (:method ((_ (eql 'local)) text &optional _lang)
-           "TEXT to speech with local program."
-           (cond ((and (eq system-type 'darwin) (executable-find "say"))
-                  (with-temp-buffer
-                    (insert text)
-                    (shell-command-on-region (point-min) (point-max) "say" t)))
-                 ((and (memq system-type '(cygwin windows-nt)) (executable-find "powershell"))
-                  (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
-                    (shell-command (format "powershell -Command \"& {%s}\""
-                                           (encode-coding-string
-                                            (replace-regexp-in-string "\n" " " cmd)
-                                            (keyboard-coding-system))))))
-                 (t (user-error "No suitable local TTS service found"))))
-  (:method ((_ (eql 'interact)) text &optional noprompt)
-           "Text to speech with local program or using selected engine."
-           (let* ((prompt "Text to Speech: ")
-                  (regexp (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")))
-                  (engines `(locally ,@(cl-loop
-                                        for m in (cl--generic-method-table (cl--generic #'gt-speak))
-                                        for n = (car (cl--generic-method-specializers m))
-                                        unless (or (consp n) (memq n '(t gt-engine))) collect n)))
-                  (overlay nil)
-                  (text (if noprompt text
-                          (minibuffer-with-setup-hook
-                              (lambda ()
-                                (use-local-map (make-composed-keymap nil (current-local-map)))
-                                (setq overlay (make-overlay (1- (length prompt)) (length prompt)))
-                                (unless gt-tts-last-engine (setq gt-tts-last-engine 'locally))
-                                (overlay-put overlay 'display (format " (%s):" gt-tts-last-engine))
-                                (local-set-key (kbd "C-n")
-                                               (lambda ()
-                                                 (interactive)
-                                                 (setq gt-tts-last-engine
-                                                       (let ((i (cl-position gt-tts-last-engine engines)))
-                                                         (nth (if (>= (+ i 1) (length engines)) 0 (1+ i)) engines)))
-                                                 (overlay-put overlay 'display (format " (%s):" gt-tts-last-engine)))))
-                            (read-string prompt (if (consp text) (buffer-substring (caar text) (cdar text)) text)))))
-                  (lang (if (string-match regexp text)
-                            (prog1 (intern-soft (match-string 1 text))
-                              (setq text (substring text (match-end 0))))
-                          (car (gt-langs-maybe text (or gt-tts-langs (mapcar #'car gt-lang-codes)))))))
-             (when (= (length (string-trim text)) 0)
-               (user-error "Input should not be null"))
-             (unless gt-tts-last-engine (setq gt-tts-last-engine 'locally))
-             (gt-log 'tts (format "Speak with %s to %s" gt-tts-last-engine lang))
-             (if (equal gt-tts-last-engine 'locally)
-                 (gt-speak 'local text lang)
-               (gt-speak (make-instance gt-tts-last-engine) text lang))))
-  (:method :around ((engine gt-engine) text &optional lang)
-           (cl-call-next-method engine text (intern-soft lang)))
-  (:method ((engine gt-engine) &rest _)
-           (user-error "No TTS service found on engine `%s'" (oref engine tag))))
+(cl-defmethod gt-speech :around ((engine gt-engine) text &optional lang)
+  (cl-call-next-method engine text (intern-soft lang)))
+
+(cl-defmethod gt-speech ((_ (eql 'local)) text &optional _lang)
+  "TEXT to speech with local program."
+  (cond ((and (eq system-type 'darwin) (executable-find "say"))
+         (with-temp-buffer
+           (insert text)
+           (shell-command-on-region (point-min) (point-max) "say" t)))
+        ((and (memq system-type '(cygwin windows-nt)) (executable-find "powershell"))
+         (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
+           (shell-command (format "powershell -Command \"& {%s}\""
+                                  (encode-coding-string
+                                   (replace-regexp-in-string "\n" " " cmd)
+                                   (keyboard-coding-system))))))
+        (t (user-error "No suitable local TTS service found"))))
+
+(cl-defmethod gt-speech ((_ (eql 'interact)) text &optional noprompt)
+  "Speak TEXT with local program or using selected engine.
+NOPROMPT means not prompted user for initial text."
+  (let* ((prompt "Text to Speech: ")
+         (regexp (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")))
+         (engines `(locally ,@(cl-loop
+                               for m in (cl--generic-method-table (cl--generic #'gt-speech))
+                               for n = (car (cl--generic-method-specializers m))
+                               unless (or (consp n) (memq n '(t gt-engine))) collect n)))
+         (overlay nil)
+         (text (if noprompt text
+                 (minibuffer-with-setup-hook
+                     (lambda ()
+                       (use-local-map (make-composed-keymap nil (current-local-map)))
+                       (setq overlay (make-overlay (1- (length prompt)) (length prompt)))
+                       (unless gt-tts-last-engine (setq gt-tts-last-engine 'locally))
+                       (overlay-put overlay 'display (format " (%s):" gt-tts-last-engine))
+                       (local-set-key (kbd "C-n")
+                                      (lambda ()
+                                        (interactive)
+                                        (setq gt-tts-last-engine
+                                              (let ((i (cl-position gt-tts-last-engine engines)))
+                                                (nth (if (>= (+ i 1) (length engines)) 0 (1+ i)) engines)))
+                                        (overlay-put overlay 'display (format " (%s):" gt-tts-last-engine)))))
+                   (read-string prompt (if (consp text) (buffer-substring (caar text) (cdar text)) text)))))
+         (lang (if (string-match regexp text)
+                   (prog1 (intern-soft (match-string 1 text))
+                     (setq text (substring text (match-end 0))))
+                 (car (gt-langs-maybe text (or gt-tts-langs (mapcar #'car gt-lang-codes)))))))
+    (when (= (length (string-trim text)) 0)
+      (user-error "Input should not be null"))
+    (unless gt-tts-last-engine (setq gt-tts-last-engine 'locally))
+    (gt-log 'tts (format "Speak with %s to %s" gt-tts-last-engine lang))
+    (if (equal gt-tts-last-engine 'locally)
+        (gt-speech 'local text lang)
+      (gt-speech (make-instance gt-tts-last-engine) text lang))))
 
 ;;;###autoload
-(defun gt-do-speak ()
+(defun gt-speak ()
   "Speak content around point.
 
 If the text under point or with selection has `gt-task' or `gt-tts-url'
@@ -1731,7 +1789,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
             (with-slots (text target) translator
               ;; 2. play current task
               (setq engine (oref task engine))
-              (unless (cl-find-method #'gt-speak '() `(,(eieio-object-class engine) t t))
+              (unless (cl-find-method #'gt-speech '() `(,(eieio-object-class engine) t t))
                 (user-error "No TTS service found on current engine `%s'" (oref engine tag)))
               (let ((part (or (get-char-property (point) 'gt-part) 0))
                     (col (lambda (l c) (push (format "%s. %s" l (substring-no-properties c)) items))))
@@ -1753,105 +1811,54 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                                  (car (gt-langs-maybe cand (list src tgt))))))
                     (unless lang (user-error "Guess language of text failed"))
                     (gt-log 'tts (format "Speak with %s to %s" engine lang))
-                    (gt-speak engine cand lang))))))
+                    (gt-speech engine cand lang))))))
         ;; 3. play with local program or using selected engine
-        (gt-speak 'interact (gt-text (gt-taker :text 'word) nil))))))
-
-
-;;; Render
-
-(cl-defmethod gt-init :around ((render gt-render) translator)
-  (gt-log-funcall "init (%s %s)" render translator)
-  (message "Processing...")
-  (condition-case err
-      (progn (cl-call-next-method render translator)
-             (gt-update-state translator))
-    (error (gt-log 'render (format "%s initialize failed, abort" (gt-desc render)))
-           (user-error (format "[output init error] %s" err)))))
-
-(cl-defmethod gt-init ((_render gt-render) _translator)
-  "Initialize the RENDER. Only invoke once before output."
-  nil)
-
-(cl-defgeneric gt-extract (render translator)
-  "Extract TRANSLATOR's responses that to be consumed by RENDER."
-  (:method ((render gt-render) translator)
-           (with-slots (text tasks) translator
-             (cl-loop with tgts = (cl-delete-duplicates (mapcar (lambda (item) (oref item tgt)) tasks))
-                      with engines = (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))
-                      for task in tasks
-                      for (tgt res err engine) = (gt-orefs task tgt res err engine)
-                      for state = (if err 1 (if res 2 0)) ; 0 loading 1 error 2 result
-                      for prefix = (with-slots (prefix) render
-                                     (if (and (slot-boundp render 'prefix) (not (eq prefix t)))
-                                         (when prefix
-                                           ;; custom prefix with :prefix slot
-                                           (if (gt-functionp prefix)
-                                               (funcall prefix task)
-                                             (format "%s" prefix)))
-                                       (when (or (cdr tgts) (cdr engines))
-                                         ;; style as: en.Google.Detail
-                                         (let ((lst (list (if (cdr tgts) tgt)
-                                                          (if (cdr engines) (oref engine tag))
-                                                          (if (cdr engines) (ignore-errors (oref (oref engine parse) tag))))))
-                                           (concat
-                                            (mapconcat (lambda (item) (format "%s" item)) (remove nil lst) ".")
-                                            (if (and (cdr engines) (gt-stream-p engine)) " (stream)"))))))
-                      for result = (pcase state (0 "Loading...") (1 err) (2 res))
-                      collect (list :result result :prefix prefix :state state :task task :tgt tgt :stream (gt-stream-p engine)) into lst
-                      finally (return ;; sort by target, then by engine
-                               (if (cdr tgts)
-                                   (cl-loop for tgt in tgts append
-                                            (cl-remove-if-not (lambda (tr) (equal tgt (plist-get tr :tgt))) lst))
-                                 lst))))))
-
-(cl-defgeneric gt-output (render translator)
-  "Output result of TRANSLATOR with RENDER, invoked after every task parsed.
-Output to minibuffer by default."
-  (:method :around ((render gt-render) translator)
-           (with-slots (state) translator
-             (gt-log-funcall "output (%s %s) %s" render translator state)
-             (when (<= state 4)
-               (with-slots (output then) render
-                 ;; error handler & functionp case
-                 (condition-case err
-                     (if (gt-functionp output)
-                         (funcall output render translator)
-                       (cl-call-next-method render translator)
-                       ;; chain next render if possible
-                       (when (and (= state 3) then)
-                         (cond ((gt-functionp then)
-                                (funcall then translator))
-                               ((and (eieio-object-p then) (object-of-class-p then 'gt-render))
-                                (gt-init then translator)
-                                (gt-output then translator))
-                               (t (error "Bad then value specified in %s" (gt-desc render))))))
-                   (error (setf state 4)
-                          (message "[output error] %s" (cadr err))))))))
-  (:method ((render gt-render) translator)
-           (when (= 3 (oref translator state))
-             (cl-loop with ret = (gt-extract render translator)
-                      with mpp = (cdr (oref translator text))
-                      for tr in ret
-                      for (prefix result) = (gt-plist-let tr (list (concat "[" .prefix "]" (if mpp "\n" " ")) .result))
-                      collect (concat (if (cdr ret) (propertize prefix 'face 'gt-render-prefix-face))
-                                      (if (consp result) (string-join result "\n") result))
-                      into lst
-                      finally (message "%s" (string-join lst "\n"))))))
+        (gt-speech 'interact (gt-text (gt-taker :text 'word) nil))))))
 
 
 ;;; Translator
 
-(defun gt-add-task (task)
-  "Add new TASK for translation."
-  (with-slots (id engine render version translator) task
-    (with-slots (tasks state) translator
-      (when (= state 0)
-        (setf tasks (append tasks (list task)))
-        (gt-log (format "%d" (length tasks))
-          (format "add task %s: (%s/%s)" id (gt-desc engine) (gt-desc render)))))))
+(cl-defmethod gt-reset ((translator gt-translator))
+  "Reset status and other variables before translation for TRANSLATOR."
+  (gt-log-funcall "reset (%s)" translator)
+  (unless gt-http-backend
+    (setq gt-http-backend (pdd-url-backend)))
+  (with-slots (version state tasks bag total taker engines render _taker _engines _render) translator
+    (unless (slot-boundp translator '_taker)
+      (unless taker (setf taker (gt-taker)))
+      (unless render (setf render (gt-render)))
+      (setf _taker taker _engines engines _render render))
+    (setf version (time-to-seconds) state 0 tasks nil total 0 taker nil engines nil render nil bag nil)))
 
-(defun gt-update-state (translator)
+(cl-defmethod gt-init ((translator gt-translator) &rest _)
+  "Initialize the components, text and target for TRANSLATOR."
+  (gt-log-funcall "init (%s)" translator)
+  (with-slots (keep text bounds target version taker engines render _taker _engines _render) translator
+    ;; reset
+    (gt-reset translator)
+    (unless keep (setf text nil bounds nil target nil))
+    (with-current-buffer (or (or (and bounds (car bounds)) (current-buffer)))
+      ;; taker
+      (setf taker (or (cl-find-if (lambda (tk) (gt-validate tk translator))
+                                  (ensure-list (gt-ensure-plain _taker)))
+                      (user-error "No taker found in this translator")))
+      (gt-take taker translator)
+      (setf keep nil)
+      (let ((history-delete-duplicates t))
+        (add-to-history 'gt-target-history target 8))
+      ;; engines
+      (setf engines (ensure-list (gt-ensure-plain _engines)))
+      ;; renderer
+      (setf render (cl-find-if (lambda (rd) (gt-validate rd translator))
+                               (ensure-list (gt-ensure-plain _render)))))
+    ;; log
+    (gt-log 'translator (format "version: %s\ntarget: %s\nbounds: %s\ntext: %s\ntaker: %s, engines: %s, renderer: %s"
+                                version target bounds text
+                                (gt-repr taker)
+                                (mapcar (lambda (en) (oref en tag)) engines)
+                                (gt-repr render)))))
+
+(cl-defmethod gt-update ((translator gt-translator))
   "Update state for TRANSLATOR."
   (with-slots (state total tasks render) translator
     (pcase state
@@ -1861,105 +1868,43 @@ Output to minibuffer by default."
          (setf state 1)))
       (1
        (gt-log 'translator
-         (format "<2> %s prepared" (gt-desc render)))
+         (format "<2> %s prepared" (gt-repr render)))
        (setf state 2))
       (2
        (when (= total (length (cl-remove-if-not (lambda (task) (or (oref task err) (oref task res))) tasks)))
          (gt-log 'translator "<3> all result parsed")
          (setf state 3))))))
 
-(defun gt-fail (task error)
-  "Render ERROR message and ternimate the TASK."
-  (declare (indent 1))
-  (gt-log-funcall "fail (%s)" (oref task id))
-  (with-slots (translator render err version id) task
-    (when (equal version (oref translator version))
-      (setf err (if (consp error)
-                    (mapconcat (lambda (r)
-                                 (format (if (string-suffix-p "error" (format "%s" r)) "[%s]" "%s") r))
-                               (cl-remove-if (lambda (r) (memq r '(error user-error))) error)
-                               " ")
-                  (or error "")))
-      (gt-update-state translator)
-      (gt-output render translator))
-    (gt-log 'next (format "%s: [----- error -----] %s" id error))
-    (gt-log nil 1 (with-temp-buffer
-                    (let ((standard-output (current-buffer)))
-                      (backtrace)
-                      (buffer-string))))))
-
-(cl-defgeneric gt-reset (translator)
-  "Reset status and other variables before translation for TRANSLATOR."
-  (:method ((translator gt-translator))
-           (gt-log-funcall "reset (%s)" translator)
-           (unless gt-default-cacher
-             (setq gt-default-cacher (gt-memory-cacher)))
-           (unless gt-default-http-client
-             (setq gt-default-http-client (gt-url-http-client)))
-           (with-slots (version state tasks bag total taker engines render _taker _engines _render) translator
-             (unless (slot-boundp translator '_taker)
-               (unless taker (setf taker (gt-taker)))
-               (unless render (setf render (gt-render)))
-               (setf _taker taker _engines engines _render render))
-             (setf version (time-to-seconds) state 0 tasks nil total 0 taker nil engines nil render nil bag nil))))
-
-(cl-defmethod gt-init ((translator gt-translator) &rest _)
-  "Initialize the components, text and target for TRANSLATOR."
-  (gt-log-funcall "init (%s)" translator)
-  (with-slots (keep text bounds target version taker engines render _taker _engines _render) translator
-    ;; reset
-    (gt-reset translator)
-    ;; take
-    (unless keep (setf text nil bounds nil target nil))
-    (setf taker (or (cl-find-if (lambda (tk) (gt-valid tk translator))
-                                (ensure-list (gt-ensure-plain _taker)))
-                    (user-error "No taker found in this translator")))
-    (gt-take taker translator)
-    (setf keep nil)
-    (let ((history-delete-duplicates t))
-      (add-to-history 'gt-target-history target 8))
-    ;; prepare engines and render
-    (setf engines (ensure-list (gt-ensure-plain _engines)))
-    (setf render (cl-find-if (lambda (rd) (gt-valid rd translator))
-                             (ensure-list (gt-ensure-plain _render))))
-    ;; log
-    (gt-log 'translator (format "version: %s\ntarget: %s\nbounds: %s\ntext: %s\ntaker: %s, engines: %s, render: %s"
-                                version target bounds text
-                                (gt-desc taker)
-                                (mapcar (lambda (en) (oref en tag)) engines)
-                                (gt-desc render)))))
-
 (cl-defgeneric gt-start (translator)
   "Start a new translation with TRANSLATOR."
-  (gt-log "\n\n")
   (gt-log-funcall "start (%s)" translator)
   (setq gt-current-command this-command)
   (setq gt-current-translator translator)
-  ;; init
   (gt-init translator nil)
-  (with-slots (text target version total engines render) translator
+  (with-slots (text target version total engines render tasks) translator
     ;; tasks
-    (cl-loop for engine in engines
-             do (cl-loop for tgt in (cdr target)
-                         for task = (gt-task
-                                     :text text
-                                     :src (car target)
-                                     :tgt tgt
-                                     :engine engine
-                                     :render render
-                                     :translator translator
-                                     :version version)
-                         if (gt-valid engine task)
-                         do (cl-incf total) and do (gt-add-task task))
-             finally (gt-update-state translator))
+    (dolist (engine engines)
+      (cl-loop for tgt in (cdr target)
+               for task = (gt-task :text text
+                                   :src (car target)
+                                   :tgt tgt
+                                   :engine engine
+                                   :render render
+                                   :translator translator
+                                   :version version)
+               if (gt-validate engine task)
+               do (cl-incf total) and
+               do (gt-init task)))
     (when (zerop total)
       (user-error "No task created, please check engines and langs setup"))
     ;; translate
-    (if render (gt-init render translator))
-    (cl-loop for task in (oref translator tasks)
-             do (condition-case err
-                    (gt-translate (oref task engine) task)
-                  (error (gt-fail task err))))))
+    (gt-update translator)
+    (when render
+      (gt-init render translator))
+    (dolist (task tasks)
+      (condition-case err
+          (gt-execute (oref task engine) task)
+        (error (gt-task-fail task err))))))
 
 (provide 'gt-core)
 

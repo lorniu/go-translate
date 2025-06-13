@@ -38,33 +38,32 @@
 
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 
 ;;; 有道词典
 
 (defclass gt-youdao-dict-parser (gt-parser) ())
 
-(defclass gt-youdao-dict-engine (gt-engine)
+(defclass gt-youdao-dict-engine (gt-web-engine)
   ((tag     :initform '有道词典)
-   (url     :initform "https://dict.youdao.com/result?lang=%s&word=%s")
+   (url     :initform "https://dict.youdao.com/result")
+   (delimit :initform t)
    (parse   :initform (gt-youdao-dict-parser))))
 
-(cl-defmethod gt-translate ((engine gt-youdao-dict-engine) task next)
-  (with-slots (text src tgt res meta translator) task
-    (let* ((lang (cond ((equal src 'zh) tgt)
-                       ((equal tgt 'zh) src)
-                       (t (user-error "只支持中文跟其他语言之间的翻译"))))
-           (url (if (cdr (oref translator text))
-                    (user-error "不支持分段翻译")
-                  (format (oref engine url)
-                          (url-hexify-string (format "%s" lang))
-                          (url-hexify-string text)))))
-      (gt-request :url url
-                  :done (lambda (raw)
-                          (setf res (gt-parse-html-dom raw) meta url)
-                          (funcall next task))
-                  :fail (lambda (err) (gt-fail task err))))))
+(cl-defmethod gt-execute ((engine gt-youdao-dict-engine) task)
+  (with-slots (text src tgt meta translator) task
+    (when (cdr (oref translator text))
+      (user-error "不支持分段翻译"))
+    (let ((lang (cond ((eq src 'zh) tgt)
+                      ((eq tgt 'zh) src)
+                      (t (user-error "只支持中文跟其他语言之间的翻译")))))
+      (gt-request (oref engine url)
+        :cache (if pdd-active-cacher `(t youdao ,lang ,text))
+        :params `((lang . ,lang) (word . ,text))
+        :done (lambda (raw &key request)
+                (setf meta (oref request url))
+                (gt-parse-html-dom raw))))))
 
 (defun gt-youdao-dict--extract (dom)
   "从 DOM 中解析结果。"
@@ -92,7 +91,7 @@
   (string-replace "】" "]" (string-replace "【" "[" result)))
 
 (defun gt-youdao-dict--tts-url (word &optional lang)
-  (format "http://dict.youdao.com/dictvoice?audio=%s&type=%s"
+  (format "https://dict.youdao.com/dictvoice?audio=%s&type=%s"
           (url-hexify-string word)
           (if (member lang '("英" 1 "1")) 1 0)))
 
@@ -111,7 +110,7 @@
                                                                  'face 'gt-youdao-dict-phonetic-face
                                                                  'mouse-face 'bold
                                                                  'gt-tts-url (gt-youdao-dict--tts-url (oref task text) (car p))
-                                                                 'keymap (gt-simple-keymap [mouse-1] #'gt-do-speak))))
+                                                                 'keymap (gt-simple-keymap [mouse-1] #'gt-speak))))
                                            .phonetic "  "))
                               'display '(height 0.7))
                   "\n\n"))
@@ -146,42 +145,41 @@
 
 (defclass gt-youdao-suggest-parser (gt-parser) ())
 
-(defclass gt-youdao-suggest-engine (gt-engine)
+(defclass gt-youdao-suggest-engine (gt-web-engine)
   ((tag       :initform '有道同义词)
-   (url       :initform "https://dict.youdao.com/suggest?q=%s&num=%s&doctype=json")
+   (url       :initform "https://dict.youdao.com/suggest?doctype=json")
    (limit     :initform 9 :initarg :limit)
-   (delimiter :initform nil)
    (parse     :initform (gt-youdao-suggest-parser))))
 
-(cl-defmethod gt-translate ((engine gt-youdao-suggest-engine) task next)
-  (with-slots (text res meta) task
-    (when (cdr text)
-      (user-error "不支持一次翻译多个单词或句子"))
-    (let ((url (format (oref engine url) (url-hexify-string (car text)) (oref engine limit))))
-      (gt-request :url url
-                  :done (lambda (raw) (setf res raw meta url) (funcall next task))
-                  :fail (lambda (err) (gt-fail task err))))))
+(cl-defmethod gt-execute ((engine gt-youdao-suggest-engine) task)
+  (with-slots (text meta) task
+    (if (cdr text) (user-error "不支持一次翻译多个单词或句子"))
+    (gt-request (oref engine url)
+      :cache (if pdd-active-cacher `(t youdao-sg (params . q) (params . num)))
+      :params `((q . ,(car text)) (num . ,(oref engine limit)))
+      :done (lambda (json &key request)
+              (setf meta (oref request url))
+              json))))
 
 (cl-defmethod gt-parse ((_ gt-youdao-suggest-parser) task)
   (with-slots (res meta) task
-    (let ((json (json-read-from-string res)))
-      (unless (= (alist-get 'code (alist-get 'result json)) 200)
-        (user-error (alist-get 'msg (alist-get 'result json))))
-      (let ((lst (cl-loop
-                  for item across (alist-get 'entries (alist-get 'data json))
-                  for i from 1
-                  for ent = (propertize (alist-get 'entry item) 'face 'gt-youdao-suggest-entry-face)
-                  for exp = (if-let* ((ex (alist-get 'explain item))) (propertize (concat "   " ex) 'wrap-prefix "   "))
-                  collect (concat (if (> i 1) (gt-line-height-separator 18)) ent
-                                  (if exp (concat "\n" (gt-line-height-separator 8) exp))))))
-        (with-temp-buffer
-          (insert (string-join lst "\n"))
-          (goto-char (point-min))
-          (while (re-search-forward (format "\\(%s\\)\\(\\. \\|．\\)"
-                                            (mapconcat (lambda (v) (format "%s" v)) gt-word-classes "\\|"))
-                                    nil t)
-            (put-text-property (match-beginning 0) (match-end 0) 'face 'gt-youdao-suggest-cixing-face))
-          (setf res (propertize (buffer-string) 'gt-url meta)))))))
+    (unless (= (alist-get 'code (alist-get 'result res)) 200)
+      (user-error (alist-get 'msg (alist-get 'result res))))
+    (let ((lst (cl-loop
+                for item across (alist-get 'entries (alist-get 'data res))
+                for i from 1
+                for ent = (propertize (alist-get 'entry item) 'face 'gt-youdao-suggest-entry-face)
+                for exp = (if-let* ((ex (alist-get 'explain item))) (propertize (concat "   " ex) 'wrap-prefix "   "))
+                collect (concat (if (> i 1) (gt-line-height-separator 18)) ent
+                                (if exp (concat "\n" (gt-line-height-separator 8) exp))))))
+      (with-temp-buffer
+        (insert (string-join lst "\n"))
+        (goto-char (point-min))
+        (while (re-search-forward (format "\\(%s\\)\\(\\. \\|．\\)"
+                                          (mapconcat (lambda (v) (format "%s" v)) gt-word-classes "\\|"))
+                                  nil t)
+          (put-text-property (match-beginning 0) (match-end 0) 'face 'gt-youdao-suggest-cixing-face))
+        (setf res (propertize (buffer-string) 'gt-url meta))))))
 
 (provide 'gt-engine-youdao)
 

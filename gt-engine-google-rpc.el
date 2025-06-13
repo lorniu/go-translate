@@ -22,7 +22,7 @@
 
 ;;; Commentary:
 
-;; http://translate.google.com, new RPC API
+;; https://translate.google.com, new RPC API
 
 ;;; Code:
 
@@ -47,101 +47,94 @@ you can customize it according to your country region."
 (defclass gt-google-rpc-summary-parser (gt-google-summary-parser gt-google-rpc-parser)
   ((tag :initform "Summary")))
 
-(defclass gt-google-rpc-engine (gt-engine)
-  ((tag   :initform 'GoogleRPC)
-   (host  :initform nil)
-   (path  :initform "/_/TranslateWebserverUi/data/batchexecute")
-   (parse :initform (gt-google-rpc-parser))
-
-   (rpc-translate :initform "MkEWBc")
-   (rpc-tts       :initform "jQ1olc")
-   (rpc-sid       :initform "FdrFJe")
-   (rpc-bl        :initform "cfb2h")))
+(defclass gt-google-rpc-engine (gt-web-engine)
+  ((tag     :initform 'GoogleRPC)
+   (host    :initform nil)
+   (path    :initform "/_/TranslateWebserverUi/data/batchexecute")
+   (parse   :initform (gt-google-rpc-parser))
+   (rpc-ts  :initform "MkEWBc")
+   (rpc-tts :initform "jQ1olc")
+   (rpc-sid :initform "FdrFJe")
+   (rpc-bl  :initform "cfb2h")
+   (delimit :initform t)))
 
 
 ;;; Engine
 
-(defcustom gt-google-rpc-request-headers
+(defcustom gt-google-rpc-headers
   '(("Connection" . "Keep-Alive")
     ("Content-Type" . "application/x-www-form-urlencoded;charset=UTF-8"))
   "Extra request headers send to google-rpc server."
   :type '(alist :key-type (string :tag "Key") :value-type (string :tag "Value"))
   :group 'go-translate-google-rpc)
 
-(defun gt-google-rpc-with-token (engine done fail)
-  (declare (indent 1))
+(defun gt-google-rpc-token (engine)
   (with-slots (host path rpc-sid rpc-bl) engine
-    (gt-request :url (or host gt-google-rpc-host)
-                :done (lambda (raw)
-                        (with-temp-buffer
-                          (insert raw)
-                          (goto-char (point-min))
-                          (let* ((f-sid (progn
-                                          (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-sid))
-                                          (match-string 1)))
-                                 (bl (progn (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-bl))
-                                            (match-string 1)))
-                                 (url-tpl (lambda (rpcid lang)
-                                            (format "%s%s?%s" (or host gt-google-rpc-host) path
-                                                    (gt-format-params
-                                                     `(("rpcids"       . ,rpcid)
-                                                       ("f.sid"        . ,f-sid)
-                                                       ("bl"           . ,bl)
-                                                       ("hl"           . ,lang)
-                                                       ("soc-app"      . 1)
-                                                       ("soc-platform" . 1)
-                                                       ("soc-device"   . 1)
-                                                       ("_reqid"       . ,(+ 1000 (random 9000)))
-                                                       ("rt"           . "c")))))))
-                            (funcall done url-tpl))))
-                :fail fail)))
+    (gt-request (or host gt-google-rpc-host)
+      :cache nil
+      :done (lambda (raw)
+              (with-temp-buffer
+                (save-excursion (insert raw))
+                (let (f-sid bl)
+                  (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-sid))
+                  (setq f-sid (match-string 1))
+                  (re-search-forward (format "\"%s\":\"\\([^\"]*\\)\"" rpc-bl))
+                  (setq bl (match-string 1))
+                  (lambda (rpcid lang)
+                    (format "%s%s?%s" (or host gt-google-rpc-host) path
+                            (pdd-object-to-string 'query
+                              `(("rpcids"       . ,rpcid)
+                                ("f.sid"        . ,f-sid)
+                                ("bl"           . ,bl)
+                                ("hl"           . ,lang)
+                                ("soc-app"      . 1)
+                                ("soc-platform" . 1)
+                                ("soc-device"   . 1)
+                                ("_reqid"       . ,(+ 1000 (random 9000)))
+                                ("rt"           . "c")))))))))))
 
-(cl-defmethod gt-translate ((engine gt-google-rpc-engine) task next)
-  (gt-google-rpc-with-token engine
+(cl-defmethod gt-execute ((engine gt-google-rpc-engine) task)
+  (pdd-then (gt-google-rpc-token engine)
     (lambda (url-tpl)
-      (with-slots (text src tgt res) task
-        (with-slots (rpc-translate) engine
-          (gt-request :url (funcall url-tpl rpc-translate tgt)
-                      :headers gt-google-rpc-request-headers
-                      :data (format
-                             "f.req=%s&"
-                             (url-hexify-string
-                              (json-encode `[[[,rpc-translate ,(json-encode `[[,text ,src ,tgt 1][]]) nil "generic"]]])))
-                      :done (lambda (raw) (setf res raw) (funcall next task))
-                      :fail (lambda (err) (gt-fail task err))))))
-    (lambda (err)
-      (gt-fail task (format "Take token failed, %s" err)))))
+      (with-slots (text src tgt) task
+        (with-slots (rpc-ts) engine
+          (gt-request (funcall url-tpl rpc-ts tgt)
+            :cache (if pdd-active-cacher `(t google-rpc ,src ,tgt ,text))
+            :headers gt-google-rpc-headers
+            :data (format "f.req=%s&"
+                          (url-hexify-string
+                           (json-encode `[[[,rpc-ts ,(json-encode `[[,text ,src ,tgt 1][]]) nil "generic"]]])))
+            :as 'identity))))))
 
-(cl-defmethod gt-speak ((engine gt-google-rpc-engine) text lang)
+(cl-defmethod gt-speech ((engine gt-google-rpc-engine) text lang)
   (with-slots (host rpc-tts) engine
     (message "Requesting %s for %s..." (or host gt-google-rpc-host) lang)
-    (gt-google-rpc-with-token engine
+    (pdd-then (gt-google-rpc-token engine)
       (lambda (url-tpl)
-        (gt-request :url (funcall url-tpl rpc-tts "en-US")
-                    :headers gt-google-rpc-request-headers
-                    :data (format
-                           "f.req=%s&"
-                           (url-hexify-string
-                            (json-encode `[[[,rpc-tts ,(json-encode `[,text ,lang nil "undefined" [0]]) nil "generic"]]])))
-                    :done (lambda (raw)
-                            (with-temp-buffer
-                              (insert raw)
-                              (goto-char (point-min))
-                              (let (beg end json code)
-                                (re-search-forward "^[0-9]+$")
-                                (setq beg (point))
-                                (re-search-forward "^\\([0-9]+\\)$")
-                                (setq end (- (point) (length (match-string 1))))
-                                (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
-                                (if-let* ((data (and (string= (gt-aref json 0 0) "wrb.fr") (gt-aref json 0 2))))
-                                    (progn (setq code (aref (json-read-from-string data) 0))
-                                           (erase-buffer)
-                                           (insert code)
-                                           (base64-decode-region (point-min) (point-max))
-                                           (gt-play-audio (current-buffer)))
-                                  (message "[GoogleRPC-TTS] No tts data responsed")))))
-                    :fail (lambda (err) (message "[GoogleRPC-TTS] Error, %s" err))))
-      (lambda (err) (message "[GoogleRPC-TTS] Take token failed, %s" err)))))
+        (gt-request (funcall url-tpl rpc-tts "en-US")
+          :headers gt-google-rpc-headers
+          :data (format
+                 "f.req=%s&"
+                 (url-hexify-string
+                  (json-encode `[[[,rpc-tts ,(json-encode `[,text ,lang nil "undefined" [0]]) nil "generic"]]])))
+          :as #'identity
+          :done (lambda (raw)
+                  (with-temp-buffer
+                    (save-excursion (insert raw))
+                    (let (beg end json code)
+                      (re-search-forward "^[0-9]+$")
+                      (setq beg (point))
+                      (re-search-forward "^\\([0-9]+\\)$")
+                      (setq end (- (point) (length (match-string 1))))
+                      (setq json (json-read-from-string (string-trim (buffer-substring-no-properties beg end))))
+                      (if-let* ((data (and (string= (gt-aref json 0 0) "wrb.fr") (gt-aref json 0 2))))
+                          (progn (setq code (aref (json-read-from-string data) 0))
+                                 (erase-buffer)
+                                 (insert code)
+                                 (base64-decode-region (point-min) (point-max))
+                                 (gt-play-audio (current-buffer)))
+                        (message "[GoogleRPC-TTS] No tts data responsed")))))))
+      (lambda (err) (message "[GoogleRPC-TTS] Error, %s" err)))))
 
 
 ;;; Parser

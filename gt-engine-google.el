@@ -22,17 +22,17 @@
 
 ;;; Commentary:
 
-;; http://translate.google.com
+;; https://translate.google.com
 
 ;;; Code:
 
-(require 'gt-extension)
+(require 'gt-core)
 
 (defgroup go-translate-google nil
   "Configs for Google engine."
   :group 'go-translate)
 
-(defcustom gt-google-host "http://translate.googleapis.com"
+(defcustom gt-google-host "https://translate.googleapis.com"
   "The base url of Google translate used by google engine.
 you can customize it according to your country region."
   :type 'string
@@ -47,19 +47,20 @@ you can customize it according to your country region."
 (defclass gt-google-summary-parser (gt-google-parser)
   ((tag :initform "Summary")))
 
-(defclass gt-google-engine (gt-engine)
+(defclass gt-google-engine (gt-web-engine)
   ((tag                :initform 'Google)
    (host               :initform nil)
    (path               :initform "/translate_a/single")
    (token              :initform (cons 430675 2721866130) :initarg token) ; hard code
    (token-time         :initform t)
    (token-expired-time :initform (* 30 60))
+   (delimit            :initform t)
    (parse              :initform (gt-google-parser))))
 
 
 ;;; Engine
 
-(defcustom gt-google-request-headers '(("Connection" . "Keep-Alive"))
+(defcustom gt-google-headers '(("Connection" . "Keep-Alive"))
   "Extra request headers send to google server."
   :type '(alist :key-type (string :tag "Key") :value-type (string :tag "Value"))
   :group 'go-translate-google)
@@ -106,36 +107,24 @@ you can customize it according to your country region."
                   (<= (float-time (time-subtract (current-time) token-time))
                       token-expired-time))))))
 
-(defun gt-google-with-token (engine done fail)
-  (declare (indent 1))
+(cl-defmethod gt-execute ((engine gt-google-engine) task)
   (with-slots (host token token-time) engine
-    (if (gt-google-token-available-p engine)
-        (funcall done)
-      (gt-request :url (or host gt-google-host)
-                  :headers gt-google-request-headers
-                  :done (lambda (raw)
-                          (with-temp-buffer
-                            (insert raw)
-                            (goto-char (point-min))
-                            (let ((tk (progn
-                                        (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
-                                        (cons (string-to-number (match-string 1))
-                                              (string-to-number (match-string 2))))))
-                              (setf token tk)
-                              (setf token-time (current-time))
-                              (funcall done))))
-                  :fail fail))))
-
-(cl-defmethod gt-translate ((engine gt-google-engine) task next)
-  (gt-google-with-token engine
-    (lambda ()
-      (with-slots (text src tgt res) task
-        (gt-request :url (gt-google-gen-url engine text src tgt)
-                    :headers gt-google-request-headers
-                    :done (lambda (raw) (setf res raw) (funcall next task))
-                    :fail (lambda (err) (gt-fail task err)))))
-    (lambda (err)
-      (gt-fail task (format "Take token failed, %s" err)))))
+    (pdd-chain (unless (gt-google-token-available-p engine)
+                 (gt-request (or host gt-google-host)
+                   :cache nil
+                   :headers gt-google-headers
+                   :done (lambda (raw)
+                           (with-temp-buffer
+                             (save-excursion (insert raw))
+                             (re-search-forward ",tkk:'\\([0-9]+\\)\\.\\([0-9]+\\)")
+                             (setf token (cons (string-to-number (match-string 1))
+                                               (string-to-number (match-string 2)))
+                                   token-time (current-time))))))
+      (lambda ()
+        (with-slots (text src tgt) task
+          (gt-request (gt-google-gen-url engine text src tgt)
+            :cache (if pdd-active-cacher (list t 'google src tgt text))
+            :headers gt-google-headers :as #'identity))))))
 
 ;; tts
 
@@ -181,7 +170,7 @@ Code from `google-translate', maybe improve it someday."
 		        (setq pos limit)))))))
     (reverse result)))
 
-(cl-defmethod gt-speak ((engine gt-google-engine) text lang)
+(cl-defmethod gt-speech ((engine gt-google-engine) text lang)
   (message "Requesting from %s for %s..." (or (oref engine host) gt-google-host) lang)
   (cl-loop with texts = (gt-google-tts-split-text text)
            with total = (length texts)
