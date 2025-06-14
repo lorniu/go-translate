@@ -4,7 +4,7 @@
 
 ;; Author: lorniu <lorniu@gmail.com>
 ;; URL: https://github.com/lorniu/go-translate
-;; Package-Requires: ((emacs "28.1") (pdd "0.1"))
+;; Package-Requires: ((emacs "28.1") (pdd "0.21"))
 ;; Keywords: convenience
 ;; Version: 3.0.10
 
