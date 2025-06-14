@@ -796,10 +796,7 @@ translator or a list to provide more validation data."
           (t (user-error "Carrier type is not supported")))
     (with-slots (if) component
       (cond ((not (slot-boundp component 'if)) t)
-            ((and (functionp if) (= 2 (car (func-arity if))))
-             (funcall if component carrier))
-            ((and (functionp if) (= 1 (car (func-arity if))))
-             (funcall if carrier))
+            ((functionp if) (pdd-funcall if (list component carrier)))
             (t (gt-valid-literally if text src tgt))))))
 
 (cl-defgeneric gt-valid-literally (v text src tgt)
@@ -1231,7 +1228,7 @@ This is core method of TAKER. It combines `gt-text', `gt-target', `gt-prompt'
 and `gt-pick' together, saves text/bounds/target to be used in later translation
 into the translator instance at last.
 
-See type `gt-taker' for more description."
+See `gt-taker' for more description."
   (:method :before ((taker gt-taker) translator)
            (gt-log-funcall "take (%s %s)" taker translator))
   (:method ((taker gt-taker) translator)
@@ -1410,22 +1407,15 @@ If BACKWARDP is not nil then switch to previous one."
   (unless (slot-boundp engine 'tag)
     (oset engine tag (gt-repr engine))))
 
-(cl-defmethod gt-init :after ((engine gt-engine) _task)
-  (with-slots (delimit) engine
-    (when (eq delimit t) (setf delimit gt-text-delimiter))))
-
-(cl-defmethod gt-execute :around ((engine gt-engine) task)
+(cl-defmethod gt-execute :around ((engine gt-engine) task &optional skip-parse)
   "The primary method return the result or a `pdd-task' contains the result.
-This around method add the init and finalize progress to the primary method."
+This around method add the init and finalize progress to the primary method.
+If SKIP-PARSE is t, return the raw results directly."
   (gt-log-funcall "translate (%s %s)" engine (oref task id))
-  (gt-init engine task)
-  (with-slots (id text src tgt res err proc render) task
-    (with-slots (delimit stream) engine
+  (with-slots (id text src tgt res err meta proc) task
+    (with-slots (delimit parse stream then) engine
       (unless (or res err)
         (gt-log 'next (format "%s: %s prepare to translate" id (gt-repr engine)))
-        ;; join with delimiter if necessary (join-process-split)
-        (when (and delimit (not (oref engine stream)))
-          (setf text (string-join text (concat "\n\n" delimit "\n\n"))))
         ;; enable caching if necessary
         (let* ((cache-pred nil)
                (pdd-active-cacher
@@ -1444,47 +1434,51 @@ This around method add the init and finalize progress to the primary method."
                                                       longest-so-far))
                                                   (ensure-list text))
                                                  src tgt)))
-                  (pdd-cacher :ttl gt-cache-ttl :key '(url data) :store 'gt-cache-store))))
+                  (pdd-cacher :ttl gt-cache-ttl :key '(url data) :store 'gt-cache-store)))
+               (delimiter (if (eq delimit t) gt-text-delimiter delimit)))
+          ;; join with delimiter if necessary (join-process-split)
+          (when (and delimiter (not (oref engine stream)))
+            (setf text (string-join text (concat "\n\n" delimiter "\n\n"))))
           ;; execute the engine and postprocess the results
           (setf proc
-                (pdd-chain (cl-call-next-method engine task)
+                (pdd-then (cl-call-next-method engine task)
                   (lambda (result)
-                    (if (gt-task-expired-p task)
+                    (if (ignore-errors (gt-task-expired-p task))
                         (gt-log 'next (format "%s: ----- expired -----" id))
-                      (if (oref engine stream)
-                          (if (gt-task-cancelled-p task)
-                              (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-repr engine)))
-                            (gt-output render task))
-                        (gt-log 'next (format "%s: %s translate success!" id (gt-repr engine)))
-                        (setf res (if delimit (car (ensure-list result)) result))
-                        (gt-finalize engine task))))
-                  :fail (lambda (reason) (gt-task-fail task reason)))))))))
+                      (unless (oref engine stream)
+                        (setf res (if delimiter (car (ensure-list result)) result))
+                        ;; parse
+                        (when res
+                          (unless skip-parse
+                            (when-let* ((parser (and (slot-boundp engine 'parse) parse)))
+                              (if (gt-functionp parser)
+                                  (funcall parser task)
+                                (gt-parse parser task))))
+                          ;; split with delimiter if possible
+                          (when delimiter
+                            (setf res (mapcar (lambda (item) (string-trim item "\n+")) (split-string res delimiter))))
+                          (setf res (ensure-list res))
+                          ;; run res-hook if possible
+                          (when-let* ((hook (plist-get meta :res-hook)))
+                            (setf res (funcall hook res))))
+                        ;; verify
+                        (unless res
+                          (user-error "No translate result found"))
+                        ;; invoke then when it is exists
+                        (if (and (slot-boundp engine 'then) then (gt-functionp then))
+                            (funcall then task)
+                          task)))))))))))
 
 (cl-defmethod gt-finalize ((engine gt-engine) task)
   (gt-log-funcall "finalize (%s %s)" engine (oref task id))
-  (with-slots (text res meta translator) task
-    (with-slots (parse delimit then) engine
-      ;; parse
-      (when res
-        (when-let* ((parser (and (slot-boundp engine 'parse) parse)))
-          (if (gt-functionp parser)
-              (funcall parser task)
-            (gt-parse parser task)))
-        ;; split with delimiter if possible
-        (when delimit
-          (setf res (mapcar (lambda (item) (string-trim item "\n+")) (split-string res delimit))))
-        (setf res (ensure-list res))
-        ;; run res-hook if possible
-        (when-let* ((hook (plist-get meta :res-hook)))
-          (setf res (funcall hook res))))
-      ;; verify
-      (unless res
-        (user-error "No translate result found"))
-      (unless (= (length (remove nil res)) (length (oref translator text)))
-        (user-error "Source text and result text have no same length"))
-      ;; invoke then when it is exists
-      (when (and (slot-boundp engine 'then) then (gt-functionp then))
-        (funcall then task))
+  (with-slots (id res render translator) task
+    (if (oref engine stream)
+        (if (gt-task-cancelled-p task)
+            (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-repr engine)))
+          (gt-output render task))
+      (unless (= (length res) (length (oref translator text)))
+        (user-error "Source and results not matched (count missmatch)"))
+      (gt-log 'next (format "%s: %s translate success!" id (gt-repr engine)))
       ;; all right, render
       (gt-update translator)
       (gt-output (oref translator render) translator))))
@@ -1903,7 +1897,12 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
       (gt-init render translator))
     (dolist (task tasks)
       (condition-case err
-          (gt-execute (oref task engine) task)
+          (let ((engine (oref task engine)))
+            (pdd-chain t
+              (lambda () (gt-init engine task))
+              (lambda () (gt-execute engine task))
+              (lambda () (gt-finalize engine task))
+              :fail (lambda (r) (gt-task-fail task r))))
         (error (gt-task-fail task err))))))
 
 (provide 'gt-core)
