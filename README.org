@@ -12,12 +12,22 @@ As a translation framework, it offers many advantages:
 - Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others. With stream output support.
 - Flexible retrieval of content and language for translation, with the help of the built-in Taker component.
 - Support for word and sentence translation, as well as translation of multiple paragraphs. It can use multiple engines concurrently to translate multiple paragraphs into multiple languages.
-- Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience. Support independent proxy configs.
+- Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience.
 - Implemented based on eieio (CLOS), allowing users to flexibly configure and extend the various components.
 
 It's more than just a translation framework.It's flexible, and can easily be extended to various Text-to-Text conversion scenarios:
 - For example, the built-in Text-Utility component integrates text encryption/decryption, hashing, QR code generation, etc.
 - For example, it can be extended as a client for ChatGPT (WIP)
+
+Table of Content:
+- [[#installation][Installation]] | [[#basic-usage-as-a-translator][Basic Usage]] | [[#gt-http-backend][Http Client Config (url vs curl, proxy)]]
+- [[#core-components][Learn more about Components for advanced usage:]]
+  + [[#component-gt-taker-for-capturing][Taker]]    ([[#gt-taker-with-prompt][gt-taker with prompt]])
+  + [[#component-gt-engine-for-translatingtransforming][Engine]]   ([[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]])
+  + [[#component-gt-render-for-rendering][Renderer]] ([[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]])
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait]]
+- [[#customization-and-extension][Extend the components for your own requirements as you wish]]
+
 
 ** Installation
 
