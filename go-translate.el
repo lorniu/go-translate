@@ -258,7 +258,7 @@ will be used as the default translator.")
 
 (defun gt-translator-copy-of-presets ()
   (let* ((tss (gt-ensure-plain gt-preset-translators))
-         (tsn (completing-read "Preset translator: " tss nil t))
+         (tsn (completing-read "Preset translator: " (gt-make-completion-table tss) nil t))
          (translator (alist-get tsn tss nil nil #'string-equal)))
     (list (clone translator) tsn)))
 
