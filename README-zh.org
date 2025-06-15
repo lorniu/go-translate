@@ -2,12 +2,20 @@
 
 这是一个翻译框架，其主要特点是高度可配置性和高度可扩展性。
 
+- [[#基本使用][基本使用]] | [[#gt-http-backend][配置 http 客户端 (url vs curl, proxy)]]
+- [[#更多配置][进一步了解各种组件以及内部机制，从而能够灵活搭配、随心所欲]]
+  + ([[#用于捕获输入的-gt-taker-组件][Taker]]) [[#gt-taker][gt-taker]]
+  + ([[#用于翻译转换的-gt-engine-组件][Engine]]) [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
+  + ([[#用于渲染输出的-gt-render-组件][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (:if 的语法)]]
+- [[#定制与扩展][可以对框架和组件进行扩展，从而定制自己需要的功能]]
+
 作为一个翻译框架，它有很多优点:
 - 支持多种翻译引擎，比如 ChatGPT, Bing, Google, DeepL, 有道词典/近义词, StarDict, LibreTranslate 等
 - 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等。支持流式渲染
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
-- 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好。支持为不同请求设定不同代理
+- 支持不同的 HTTP 后端 (url.el, curl)，请求纯异步和无阻塞，体验良好
 - 基于 eieio (CLOS) 实现，各种组件，允许用户灵活搭配、自由扩展
 
 当然，这不仅是一个翻译框架。它非常灵活，可以轻松扩展到任意文本转换的场合 (Text to Text):
@@ -293,7 +301,7 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
 #+end_src
 
 ** 常用组件/补充说明
-*** pdd-url-backend/pdd-curl-backend (gt-http-backend)
+*** gt-http-backend
 
 网络请求功能是借助 [[https://github.com/lorniu/pdd.el][pdd.el]] 包实现的。pdd 默认使用内置的 =url.el= 进行请求。
 
@@ -316,6 +324,8 @@ Taker 将从 =langs= 中选取要翻译的语言。默认会结合 =gt-lang-rule
           (when (string-match-p "\\(google.*\\|deepl\\|openai\\)\\.com" (oref request url))
             "socks5://127.0.0.1:1080")))
 #+end_src
+
+想要了解更多，阅读 [[https://github.com/lorniu/pdd.el][pdd]] 包的文档。
 
 *** gt-taker
 

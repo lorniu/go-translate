@@ -12,16 +12,30 @@ As a translation framework, it offers many advantages:
 - Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others. With stream output support.
 - Flexible retrieval of content and language for translation, with the help of the built-in Taker component.
 - Support for word and sentence translation, as well as translation of multiple paragraphs. It can use multiple engines concurrently to translate multiple paragraphs into multiple languages.
-- Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience. Support independent proxy configs.
+- Support for different HTTP backends (url.el, curl) with asynchronous and non-blocking requests, providing a smooth user experience.
 - Implemented based on eieio (CLOS), allowing users to flexibly configure and extend the various components.
 
 It's more than just a translation framework.It's flexible, and can easily be extended to various Text-to-Text conversion scenarios:
 - For example, the built-in Text-Utility component integrates text encryption/decryption, hashing, QR code generation, etc.
 - For example, it can be extended as a client for ChatGPT (WIP)
 
+** Table of Content
+
+- [[#basic-usage-as-a-translator][Basic Usage]] | [[#gt-http-backend][Http Client Config (url vs curl, proxy)]]
+- [[#deep-into-core-components][Learn more about core components for advanced config]]
+  + ([[#component-gt-taker-for-capturing][Taker]]) [[#gt-taker-with-prompt][gt-taker with prompt]]
+  + ([[#component-gt-engine-for-translatingtransforming][Engine]]) [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
+  + ([[#component-gt-render-for-rendering][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (the syntax of :if)]]
+- [[#customization-and-extension-the-framework][Extend the framework for your own requirements as you wish]]
+
 ** Installation
 
 Download and load this package via MELPA or other ways.
+
+#+begin_src emacs-lisp
+  (use-package pdd :ensure t)
+#+end_src
 
 ** Basic Usage (as a Translator)
 
@@ -78,7 +92,7 @@ So, translate with command =gt-translate= and switch between preset translators 
 
 See more configuration options via =M-x customize-group go-translate=, and read the following chapters for more configuration details.
 
-** Core Components
+** Deep into Core Components
 
 The core component of the translation framework is =gt-translator=, which contains the following components:
 - =gt-taker=: used to capture user input, including text and languages to be translated
@@ -287,7 +301,7 @@ The first available render in the list (validate conjunction with =:if=) can be 
                  (gt-buffer-render)))               ; default, render with new buffer
 #+end_src
 
-** Extension Components
+** Detail Notes of some Components
 *** gt-http-backend
 
 The network request is sent with the help of the [[https://github.com/lorniu/pdd.el][pdd.el]] package. It use the built-in =url.el= to send requests.
@@ -311,6 +325,8 @@ If you prefer =curl=, just ensure =curl= and package [[https://github.com/alphap
           (when (string-match-p "\\(xxx\\)\\.com" (oref request url))
             "socks5://127.0.0.1:1080")))
 #+end_src
+
+For more details, read the docs of package [[https://github.com/lorniu/pdd.el][pdd]].
 
 *** gt-taker with prompt
 
@@ -666,7 +682,7 @@ One simple config example:
                         (gt-buffer-render))))
 #+end_src
 
-** Customization and Extension
+** Customization and Extension the Framework
 
 The code is based on eieio (CLOS), so almost every component can be extended or replaced.
 
