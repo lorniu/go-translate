@@ -78,7 +78,7 @@
   :type 'string
   :group 'go-translate-chatgpt)
 
-(defcustom gt-chatgpt-user-prompt-template "Translate the text to %s, text is: \n%s"
+(defcustom gt-chatgpt-user-prompt-template "Translate the text to %s, and only return the translate result without any markers. The text is: \n%s"
   "Template for user prompt when translation.
 When it is string, %s is placeholders of lang and text.
 When it is function, arguments passed to it should be text and lang."
@@ -103,7 +103,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path key model temperature stream rate-limit) engine
+    (with-slots (host path model temperature stream rate-limit) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
@@ -123,25 +123,30 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                                 (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) item))))]))
             :peek (when stream
                     (lambda ()
-                      (unless gt-tracking-marker
+                      (if (and (> (point) 1) gt-tracking-marker)
+                          (goto-char gt-tracking-marker)
                         (setq gt-tracking-marker (make-marker))
                         (set-marker gt-tracking-marker (point-min)))
-                      (goto-char gt-tracking-marker)
                       (condition-case err
-                          (while (re-search-forward "^data: +\\({.+}\\)" nil t)
-                            (let* ((json (json-read-from-string (decode-coding-string (match-string 1) 'utf-8)))
-                                   (choice (aref (alist-get 'choices json) 0))
-                                   (content (alist-get 'content (alist-get 'delta choice)))
-                                   (finish (alist-get 'finish_reason choice)))
-                              (if finish
-                                  (progn (message "")
-                                         (when gt-chatgpt-streaming-finished-hook
-                                           (with-current-buffer (marker-buffer (car markers))
-                                             (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers)))))
-                                (setf res (concat res content))
+                          (let (json)
+                            (while (and (re-search-forward "^data: +" nil t)
+                                        (ignore-errors
+                                          (setq json (json-parse-string
+                                                      (decode-coding-string (buffer-substring (point) (line-end-position)) 'utf-8)
+                                                      :object-type 'alist))))
+                              (let* ((choice (ignore-errors (aref (alist-get 'choices json) 0)))
+                                     (content (alist-get 'content (alist-get 'delta choice)))
+                                     (finish (alist-get 'finish_reason choice)))
+                                (goto-char (line-end-position))
                                 (set-marker gt-tracking-marker (point))
-                                (unless (string-blank-p (concat res))
-                                  (gt-output (oref task render) task)))))
+                                (if (equal finish "stop")
+                                    (progn (message "")
+                                           (when gt-chatgpt-streaming-finished-hook
+                                             (with-current-buffer (marker-buffer (car markers))
+                                               (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers)))))
+                                  (setf res (concat res content))
+                                  (unless (string-blank-p (concat res))
+                                    (gt-output (oref task render) task))))))
                         (error (unless (string-prefix-p "json" (format "%s" (car err)))
                                  (signal (car err) (cdr err)))))))
             :done (unless stream #'identity)
