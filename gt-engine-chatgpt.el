@@ -97,7 +97,8 @@ With two arguments BEG and END, which are the marker bounds of the result.")
     (or (gt-lookup-password
          :user (if key (format "%s" key) "apikey")
          :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
-        gt-chatgpt-key)))
+        gt-chatgpt-key
+        (getenv "OPENAI_API_KEY"))))
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
