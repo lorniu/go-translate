@@ -38,8 +38,7 @@
 (defclass gt-chatgpt-parser (gt-parser) ())
 
 (defclass gt-chatgpt-engine (gt-api-engine)
-  ((tag         :initform 'ChatGPT)
-   (host        :initarg :host :initform nil)
+  ((host        :initarg :host :initform nil)
    (path        :initarg :path :initform nil)
    (model       :initarg :model :initform nil)
    (temperature :initarg :temperature :initform nil)
@@ -64,7 +63,7 @@
   :type 'string
   :group 'go-translate-chatgpt)
 
-(defcustom gt-chatgpt-model "gpt-3.5-turbo"
+(defcustom gt-chatgpt-model "gpt-4o-mini"
   "Model to be used in chat."
   :type 'string
   :group 'go-translate-chatgpt)
@@ -85,6 +84,9 @@ When it is string, %s is placeholders of lang and text.
 When it is function, arguments passed to it should be text and lang."
   :type '(choice string function)
   :group 'go-translate-chatgpt)
+
+(cl-defmethod initialize-instance :after ((engine gt-chatgpt-engine) &rest _)
+  (oset engine tag (concat "model:" (or (oref engine model) gt-chatgpt-model))))
 
 (declare-function pulse-momentary-highlight-region "pulse")
 
