@@ -75,8 +75,8 @@
     (user-error "Language %s is not supported by DeepL.
 Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
 
-(cl-defmethod gt-key ((engine gt-deepl-engine))
-  (gt-ensure-key-for-engine (key) engine
+(cl-defmethod gt-resolve-key ((engine gt-deepl-engine))
+  (gt-with-slots-for-key (key) engine
     (gt-lookup-password
      :user (if key (format "%s" key) "auth-key")
      :host "api.deepl.com")))
@@ -85,7 +85,7 @@ Supported list: %s" lang (mapconcat #'car gt-deepl-langs-mapping ", "))))
   (with-slots (text src tgt) task
     (with-slots (host host-free path pro rate-limit) engine
       (let ((url (concat (if pro host host-free) path))
-            (headers `(www-url-u8 (auth "DeepL-Auth-Key" ,(gt-key engine))))
+            (headers `(www-url-u8 (auth "DeepL-Auth-Key" ,(gt-resolve-key engine))))
             (data `(("target_lang" . ,(gt-deepl-lang tgt))
                     ,(if-let* ((src (gt-deepl-lang src))) `("source_lang" . ,src))
                     ,@gt-deepl-extra-params))

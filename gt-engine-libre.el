@@ -56,8 +56,8 @@ to use third-party or your local service."
 
 ;;; Translate
 
-(cl-defmethod gt-key ((engine gt-libre-engine))
-  (gt-ensure-key-for-engine (host key) engine
+(cl-defmethod gt-resolve-key ((engine gt-libre-engine))
+  (gt-with-slots-for-key (host key) engine
     (gt-lookup-password
      :user (if key (format "%s" key) "api-key")
      :host (url-host (url-generic-parse-url (or host gt-libre-host))))
@@ -66,7 +66,7 @@ to use third-party or your local service."
 (cl-defmethod gt-execute ((engine gt-libre-engine) task)
   (with-slots (text src tgt) task
     (with-slots (host path rate-limit) engine
-      (let* ((key (gt-key engine))
+      (let* ((key (gt-resolve-key engine))
              (url (concat (or host gt-libre-host) path))
              (data `(("source" . ,src) ("target" . ,tgt)
                      ("format" . "text") ("alternatives" . 1)

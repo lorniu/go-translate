@@ -92,13 +92,12 @@ When it is function, arguments passed to it should be text and lang."
   "The logic runs after all streams finished.
 With two arguments BEG and END, which are the marker bounds of the result.")
 
-(cl-defmethod gt-key ((engine gt-chatgpt-engine))
-  (gt-ensure-key-for-engine (host key) engine
+(cl-defmethod gt-resolve-key ((engine gt-chatgpt-engine))
+  (gt-with-slots-for-key (host key) engine
     (or (gt-lookup-password
          :user (if key (format "%s" key) "apikey")
          :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
-        gt-chatgpt-key
-        (getenv "OPENAI_API_KEY"))))
+        gt-chatgpt-key (getenv "OPENAI_API_KEY"))))
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
@@ -106,7 +105,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
-            (headers `(json (bear ,(encode-coding-string (gt-key engine) 'utf-8)))))
+            (headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))))
         (gt-dolist-concurrency (item text rate-limit)
           (gt-request url
             :headers headers
@@ -172,16 +171,14 @@ alloy, echo, fable, onyx, nova, or shimmer."
   :group 'go-translate-chatgpt)
 
 (cl-defmethod gt-speech ((engine gt-chatgpt-engine) text _lang)
-  (with-slots (host key) engine
-    (gt-key engine)
-    (gt-request (concat (or host gt-chatgpt-host) "/v1/audio/speech")
-      :headers `(json (bear ,(encode-coding-string key 'utf-8)))
-      :data `((input . ,text)
-              (model . ,gt-chatgpt-tts-model)
-              (speed . ,gt-chatgpt-tts-speed)
-              (voice . ,gt-chatgpt-tts-voice))
-      :done #'gt-play-audio
-      :cache (length text))))
+  (gt-request (concat (or (oref engine host) gt-chatgpt-host) "/v1/audio/speech")
+    :headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))
+    :data `((input . ,text)
+            (model . ,gt-chatgpt-tts-model)
+            (speed . ,gt-chatgpt-tts-speed)
+            (voice . ,gt-chatgpt-tts-voice))
+    :done #'gt-play-audio
+    :cache (length text)))
 
 (provide 'gt-engine-chatgpt)
 

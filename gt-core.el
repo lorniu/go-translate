@@ -1489,20 +1489,17 @@ If SKIP-PARSE is t, return the raw results directly."
            (gt-log-funcall "parse (%s %s)" parser (oref task id)))
   nil)
 
-(cl-defgeneric gt-key (api-engine)
+(cl-defgeneric gt-resolve-key (api-engine)
   "Return the api key for API-ENGINE."
   (:method ((engine gt-api-engine)) (oref engine key)))
 
-(defmacro gt-ensure-key-for-engine (slots engine &rest body)
+(defmacro gt-with-slots-for-key (slots engine &rest body)
   (declare (indent 2))
-  (unless (memq 'key slots) (push 'key slots))
   `(with-slots ,slots ,engine
-     (if (stringp key) key
-       (if-let* ((key-found (progn ,@body)))
-           (setf key key-found)
-         (user-error "You should provide a %s for `%s'"
-                     (if (symbolp key) key "api key")
-                     (gt-repr ,engine))))))
+     (let ((key-found (progn ,@body)))
+       (unless (stringp key-found)
+         (user-error "You should provide a valid api key for `%s'" (gt-repr ,engine)))
+       key-found)))
 
 
 ;;; Renderer
