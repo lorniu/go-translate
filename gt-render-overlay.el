@@ -173,7 +173,7 @@ Otherwise, join the results use the default logic."
 (cl-defmethod gt-init ((render gt-overlay-render) translator)
   (with-slots (bounds) translator
     (unless (cdr bounds)
-      (error "%s only works for buffer bounds, abort" (gt-repr render)))
+      (error "%s only works for buffer bounds, abort" (gt-str render)))
     (unless (buffer-live-p (car bounds))
       (error "Source buffer is unavailable, abort"))))
 
@@ -228,7 +228,7 @@ Otherwise, join the results use the default logic."
           (deactivate-mark)
           (message "ok."))))))
 
-(cl-defmethod gt-repr ((render gt-overlay-render))
+(cl-defmethod gt-str ((render gt-overlay-render))
   (format "gt-overlay-render/%s" (oref render type)))
 
 (provide 'gt-render-overlay)

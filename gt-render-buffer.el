@@ -224,7 +224,7 @@ If FOLD non nil, only make part of the text visible."
         (erase-buffer)
         ;; headline
         (let ((engines (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))))
-          (gt-header render translator (unless (cdr engines) (oref (car engines) tag))))
+          (gt-header render translator (unless (cdr engines) (gt-tag (car engines)))))
         ;; content
         (newline)
         (save-excursion

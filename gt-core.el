@@ -546,9 +546,19 @@ That is: 1) define the translator 2) executable `gt-start'.")
   "Update states for COMPONENT."
   nil)
 
-(cl-defgeneric gt-repr (object)
+(cl-defgeneric gt-str (object)
   "Return the string representation of the OBJECT."
   (format "%s" (eieio-object-class object)))
+
+(cl-defgeneric gt-tag (object)
+  "Return the display tag for OBJECT."
+  (let ((tag (if (not (eieio-object-p object))
+                 object
+               (if (and (slot-exists-p object 'tag)
+                        (slot-boundp object 'tag))
+                   (oref object tag)
+                 (eieio-object-class object)))))
+    (if (or (null tag) (stringp tag)) tag (format "%s" tag))))
 
 
 ;;; Utility
@@ -890,7 +900,7 @@ TAG is a label for message being logged."
       (format ,(if (string-match-p "^[ \n]" fmt) fmt (concat "gt-" fmt))
               ,@(cl-loop
                  for o in objects collect
-                 `(let ((obj ,o)) (if (eieio-object-p obj) (gt-repr obj) obj))))
+                 `(let ((obj ,o)) (if (eieio-object-p obj) (gt-str obj) obj))))
       'font-lock-doc-face)))
 
 
@@ -1401,11 +1411,7 @@ If BACKWARDP is not nil then switch to previous one."
 
 (cl-defgeneric gt-execute (engine &rest _args)
   "Execute the translate or transform logics for ENGINE."
-  (user-error "Method `gt-execute' of %s is not implement" (gt-repr engine)))
-
-(cl-defmethod initialize-instance :after ((engine gt-engine) &rest _)
-  (unless (slot-boundp engine 'tag)
-    (oset engine tag (gt-repr engine))))
+  (user-error "Method `gt-execute' of %s is not implement" (gt-str engine)))
 
 (cl-defmethod gt-execute :around ((engine gt-engine) task &optional skip-parse)
   "The primary method return the result or a `pdd-task' contains the result.
@@ -1415,7 +1421,7 @@ If SKIP-PARSE is t, return the raw results directly."
   (with-slots (id text src tgt res err meta proc) task
     (with-slots (delimit parse stream then) engine
       (unless (or res err)
-        (gt-log 'next (format "%s: %s prepare to translate" id (gt-repr engine)))
+        (gt-log 'next (format "%s: %s prepare to translate" id (gt-str engine)))
         ;; enable caching if necessary
         (let* ((cache-pred nil)
                (pdd-active-cacher
@@ -1474,11 +1480,11 @@ If SKIP-PARSE is t, return the raw results directly."
   (with-slots (id res render translator) task
     (if (oref engine stream)
         (if (gt-task-cancelled-p task)
-            (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-repr engine)))
+            (gt-log 'next (format "%s: %s translate streaming abort!" id (gt-str engine)))
           (gt-output render task))
       (unless (= (length res) (length (oref translator text)))
         (user-error "Source and results not matched (count missmatch)"))
-      (gt-log 'next (format "%s: %s translate success!" id (gt-repr engine)))
+      (gt-log 'next (format "%s: %s translate success!" id (gt-str engine)))
       ;; all right, render
       (gt-update translator)
       (gt-output (oref translator render) translator))))
@@ -1498,7 +1504,7 @@ If SKIP-PARSE is t, return the raw results directly."
   `(with-slots ,slots ,engine
      (let ((key-found (progn ,@body)))
        (unless (stringp key-found)
-         (user-error "You should provide a valid api key for `%s'" (gt-repr ,engine)))
+         (user-error "You should provide a valid api key for `%s'" (gt-str ,engine)))
        key-found)))
 
 
@@ -1519,7 +1525,7 @@ When output a task, hint that this is for a stream request.")
   (condition-case err
       (progn (cl-call-next-method render translator)
              (gt-update translator))
-    (error (gt-log 'render (format "%s initialize failed, abort" (gt-repr render)))
+    (error (gt-log 'render (format "%s initialize failed, abort" (gt-str render)))
            (user-error (format "[output init error] %s" err)))))
 
 (cl-defmethod gt-output :around ((render gt-render) (translator gt-translator))
@@ -1539,7 +1545,7 @@ When output a task, hint that this is for a stream request.")
                       ((and (eieio-object-p then) (object-of-class-p then 'gt-render))
                        (gt-init then translator)
                        (gt-output then translator))
-                      (t (error "Bad then value specified in %s" (gt-repr render))))))
+                      (t (error "Bad then value specified in %s" (gt-str render))))))
           (error (setf state 4)
                  (message "[output error] %s" (cadr err))))))))
 
@@ -1587,8 +1593,8 @@ When output a task, hint that this is for a stream request.")
                               (when (or (cdr tgts) (cdr engines))
                                 ;; style as: en.Google.Detail
                                 (let ((lst (list (if (cdr tgts) tgt)
-                                                 (if (cdr engines) (oref engine tag))
-                                                 (if (cdr engines) (ignore-errors (oref (oref engine parse) tag))))))
+                                                 (if (cdr engines) (gt-tag engine))
+                                                 (if (cdr engines) (ignore-errors (gt-tag (oref engine parse)))))))
                                   (concat
                                    (mapconcat (lambda (item) (format "%s" item)) (remove nil lst) ".")
                                    (if (and (cdr engines) (oref engine stream)) " (stream)"))))))
@@ -1610,7 +1616,7 @@ When output a task, hint that this is for a stream request.")
       (when (= state 0)
         (setf tasks (nconc tasks (list task)))
         (gt-log (format "%d" (length tasks))
-          (format "add task %s: (%s/%s)" id (gt-repr engine) (gt-repr render)))))))
+          (format "add task %s: (%s/%s)" id (gt-str engine) (gt-str render)))))))
 
 (defun gt-task-fail (task error)
   "Render ERROR message and terminate the TASK."
@@ -1658,7 +1664,7 @@ The value should not contain any space in the command path."
 
 (cl-defgeneric gt-speech (engine _text &optional _lang)
   "Speak TEXT with LANG by ENGINE."
-  (user-error "No TTS service found on engine `%s'" (oref engine tag)))
+  (user-error "No TTS service found on engine `%s'" (gt-tag engine)))
 
 (defun gt-interrupt-speak-process ()
   (when (and gt-tts-speak-process (process-live-p gt-tts-speak-process))
@@ -1781,7 +1787,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
               ;; 2. play current task
               (setq engine (oref task engine))
               (unless (cl-find-method #'gt-speech '() `(,(eieio-object-class engine) t t))
-                (user-error "No TTS service found on current engine `%s'" (oref engine tag)))
+                (user-error "No TTS service found on current engine `%s'" (gt-tag engine)))
               (let ((part (or (get-char-property (point) 'gt-part) 0))
                     (col (lambda (l c) (push (format "%s. %s" l (substring-no-properties c)) items))))
                 (if (use-region-p)
@@ -1794,7 +1800,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                 (when items
                   (let* ((cand (with-temp-buffer
                                  (completing-read
-                                  (format "Text to Speech (with %s): " (oref engine tag))
+                                  (format "Text to Speech (with %s): " (gt-tag engine))
                                   (gt-make-completion-table items))))
                          (lang (if (string-match (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")) cand)
                                    (prog1 (intern-soft (match-string 1 cand))
@@ -1845,9 +1851,9 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
     ;; log
     (gt-log 'translator (format "version: %s\ntarget: %s\nbounds: %s\ntext: %s\ntaker: %s, engines: %s, renderer: %s"
                                 version target bounds text
-                                (gt-repr taker)
-                                (mapcar (lambda (en) (oref en tag)) engines)
-                                (gt-repr render)))))
+                                (gt-str taker)
+                                (mapcar (lambda (eng) (gt-tag eng)) engines)
+                                (gt-str render)))))
 
 (cl-defmethod gt-update ((translator gt-translator))
   "Update state for TRANSLATOR."
@@ -1859,7 +1865,7 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
          (setf state 1)))
       (1
        (gt-log 'translator
-         (format "<2> %s prepared" (gt-repr render)))
+         (format "<2> %s prepared" (gt-str render)))
        (setf state 2))
       (2
        (when (= total (length (cl-remove-if-not (lambda (task) (or (oref task err) (oref task res))) tasks)))

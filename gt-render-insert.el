@@ -215,7 +215,7 @@ Otherwise, join the results use the default logic."
                              (list (string-join (ensure-list res) "\n")))))))
       (gt-insert-text-at-marker insert-text beg end))))
 
-(cl-defmethod gt-repr ((render gt-insert-render))
+(cl-defmethod gt-str ((render gt-insert-render))
   (format "gt-insert-render/%s" (oref render type)))
 
 (provide 'gt-render-insert)

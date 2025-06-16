@@ -85,14 +85,14 @@ When it is function, arguments passed to it should be text and lang."
   :type '(choice string function)
   :group 'go-translate-chatgpt)
 
-(cl-defmethod initialize-instance :after ((engine gt-chatgpt-engine) &rest _)
-  (oset engine tag (concat "model:" (or (oref engine model) gt-chatgpt-model))))
-
 (declare-function pulse-momentary-highlight-region "pulse")
 
 (defvar gt-chatgpt-streaming-finished-hook #'pulse-momentary-highlight-region
   "The logic runs after all streams finished.
 With two arguments BEG and END, which are the marker bounds of the result.")
+
+(cl-defmethod gt-tag ((engine gt-chatgpt-engine))
+  (concat "model:" (or (oref engine model) gt-chatgpt-model)))
 
 (cl-defmethod gt-resolve-key ((engine gt-chatgpt-engine))
   (gt-with-slots-for-key (host key) engine
