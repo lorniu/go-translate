@@ -71,6 +71,7 @@ Notice, this can be overrided by `window-config' slot of render instance."
 (defvar gt-buffer-render-evil-leading-key "," "Leading key for keybinds in evil mode.")
 
 (defvar-local gt-buffer-render-translator nil)
+(defvar-local gt-buffer-render-markers nil)
 (defvar-local gt-buffer-render-keybinding-messages nil)
 (defvar-local gt-buffer-render-local-map nil)
 
@@ -207,22 +208,24 @@ If FOLD non nil, only make part of the text visible."
 
 (defun gt-buffer-render-init (buffer render translator)
   "Init BUFFER for RENDER of TRANSLATOR."
-  (with-current-buffer buffer
-    (with-slots (text tasks engines) translator
-      ;; setup
-      (deactivate-mark)
-      (visual-line-mode -1)
-      (font-lock-mode 1)
-      (setq-local cursor-type 'hbar)
-      (setq-local cursor-in-non-selected-windows nil)
-      (setq-local gt-buffer-render-translator translator)
-      ;; headline
-      (let ((engines (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))))
-        (gt-header render translator (unless (cdr engines) (oref (car engines) tag))))
-      ;; content
+  (with-slots (text tasks engines) translator
+    (with-current-buffer buffer
       (let ((inhibit-read-only t)
             (entries (gt-extract-data render translator)))
+        ;; setup
+        (deactivate-mark)
+        (visual-line-mode -1)
+        (font-lock-mode 1)
+        (setq-local cursor-type 'hbar)
+        (setq-local cursor-in-non-selected-windows nil)
+        (setq-local gt-buffer-render-translator translator)
+        (mapc (lambda (m) (set-marker m nil nil)) gt-buffer-render-markers)
+        (setq-local gt-buffer-render-markers nil)
         (erase-buffer)
+        ;; headline
+        (let ((engines (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))))
+          (gt-header render translator (unless (cdr engines) (oref (car engines) tag))))
+        ;; content
         (newline)
         (save-excursion
           (unless (or gt-buffer-render-dislike-source-text (cdr text)) ;; single part, single task
@@ -243,6 +246,8 @@ If FOLD non nil, only make part of the text visible."
                                           (insert output)
                                           (setq beg (set-marker (make-marker) (+ beg (length prefix))))
                                           (setq end (set-marker (make-marker) (save-excursion (skip-chars-backward " \t\n") (point))))
+                                          (push beg gt-buffer-render-markers)
+                                          (push end gt-buffer-render-markers)
                                           (oset task markers (cons beg end)))
                                       (insert output)))))))
       ;; keybinds
