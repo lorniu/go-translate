@@ -214,7 +214,6 @@ If FOLD non nil, only make part of the text visible."
             (entries (gt-extract-data render translator)))
         ;; setup
         (deactivate-mark)
-        (visual-line-mode -1)
         (font-lock-mode 1)
         (setq-local cursor-type 'hbar)
         (setq-local cursor-in-non-selected-windows nil)
