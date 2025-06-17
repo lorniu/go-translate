@@ -435,23 +435,27 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 可以自定义翻译的 prompt。比如:
 #+begin_src emacs-lisp
   (setq gt-chatgpt-user-prompt-template
-        (lambda (text lang)
+        (lambda (lang text)
           (format "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s"
                   (alist-get lang gt-lang-codes) text)))
+
+  ;; or
+  (gt-chatgpt-engine :prompt "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s")
 #+end_src
 
 甚至可以基于其它自定义 Prompt，借助 ChatGPT 完成其他任务。比如下面的命令用于润色句子:
 #+begin_src emacs-lisp
   (defun my-command-polish-using-ChatGPT ()
     (interactive)
-    (let ((gt-chatgpt-system-prompt "你是一个优秀的网文写手")
-          (gt-chatgpt-user-prompt-template (lambda (text _)
-                                             (read-string
-                                              "Prompt: "
-                                              (format "润色句子，要求只返回生成的句子: %s" text)))))
-      (gt-start (gt-translator
-                 :engines (gt-chatgpt-engine :cache nil)
-                 :render (gt-insert-render)))))
+    (gt-start (gt-translator
+               :engines (gt-chatgpt-engine
+                         :cache nil
+                         :sys-prompt "你是一个优秀的网文写手"
+                         :prompt (lambda (_ text)
+                                   (read-string
+                                    "Prompt: "
+                                    (format "润色句子，要求只返回生成的句子: %s" text))))
+               :render (gt-insert-render :type 'replace))))
 #+end_src
 
 可以通过设置 =:stream t= 让引擎返回流式 (stream) 结果，即内容一点点返回并输出。下面是例子:
@@ -479,7 +483,8 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                        :engines
                        (list (gt-chatgpt-engine :model "gpt-4o-mini")
                              (gt-chatgpt-engine :model "deepseek-v3")
-                             (gt-chatgpt-engine :model "deepseek-r1" :stream t))
+                             (gt-chatgpt-engine :model "deepseek-r1" :stream t
+                                                :prompt "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s"))
                        :render (gt-buffer-render)))
 #+end_src
 

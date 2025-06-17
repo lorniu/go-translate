@@ -41,6 +41,8 @@
   ((host        :initarg :host :initform nil)
    (path        :initarg :path :initform nil)
    (model       :initarg :model :initform nil)
+   (prompt      :initarg :prompt :initform nil) ; gt-chatgpt-user-prompt-template
+   (sys-prompt  :initarg :sys-prompt :initform nil) ; gt-chatgpt-system-prompt
    (temperature :initarg :temperature :initform nil)
    (extra-args  :initarg :extra-args :initform nil)
    (key         :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
@@ -111,11 +113,12 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path model temperature extra-args stream rate-limit parse) engine
+    (with-slots (host path model prompt sys-prompt temperature extra-args stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
-            (headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))))
+            (headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8))))
+            (prompt (or prompt gt-chatgpt-user-prompt-template)))
         (gt-dolist-concurrency (item text rate-limit)
           (gt-request url
             :headers headers
@@ -124,11 +127,11 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                     (temperature . ,(or temperature gt-chatgpt-temperature))
                     (stream . ,stream)
                     (messages . [((role . system)
-                                  (content . ,gt-chatgpt-system-prompt))
+                                  (content . ,(or sys-prompt gt-chatgpt-system-prompt)))
                                  ((role . user)
-                                  (content . ,(if (functionp gt-chatgpt-user-prompt-template)
-                                                  (funcall gt-chatgpt-user-prompt-template item tgt)
-                                                (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) item))))])
+                                  (content . ,(if (functionp prompt)
+                                                  (funcall prompt tgt item)
+                                                (format prompt (alist-get tgt gt-lang-codes) item))))])
                     ,@(or extra-args gt-chatgpt-extra-args))
             :peek (when stream
                     (lambda ()

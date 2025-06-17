@@ -415,23 +415,27 @@ Then change host/model/others if necessary:
 Custom the translation prompt as you wish:
 #+begin_src emacs-lisp
   (setq gt-chatgpt-user-prompt-template
-        (lambda (text lang)
+        (lambda (lang text)
           (format "Translate text to %s and return the first word. Text is: \n%s"
                   (alist-get lang gt-lang-codes) text)))
+
+  ;; or
+  (gt-chatgpt-engine :prompt "Translate text to %s and return the first word. Text is: \n%s")
 #+end_src
 
 Even can custom the prompt for other tasks. For example, for polish sentence:
 #+begin_src emacs-lisp
   (defun my-command-polish-using-ChatGPT ()
     (interactive)
-    (let ((gt-chatgpt-system-prompt "You are a writer")
-          (gt-chatgpt-user-prompt-template (lambda (text _)
-                                             (read-string
-                                              "Prompt: "
-                                              (format "Polish the sentence below: %s" text)))))
-      (gt-start (gt-translator
-                 :engines (gt-chatgpt-engine :cache nil)
-                 :render (gt-insert-render)))))
+    (gt-start (gt-translator
+               :engines (gt-chatgpt-engine
+                         :cache nil
+                         :sys-prompt "You are a writer"
+                         :prompt (lambda (_ text)
+                                   (read-string
+                                    "Prompt: "
+                                    (format "Polish the sentence below: %s" text))))
+               :render (gt-insert-render :type 'replace))))
 #+end_src
 
 It support streaming output with some renders. Examples:
@@ -459,7 +463,8 @@ Different LLMs can be used at the same time together:
                        :engines
                        (list (gt-chatgpt-engine :model "gpt-4o-mini")
                              (gt-chatgpt-engine :model "deepseek-v3")
-                             (gt-chatgpt-engine :model "deepseek-r1" :stream t))
+                             (gt-chatgpt-engine :model "deepseek-r1" :stream t
+                                                :prompt "Translate text to %s and return the first word. Text is: \n%s"))
                        :render (gt-buffer-render)))
 #+end_src
 
