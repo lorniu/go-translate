@@ -439,6 +439,17 @@ It support streaming output with some renders. Examples:
                        :render (gt-insert-render)))
 #+end_src
 
+Different LLMs can be used at the same time together:
+#+begin_src emacs-lisp
+  (setq gt-default-translator
+        (gt-translator :taker (gt-taker :pick nil :prompt t)
+                       :engines
+                       (list (gt-chatgpt-engine :model "gpt-4o-mini")
+                             (gt-chatgpt-engine :model "deepseek-v3")
+                             (gt-chatgpt-engine :model "deepseek-r1" :stream t))
+                       :render (gt-buffer-render)))
+#+end_src
+
 After all, try text to speech with command =gt-speak=.
 
 *** gt-buffer-render

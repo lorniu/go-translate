@@ -462,6 +462,17 @@ ChatGPT 需要 apikey 才能正常使用:
                        :render (gt-insert-render)))
 #+end_src
 
+多种不同的 LLMs 模型可以同时配置使用:
+#+begin_src emacs-lisp
+  (setq gt-default-translator
+        (gt-translator :taker (gt-taker :pick nil :prompt t)
+                       :engines
+                       (list (gt-chatgpt-engine :model "gpt-4o-mini")
+                             (gt-chatgpt-engine :model "deepseek-v3")
+                             (gt-chatgpt-engine :model "deepseek-r1" :stream t))
+                       :render (gt-buffer-render)))
+#+end_src
+
 另外，可以通过 =gt-speak= 尝试其语音播报。
 
 *** gt-buffer-render

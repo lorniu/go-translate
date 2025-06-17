@@ -656,15 +656,20 @@ PARAMS contains search keys like :user, :host same as `auth-source-search'."
 If END-MARKER exists, delete the content between the markers first.
 If KEEP-CURSOR is not nil, keep the cursor at front."
   (with-current-buffer (marker-buffer marker)
-    (let ((inhibit-read-only t))
-      (when end-marker
-        (set-marker-insertion-type end-marker t)
-        (delete-region marker end-marker))
-      (goto-char marker)
-      (deactivate-mark)
+    (let ((inhibit-read-only t)
+          (fn (lambda ()
+                (goto-char marker)
+                (deactivate-mark)
+                (insert str))))
+      (if (and end-marker (string-prefix-p (buffer-substring marker end-marker) str))
+          (setq str (substring str (- (marker-position end-marker) (marker-position marker)))
+                marker end-marker)
+        (when end-marker
+          (set-marker-insertion-type end-marker t)
+          (delete-region marker end-marker)))
       (if keep-cursor
-          (save-excursion (insert str))
-        (insert str)))))
+          (save-excursion (funcall fn))
+        (funcall fn)))))
 
 (defun gt-parse-html-dom (str)
   "Parse html STR and return the DOM body."
@@ -1489,10 +1494,8 @@ If SKIP-PARSE is t, return the raw results directly."
       (gt-update translator)
       (gt-output (oref translator render) translator))))
 
-(cl-defgeneric gt-parse (_parser _task)
-  "Replace res of TASK to user-friendly string using PARSER."
-  (:method :before ((parser gt-parser) task)
-           (gt-log-funcall "parse (%s %s)" parser (oref task id)))
+(cl-defgeneric gt-parse (_parser _task-or-data)
+  "Parse TASK-OR-DATA using PARSER."
   nil)
 
 (cl-defgeneric gt-resolve-key (api-engine)

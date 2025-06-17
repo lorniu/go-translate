@@ -103,7 +103,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path model temperature stream rate-limit) engine
+    (with-slots (host path model temperature stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
@@ -134,11 +134,8 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                           (setq json (json-parse-string
                                                       (decode-coding-string (buffer-substring (point) (line-end-position)) 'utf-8)
                                                       :object-type 'alist))))
-                              (let* ((choice (ignore-errors (aref (alist-get 'choices json) 0)))
-                                     (content (alist-get 'content (alist-get 'delta choice)))
-                                     (finish (alist-get 'finish_reason choice)))
-                                (goto-char (line-end-position))
-                                (set-marker gt-tracking-marker (point))
+                              (pcase-let ((`(,content ,finish) (gt-parse parse json)))
+                                (set-marker gt-tracking-marker (line-end-position))
                                 (if (equal finish "stop")
                                     (progn (message "")
                                            (when gt-chatgpt-streaming-finished-hook
@@ -152,11 +149,21 @@ With two arguments BEG and END, which are the marker bounds of the result.")
             :done (unless stream #'identity)
             :max-retry (if stream 0 gt-http-max-retry)))))))
 
-(cl-defmethod gt-parse ((_ gt-chatgpt-parser) task)
+(cl-defmethod gt-parse ((_ gt-chatgpt-parser) (task gt-task))
   (cl-loop for item in (oref task res)
-           for str = (alist-get 'content (alist-get 'message (let-alist item (aref .choices 0))))
-           collect str into lst
+           for msg = (alist-get 'message (let-alist item (aref .choices 0)))
+           for rc = (alist-get 'reasoning_content msg) ; compact with DeepSeek r1
+           for content = (alist-get 'content msg)
+           collect (concat (if rc (propertize rc 'face 'gt-chatgpt-reasoning-face)) content) into lst
            finally (oset task res lst)))
+
+(cl-defmethod gt-parse ((_ gt-chatgpt-parser) json-hunk) ; parse for streaming output
+  (let* ((choice (ignore-errors (aref (alist-get 'choices json-hunk) 0)))
+         (content (or (when-let* ((c (alist-get 'reasoning_content (alist-get 'delta choice))))
+                        (propertize c 'face 'gt-chatgpt-reasoning-face)) ; compact with DeepSeek r1
+                      (alist-get 'content (alist-get 'delta choice))))
+         (finish (alist-get 'finish_reason choice)))
+    (list content finish)))
 
 
 ;;; Text to Speech

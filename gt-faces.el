@@ -216,6 +216,10 @@
   "Face for bionic reading word."
   :group 'go-translate-faces)
 
+(defface gt-chatgpt-reasoning-face '((t :inherit font-lock-comment-face))
+  "Face for ChatGPT reasoning block."
+  :group 'go-translate-faces)
+
 (provide 'gt-faces)
 
 ;;; gt-faces.el ends here
