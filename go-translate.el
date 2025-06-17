@@ -29,7 +29,8 @@
 
 ;; Translation framework on Emacs, with high configurability and extensibility.
 ;;
-;;  - Support multiple translation engines, such as Google, Bing, DeepL, ChatGPT...
+;;  - Support multiple translation engines, such as Google, Bing, DeepL...
+;;  - Also support LLMs engines such as ChatGPT, DeepSeek and so on.
 ;;  - With variety of output styles, such as Buffer, Overlay, Childframe and so on.
 ;;  - With a flexible taker for easy retrieval of translated content and targets.
 ;;  - Support multiple paragraphs/parts and multi-language translation.

@@ -5,13 +5,13 @@
 - [[#基本使用][基本使用]] | [[#gt-http-backend][配置 http 客户端 (url vs curl, proxy)]]
 - [[#更多配置][进一步了解各种组件以及内部机制，从而能够灵活搭配、随心所欲]]
   + ([[#用于捕获输入的-gt-taker-组件][Taker]]) [[#gt-taker][gt-taker]]
-  + ([[#用于翻译转换的-gt-engine-组件][Engine]]) [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
+  + ([[#用于翻译转换的-gt-engine-组件][Engine]]) [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine (OpenAI Compact)]]
   + ([[#用于渲染输出的-gt-render-组件][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
   + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (:if 的语法)]]
 - [[#定制与扩展][可以对框架和组件进行扩展，从而定制自己需要的功能]]
 
 作为一个翻译框架，它有很多优点:
-- 支持多种翻译引擎，比如 ChatGPT, Bing, Google, DeepL, 有道词典/近义词, StarDict, LibreTranslate 等
+- 支持多种翻译引擎，比如 Bing, Google, DeepL, 有道词典/近义词, StarDict, LibreTranslate，也支持 LLM 引擎比如 ChatGPT, DeepSeek 等
 - 丰富的渲染方式，可以渲染到 Buffer, Posframe, Overlay, Kill Ring 等。支持流式渲染
 - 可以灵活获取需要翻译的内容和语言，内置的 Taker 有丰富的选项适配不同场景
 - 支持单词翻译，也支持句子翻译，并支持多段落翻译。可同时使用多个引擎，将多个段落，翻译为多种语言
@@ -409,17 +409,27 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 
 *** gt-chatgpt-engine
 
-ChatGPT 需要 apikey 才能正常使用:
-#+begin_src emacs-lisp
-  ;; 提供 apikey 有很多方式
-  (setq gt-chatgpt-key "YOUR-KEY")
-  (gt-chatgpt-engine :key "YOUR_KEY")
-  (find-file "~/.authinfo") ; machine api.openai.com login apikey password [YOUR_KEY]
+它不仅支持 ChatGPT，也支持兼容 OpenAI API 的其他 AI 模型。只需要配置好 url endpoint 和 API key 即可使用。
 
-  ;; 其他配置
+首先，必须要配置 API key，可以使用下面任一方式:
+#+begin_src emacs-lisp
+  (gt-chatgpt-engine :key "YOUR_KEY")  ; 引擎定义中指定
+  (setq gt-chatgpt-key "YOUR-KEY")     ; 全局变量中指定
+  (setenv "OPENAI_API_KEY" "YOUR_KEY") ; 添加到环境变量
+
+  ;; 建议添加到 authinfo 文件中，那样会自动读取并使用，更安全可靠
+  (find-file "~/.authinfo") ; machine api.openai.com login apikey password [YOUR_KEY]
+#+end_src
+
+其次，按照需要修改 host/model 等:
+#+begin_src emacs-lisp
   (setq gt-chatgpt-host "YOUR-HOST")
-  (setq gt-chatgpt-model "gpt-3.5-turbo")
-  (setq gt-chatgpt-temperature 0.7)
+  (setq gt-chatgpt-model "gpt-4o-mini")
+  (setq gt-chatgpt-temperature 1)
+  (setq gt-chatgpt-extra-args '((n . 1)))
+
+  ;; or
+  (gt-chatgpt-engine :host :model :extra-args ..)
 #+end_src
 
 可以自定义翻译的 prompt。比如:

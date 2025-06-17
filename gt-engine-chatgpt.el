@@ -42,6 +42,7 @@
    (path        :initarg :path :initform nil)
    (model       :initarg :model :initform nil)
    (temperature :initarg :temperature :initform nil)
+   (extra-args  :initarg :extra-args :initform nil)
    (key         :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
    (parse       :initform (gt-chatgpt-parser))))
 
@@ -68,9 +69,16 @@
   :type 'string
   :group 'go-translate-chatgpt)
 
-(defcustom gt-chatgpt-temperature 0.8
+(defcustom gt-chatgpt-temperature 1
   "Temperature of ChatGPT."
-  :type 'number
+  :type 'natnum
+  :group 'go-translate-chatgpt)
+
+(defcustom gt-chatgpt-extra-args nil
+  "Extra arguments send with completion API.
+
+Example: \\='((n . 1) (max_completion_tokens . 10))"
+  :type 'alist
   :group 'go-translate-chatgpt)
 
 (defcustom gt-chatgpt-system-prompt "You are a translation assistant"
@@ -103,7 +111,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path model temperature stream rate-limit parse) engine
+    (with-slots (host path model temperature extra-args stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
@@ -120,7 +128,8 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                  ((role . user)
                                   (content . ,(if (functionp gt-chatgpt-user-prompt-template)
                                                   (funcall gt-chatgpt-user-prompt-template item tgt)
-                                                (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) item))))]))
+                                                (format gt-chatgpt-user-prompt-template (alist-get tgt gt-lang-codes) item))))])
+                    ,@(or extra-args gt-chatgpt-extra-args))
             :peek (when stream
                     (lambda ()
                       (if (and (> (point) 1) gt-tracking-marker)

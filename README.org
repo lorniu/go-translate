@@ -8,7 +8,7 @@ This is a translation framework on Emacs, with high configurability and extensib
 [[README-zh.org][点击查看《中文版文档》]]
 
 As a translation framework, it offers many advantages:
-- Supports multiple translation engines, including ChatGPT, Bing, Google, DeepL, YoudaoDict, StarDict, LibreTranslate and more.
+- Supports multiple translation engines, including Bing, Google, DeepL, YoudaoDict, StarDict, LibreTranslate, also LLMs like ChatGPT, DeepSeek and so on.
 - Rich rendering components, such as rendering to Buffer, Posframe, Overlay, Kill Ring, and others. With stream output support.
 - Flexible retrieval of content and language for translation, with the help of the built-in Taker component.
 - Support for word and sentence translation, as well as translation of multiple paragraphs. It can use multiple engines concurrently to translate multiple paragraphs into multiple languages.
@@ -24,7 +24,7 @@ It's more than just a translation framework.It's flexible, and can easily be ext
 - [[#basic-usage-as-a-translator][Basic Usage]] | [[#gt-http-backend][Http Client Config (url vs curl, proxy)]]
 - [[#deep-into-core-components][Learn more about core components for advanced config]]
   + ([[#component-gt-taker-for-capturing][Taker]]) [[#gt-taker-with-prompt][gt-taker with prompt]]
-  + ([[#component-gt-engine-for-translatingtransforming][Engine]]) [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
+  + ([[#component-gt-engine-for-translatingtransforming][Engine]]) [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine (OpenAI Compact)]]
   + ([[#component-gt-render-for-rendering][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
   + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (the syntax of :if)]]
 - [[#customization-and-extension-the-framework][Extend the framework for your own requirements as you wish]]
@@ -387,16 +387,29 @@ The =auth-key= can then be set in the following ways:
 
 *** gt-chatgpt-engine
 
-Please obtained the apikey through the official website first.
-#+begin_src emacs-lisp
-  ;; Provide apikey with one of following ways:
-  (setq gt-chatgpt-key "YOUR-KEY")
-  (gt-chatgpt-engine :key "YOUR_KEY")
-  (find-file "~/.authinfo") ; machine api.openai.com login apikey password [YOUR_KEY]
+It not only supports ChatGPT but also other AI models compatible with the OpenAI API.
 
-  ;; Others
-  (setq gt-chatgpt-model "gpt-3.5-turbo")
+You just need to configure the URL endpoint and API key to use it.
+
+Please obtained the apikey and set with one of following ways:
+#+begin_src emacs-lisp
+  (gt-chatgpt-engine :key "YOUR_KEY")  ; in the engine definition
+  (setq gt-chatgpt-key "YOUR-KEY")     ; in the global variable
+  (setenv "OPENAI_API_KEY" "YOUR-KEY") ; in the system enviornment
+
+  ;; recommend to add to authinfo, the key will be auto used
+  (find-file "~/.authinfo") ; machine api.openai.com login apikey password [YOUR_KEY]
+#+end_src
+
+Then change host/model/others if necessary:
+#+begin_src emacs-lisp
+  (setq gt-chatgpt-host "YOUR-HOST")
+  (setq gt-chatgpt-model "gpt-4o-mini")
   (setq gt-chatgpt-temperature 0.7)
+  (setq gt-chatgpt-extra-args '((n . 1)))
+
+  ;; or
+  (gt-chatgpt-engine :host :model :extra-args ..)
 #+end_src
 
 Custom the translation prompt as you wish:
