@@ -1,3 +1,14 @@
+Version 3.1.0
+  - Add dependency `pdd.el` to replace the httpx.el
+  - User's config of http client and proxy should be changed
+  - Use `pdd-task` to refactor implement of some APIs
+  - Rename engine method from `gt-translate` to `gt-execute`
+  - Rename command from `gt-do-translate` to `gt-translate`
+  - Rename command from `gt-do-speak` to `gt-speak`
+  - Rename command from `gt-do-setup` to `gt-setup`
+  - Improve `gt-chatgpt-engine` for more widely usage
+
+
 Version 3.0.10
   - Add new engine `gt-osxdict-engine`, translating with Dictionary.app
 
