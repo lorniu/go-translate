@@ -26,8 +26,8 @@
 
 ;;; Code:
 
-(require 'gt-core)
 (require 'gt-faces)
+(require 'gt-render-buffer)
 
 ;; implements via package Posframe, you should install it before use this
 

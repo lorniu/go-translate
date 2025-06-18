@@ -36,7 +36,7 @@
 
 ;;; Code:
 
-(require 'gt-core)
+(require 'gt-render-buffer)
 
 (defvar gt-text-utilities `(base64 rot13 qrcode speak ,@(secure-hash-algorithms))
   "List of available targets for `gt-text-utility-engine'.")
