@@ -107,6 +107,8 @@
                         (push word gt-fresh-words-last)))))
       (gt-pick-items-by-thing car 'word pred))))
 
+(add-to-list 'gt-taker-pick-things 'fresh-word t)
+
 (provide 'gt-taker-fresh-words)
 
 ;;; gt-taker-fresh-words.el ends here

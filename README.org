@@ -499,7 +499,7 @@ The following is a more general command that performs a certain task on the sele
     (interactive "P")
     (let ((model (or (if arg (completing-read "Model: " my-command-deal-with-text-models)) gt-chatgpt-model)))
       (gt-start (gt-translator
-                 :taker (gt-taker :text nil :pick nil)
+                 :taker (gt-taker :text 'point :pick nil)
                  :engines (gt-chatgpt-engine
                            :cache nil
                            :model model

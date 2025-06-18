@@ -578,7 +578,7 @@ That is: 1) define the translator 2) executable `gt-start'.")
   "Ensure OBJ is non-function and non-symbol.
 If OBJ is a function, call it with ARGS and return the result.
 If OBJ is symbol, return its value."
-  (if (functionp obj) (apply obj args) obj))
+  (if (functionp obj) (pdd-funcall obj args) obj))
 
 (defun gt-functionp (object)
   "Check if OBJECT is a function and not a class."
@@ -1003,7 +1003,7 @@ a to b or a to c if this is nil."
   :type 'boolean
   :group 'go-translate)
 
-(defvar gt-taker-text-things '(word paragraph sentence buffer line page list sexp defun symbol))
+(defvar gt-taker-text-things '(word paragraph sentence buffer line page list sexp defun symbol point))
 
 (defvar gt-taker-pick-things '(word paragraph sentence line list sexp defun page symbol))
 
@@ -1014,6 +1014,8 @@ If the region is activated, take the selection text. Otherwise, if this is a
 symbol, then try to use `thing-at-point' to take the text at point. If this
 is a function then invoke it and use its result as the initial text. Specially
 if this is t, take the text interactively.
+
+Specially, `buffer' as buffer string and `point' as empty string.
 
 The default value is to take current active region or current word at point.
 
@@ -1055,12 +1057,15 @@ a non nil value.
 If this is t, then read and confirm using minibuffer. If this is `buffer' then
 open a new buffer instead to do the stuff.
 
+If this is a function then pass the initial text and target into it and use its
+result as the final prompt.
+
 Notice, the value can be overrided by `prompt' slot in taker of translator. So
 config it for specific translator using slot is effectively."
   :type '(choice (const :tag "Off" nil)
                  (const :tag "With-Minibuffer" t)
                  (const :tag "With-Buffer" buffer)
-                 symbol)
+                 symbol function)
   :group 'go-translate)
 
 (defcustom gt-lang-rules
@@ -1136,20 +1141,21 @@ specific MODE."
   (unless (member thing gt-taker-text-things)
     (setq thing (intern (completing-read "Take _ at point as source text: " gt-taker-text-things nil t nil 'gt-text-hist))))
   (gt-log 'taker (format "take text by: %s" thing))
-  (if (eq thing 'buffer)
-      (let ((beg (save-excursion
-                   (goto-char (point-min))
-                   (skip-chars-forward " \t\n")
-                   (beginning-of-line)
-                   (point)))
-            (end (save-excursion
-                   (goto-char (point-max))
-                   (skip-chars-backward " \t\n")
-                   (point))))
-        (when (> end beg)
-          (list (cons beg end))))
-    (when-let* ((rt (bounds-of-thing-at-point thing)))
-      (list rt))))
+  (pcase thing
+    ('buffer
+     (let ((beg (save-excursion
+                  (goto-char (point-min))
+                  (skip-chars-forward " \t\n")
+                  (beginning-of-line)
+                  (point)))
+           (end (save-excursion
+                  (goto-char (point-max))
+                  (skip-chars-backward " \t\n")
+                  (point))))
+       (when (> end beg)
+         (list (cons beg end)))))
+    ('point (list (cons (point) (point))))
+    (_ (when-let* ((rt (bounds-of-thing-at-point thing))) (list rt)))))
 
 (cl-defgeneric gt-forward-thing (thing _mode)
   "Get bound of THING after point and goto the end of THING.
@@ -1271,7 +1277,9 @@ See `gt-taker' for more description."
                (unless target
                  (setf target (gt-target taker translator)))
                ;; 3) prompt
-               (when prompt (gt-prompt taker translator prompt))
+               (when prompt
+                 (gt-prompt taker translator
+                            (gt-ensure-plain prompt text target)))
                (unless text (user-error "No source text found at all"))
                ;; 4) pick
                (unless nopick (gt-pick taker translator)))))
