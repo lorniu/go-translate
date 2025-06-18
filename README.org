@@ -24,9 +24,9 @@ It's more than just a translation framework.It's flexible, and can easily be ext
 - [[#basic-usage-as-a-translator][Basic Usage]] | [[#gt-http-backend][Http Client Config (url vs curl, proxy)]]
 - [[#deep-into-core-components][Learn more about core components for advanced config]]
   + ([[#component-gt-taker-for-capturing][Taker]]) [[#gt-taker-with-prompt][gt-taker with prompt]]
-  + ([[#component-gt-engine-for-translatingtransforming][Engine]]) [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine (OpenAI Compact)]]
+  + ([[#component-gt-engine-for-translatingtransforming][Engine]]) [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
   + ([[#component-gt-render-for-rendering][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
-  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (the syntax of :if)]]
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (the syntax of :if)]] | [[#gt-chatgpt-engine-1][gt-chatgpt-engine for more scenes]]
 - [[#customization-and-extension-the-framework][Extend the framework for your own requirements as you wish]]
 
 ** Installation
@@ -423,21 +423,6 @@ Custom the translation prompt as you wish:
   (gt-chatgpt-engine :prompt "Translate text to %s and return the first word. Text is: \n%s")
 #+end_src
 
-Even can custom the prompt for other tasks. For example, for polish sentence:
-#+begin_src emacs-lisp
-  (defun my-command-polish-using-ChatGPT ()
-    (interactive)
-    (gt-start (gt-translator
-               :engines (gt-chatgpt-engine
-                         :cache nil
-                         :sys-prompt "You are a writer"
-                         :prompt (lambda (_ text)
-                                   (read-string
-                                    "Prompt: "
-                                    (format "Polish the sentence below: %s" text))))
-               :render (gt-insert-render :type 'replace))))
-#+end_src
-
 It support streaming output with some renders. Examples:
 #+begin_src emacs-lisp
   ;; Three engines, one with streaming query, two for normal
@@ -470,6 +455,114 @@ Different LLMs can be used at the same time together:
 
 After all, try text to speech with command =gt-speak=.
 
+*** gt-chatgpt-engine++
+
+The engine =gt-chatgpt-engine= can be used independently of the translation. Based on it, any LLM-related tasks can be achieved.
+
+For example, the following code defines an Emacs command that uses ChatGPT to polish sentences. Simply select the text, invoke the command, and the refined result will replace the original text:
+#+begin_src emacs-lisp
+  (defun my-command-polish-using-ChatGPT ()
+    (interactive)
+    (gt-start (gt-translator
+               :engines (gt-chatgpt-engine
+                         :cache nil
+                         :sys-prompt "You are a writer"
+                         :prompt (lambda (_ text)
+                                   (read-string
+                                    "Prompt: "
+                                    (format "Polish the text:\n\n%s" text))))
+               :render (gt-insert-render :type 'replace))))
+#+end_src
+
+For example, the following command is used to send all the codes of the buffer to the LLM and display the corrected content in a new buffer:
+#+begin_src emacs-lisp
+  (defun my-fix-code-using-ChatGPT ()
+    (interactive)
+    (gt-start (gt-translator
+               :taker (gt-taker :text 'buffer :pick nil)
+               :engines (gt-chatgpt-engine
+                         :cache nil
+                         :prompt (lambda (_ text)
+                                   (concat "Please analyze and fix all the errors in the code:\n\n" text)))
+               :render (gt-buffer-render :buffer-name "*fixup*"))))
+#+end_src
+
+The following is a more general command that performs a certain task on the selected text and places the result in the kill-ring for later use:
+#+begin_src emacs-lisp
+  (defvar my-command-deal-with-text-prompts
+    (list "Polish the text:" "Fix the errors in code:"))
+
+  (defvar my-command-deal-with-text-models
+    (list "gpt-4o-mini" "deepseek-v3" "deepseek-r1"))
+
+  (defun my-command-deal-with-text-using-ai (&optional arg)
+    (interactive "P")
+    (let ((model (or (if arg (completing-read "Model: " my-command-deal-with-text-models)) gt-chatgpt-model)))
+      (gt-start (gt-translator
+                 :taker (gt-taker :text nil :pick nil)
+                 :engines (gt-chatgpt-engine
+                           :cache nil
+                           :model model
+                           :prompt (lambda (_ text)
+                                     (completing-read
+                                      (concat "Prompt" (if model (format " (%s)" model)) ": ")
+                                      (mapcar (lambda (p)
+                                                (concat p "\n\n" text))
+                                              my-command-deal-with-text-prompts)
+                                      nil nil nil 'my-command-deal-with-text-history)))
+                 :render (gt-kill-ring-render :then (gt-render))))))
+#+end_src
+
+The examples above make full use of the built-in taker and renderer of the framework, combining the capabilities of the LLM in a smooth, sleek, and user-friendly manner.
+You can also use your imagination to encapsulate commands that suit your needs in any situation where LLMs are required, using a similar approach.
+
+Additionally, if all you need is the result returned by the LLM and you don't require the involvement of the taker and renderer,
+you can directly call the lower-level =gt-chatgpt-send= to get the interaction results with the LLM and apply them in your own program logic.
+
+For example:
+#+begin_src emacs-lisp
+  ;; single
+  (let* ((rs (gt-chatgpt-send "Which is the biggest lake in the world?" :sync t))
+         (content (let-alist rs (let-alist (aref .choices 0) .message.content))))
+    (message ">>> %s" content))
+
+  ;; multiple
+  (let* ((rs (gt-chatgpt-send '(((role . user)      (content . "Which is the biggest lake in the world?"))
+                                ((role . assistant) (content . "Caspian Sea."))
+                                ((role . user)      (content . "I don't think so.")))
+               :sync t))
+         (content (let-alist rs (let-alist (aref .choices 0) .message.content))))
+    (message ">>> %s" content))
+
+  ;; asynchronous and non-block
+  (pdd-then (gt-chatgpt-send "Which is the biggest lake in the world?")
+    (lambda (rs)
+      (message "> %s" (let-alist rs (let-alist (aref .choices 0) .message.content)))))
+
+  ;; Who is the largest lake in the world? And who is right?
+  (pdd-async
+    ;; answer by ChatGPT and DeepSeek
+    (let* ((q1 "Which is the biggest lake in the world?")
+           (rs (await (gt-chatgpt-send q1 :model "gpt-4o-mini")
+                      (gt-chatgpt-send q1 :model "deepseek-v3")))
+           (c1 (let-alist (car rs)  (let-alist (aref .choices 0) .message.content)))
+           (c2 (let-alist (cadr rs) (let-alist (aref .choices 0) .message.content))))
+      (message ">>> ChatGPT:  %s" c1)
+      (message ">>> DeekSeek: %s" c2)
+      (message ">>> Judging by Gemini...")
+      ;; judge by Gemini
+      (let* ((q2 (concat "For the question'" q1 "', I asked ChatGPT and DeepSeek."
+                         "ChatGPT says: \n\n" c1 "\n\n"
+                         "DeepSeek says: \n\n" c2 "\n\n"
+                         "How do you evaluate the quality of these two answers?"))
+             (rn (await (gt-chatgpt-send q2 :model "gemini-2.5-flash")))
+             (c3 (let-alist rn (let-alist (aref .choices 0) .message.content))))
+        (message ">>> I am Gemini, this is my opinion:\n\n%s" c3))))
+#+end_src
+
+In this way, the LLM interaction capability can be integrated into any program logic.
+This applies not only to ChatGPT but also to DeepSeek and others.
+
 *** gt-buffer-render
 
 Display the translation results with a new buffer. This is a very general way of displaying results.
@@ -477,7 +570,7 @@ Display the translation results with a new buffer. This is a very general way of
 In the result buffer, there are many shortcut keys (overview through =?=), such as:
 - Switch languages via =t=
 - Switch multi-language mode via =T=
-- Clear caches with =C=
+- Clear caches with =c=
 - Refresh via =g=
 - Quit via =q=
 

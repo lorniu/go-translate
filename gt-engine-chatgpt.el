@@ -111,55 +111,76 @@ With two arguments BEG and END, which are the marker bounds of the result.")
          :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
         gt-chatgpt-key (getenv "OPENAI_API_KEY"))))
 
+(cl-defun gt-chatgpt-send (prompt &key sys-prompt url model temperature extra-args key stream sync)
+  (declare (indent 1))
+  (gt-request (or url (concat gt-chatgpt-host gt-chatgpt-path))
+    :sync sync
+    :cache (if pdd-active-cacher 5)
+    :headers `(json (bear ,(encode-coding-string (or key (gt-resolve-key (gt-chatgpt-engine))) 'utf-8)))
+    :data `((model . ,(or model gt-chatgpt-model))
+            (temperature . ,(or temperature gt-chatgpt-temperature))
+            (stream . ,stream)
+            (messages . ,(if (consp prompt)
+                             `[((role . system) (content . ,(or sys-prompt gt-chatgpt-system-prompt)))
+                               ,@prompt]
+                           `[((role . system) (content . ,(or sys-prompt gt-chatgpt-system-prompt)))
+                             ((role . user) (content . ,prompt))]))
+            ,@(or extra-args gt-chatgpt-extra-args))
+    :peek (when (and stream (functionp pdd-peek)) pdd-peek)
+    :done (unless stream #'identity)
+    :max-retry (if stream 0 gt-http-max-retry)))
+
+(cl-defmacro gt-chatgpt-with-stream-buffer ((content finish) &rest args)
+  "Help to parse the stream buffer and output every hunk."
+  (declare (indent 1))
+  (let* ((pos (cl-position :fine args))
+         (args (if pos
+                   (cons (cl-subseq args 0 pos) (cl-subseq args (1+ pos)))
+                 (cons args nil))))
+    `(condition-case err
+         (let (json)
+           (if (and (> (point) 1) gt-tracking-marker)
+               (goto-char gt-tracking-marker)
+             (setq gt-tracking-marker (make-marker))
+             (set-marker gt-tracking-marker (point-min)))
+           (while (and (re-search-forward "^data: +" nil t)
+                       (ignore-errors
+                         (setq json (json-parse-string
+                                     (decode-coding-string (buffer-substring (point) (line-end-position)) 'utf-8)
+                                     :object-type 'alist))))
+             (let* ((content-and-finish (gt-parse parse json))
+                    (,content (car content-and-finish))
+                    (,finish (cadr content-and-finish)))
+               (set-marker gt-tracking-marker (line-end-position))
+               (if (equal ,finish "stop")
+                   ,(if (cdr args)
+                        (cons 'progn (cdr args))
+                      `(progn (message "")
+                              (when gt-chatgpt-streaming-finished-hook
+                                (with-current-buffer (marker-buffer (car markers))
+                                  (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers))))))
+                 ,@(car args)))))
+       (error (unless (string-prefix-p "json" (format "%s" (car err)))
+                (signal (car err) (cdr err)))))))
+
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
     (with-slots (host path model prompt sys-prompt temperature extra-args stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
-            (headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8))))
-            (prompt (or prompt gt-chatgpt-user-prompt-template)))
+            (prompt (or prompt gt-chatgpt-user-prompt-template))
+            (pdd-peek (when stream
+                        (lambda ()
+                          (gt-chatgpt-with-stream-buffer (content finish)
+                            (setf res (concat res content))
+                            (unless (string-blank-p (concat res))
+                              (gt-output (oref task render) task)))))))
         (gt-dolist-concurrency (item text rate-limit)
-          (gt-request url
-            :headers headers
-            :cache (if pdd-active-cacher 5)
-            :data `((model . ,(or model gt-chatgpt-model))
-                    (temperature . ,(or temperature gt-chatgpt-temperature))
-                    (stream . ,stream)
-                    (messages . [((role . system)
-                                  (content . ,(or sys-prompt gt-chatgpt-system-prompt)))
-                                 ((role . user)
-                                  (content . ,(if (functionp prompt)
-                                                  (funcall prompt tgt item)
-                                                (format prompt (alist-get tgt gt-lang-codes) item))))])
-                    ,@(or extra-args gt-chatgpt-extra-args))
-            :peek (when stream
-                    (lambda ()
-                      (if (and (> (point) 1) gt-tracking-marker)
-                          (goto-char gt-tracking-marker)
-                        (setq gt-tracking-marker (make-marker))
-                        (set-marker gt-tracking-marker (point-min)))
-                      (condition-case err
-                          (let (json)
-                            (while (and (re-search-forward "^data: +" nil t)
-                                        (ignore-errors
-                                          (setq json (json-parse-string
-                                                      (decode-coding-string (buffer-substring (point) (line-end-position)) 'utf-8)
-                                                      :object-type 'alist))))
-                              (pcase-let ((`(,content ,finish) (gt-parse parse json)))
-                                (set-marker gt-tracking-marker (line-end-position))
-                                (if (equal finish "stop")
-                                    (progn (message "")
-                                           (when gt-chatgpt-streaming-finished-hook
-                                             (with-current-buffer (marker-buffer (car markers))
-                                               (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers)))))
-                                  (setf res (concat res content))
-                                  (unless (string-blank-p (concat res))
-                                    (gt-output (oref task render) task))))))
-                        (error (unless (string-prefix-p "json" (format "%s" (car err)))
-                                 (signal (car err) (cdr err)))))))
-            :done (unless stream #'identity)
-            :max-retry (if stream 0 gt-http-max-retry)))))))
+          (gt-chatgpt-send (if (functionp prompt) (funcall prompt tgt item)
+                             (format prompt (alist-get tgt gt-lang-codes) item))
+            :url url :model model :temperature temperature :extra-args extra-args
+            :key (gt-resolve-key engine) :sys-prompt sys-prompt :stream stream))))))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) (task gt-task))
   (cl-loop for item in (oref task res)

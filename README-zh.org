@@ -5,9 +5,9 @@
 - [[#基本使用][基本使用]] | [[#gt-http-backend][配置 http 客户端 (url vs curl, proxy)]]
 - [[#更多配置][进一步了解各种组件以及内部机制，从而能够灵活搭配、随心所欲]]
   + ([[#用于捕获输入的-gt-taker-组件][Taker]]) [[#gt-taker][gt-taker]]
-  + ([[#用于翻译转换的-gt-engine-组件][Engine]]) [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine (OpenAI Compact)]]
+  + ([[#用于翻译转换的-gt-engine-组件][Engine]]) [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
   + ([[#用于渲染输出的-gt-render-组件][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
-  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (:if 的语法)]]
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (:if 的语法)]] | [[#gt-chatgpt-engine-1][gt-chatgpt-engine 的更多用法]]
 - [[#定制与扩展][可以对框架和组件进行扩展，从而定制自己需要的功能]]
 
 作为一个翻译框架，它有很多优点:
@@ -443,21 +443,6 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
   (gt-chatgpt-engine :prompt "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s")
 #+end_src
 
-甚至可以基于其它自定义 Prompt，借助 ChatGPT 完成其他任务。比如下面的命令用于润色句子:
-#+begin_src emacs-lisp
-  (defun my-command-polish-using-ChatGPT ()
-    (interactive)
-    (gt-start (gt-translator
-               :engines (gt-chatgpt-engine
-                         :cache nil
-                         :sys-prompt "你是一个优秀的网文写手"
-                         :prompt (lambda (_ text)
-                                   (read-string
-                                    "Prompt: "
-                                    (format "润色句子，要求只返回生成的句子: %s" text))))
-               :render (gt-insert-render :type 'replace))))
-#+end_src
-
 可以通过设置 =:stream t= 让引擎返回流式 (stream) 结果，即内容一点点返回并输出。下面是例子:
 #+begin_src emacs-lisp
   ;; 下面配置了三个引擎，第一个是流式的，另外两个是普通的
@@ -489,6 +474,113 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 #+end_src
 
 另外，可以通过 =gt-speak= 尝试其语音播报。
+
+*** gt-chatgpt-engine++
+
+引擎 =gt-chatgpt-engine= 可以脱离翻译功能使用。基于它，可以定制任何与 LLM 相关的任务。
+
+比如，下面的代码定义了一个 Emacs 命令，用于借助 ChatGPT 润色句子。选中文本，调用命令，润色后的结果将替换原来文字:
+#+begin_src emacs-lisp
+  (defun my-command-polish-using-ChatGPT ()
+    (interactive)
+    (gt-start (gt-translator
+               :engines (gt-chatgpt-engine
+                         :cache nil
+                         :sys-prompt "你是一个优秀的网文写手"
+                         :prompt (lambda (_ text)
+                                   (read-string
+                                    "Prompt: "
+                                    (format "润色句子，要求只返回生成的句子: %s" text))))
+               :render (gt-insert-render :type 'replace))))
+#+end_src
+
+比如，下面一个命令，用于将 buffer 中所有内容发送给 LLM，并使用一个新的 buffer 显示修正的结果:
+#+begin_src emacs-lisp
+  (defun my-fix-code-using-ChatGPT ()
+    (interactive)
+    (gt-start (gt-translator
+               :taker (gt-taker :text 'buffer :pick nil)
+               :engines (gt-chatgpt-engine
+                         :cache nil
+                         :prompt (lambda (_ text)
+                                   (concat "请分析并修复代码中的所有错误:\n\n" text)))
+               :render (gt-buffer-render :buffer-name "*fixup*"))))
+#+end_src
+
+下面是更通用的一个命令，用于对选中文本执行一定任务，并将结果放到 kill-ring 中备用:
+#+begin_src emacs-lisp
+  (defvar my-command-deal-with-text-prompts
+    (list "润色句子，要求只返回生成的句子:"
+          "修改代码中存在的错误:"))
+
+  (defvar my-command-deal-with-text-models
+    (list "gpt-4o-mini" "deepseek-v3" "deepseek-r1"))
+
+  (defun my-command-deal-with-text-using-ai (&optional arg)
+    (interactive "P")
+    (let ((model (or (if arg (completing-read "Model: " my-command-deal-with-text-models)) gt-chatgpt-model)))
+      (gt-start (gt-translator
+                 :taker (gt-taker :text nil :pick nil)
+                 :engines (gt-chatgpt-engine
+                           :cache nil
+                           :model model
+                           :prompt (lambda (_ text)
+                                     (completing-read
+                                      (concat "Prompt" (if model (format " (%s)" model)) ": ")
+                                      (mapcar (lambda (p)
+                                                (concat p "\n\n" text))
+                                              my-command-deal-with-text-prompts)
+                                      nil nil nil 'my-command-deal-with-text-history)))
+                 :render (gt-kill-ring-render :then (gt-render))))))
+#+end_src
+
+上面例子充分利用了框架内置的 taker 和 renderer，并将 LLM 的功能结合其中，流畅丝滑，简洁易用。
+你也可以发挥想象，在任何需要用到 LLM 的地方，通过类似方法封装适合自己的命令。
+
+另外，如果你需要的仅仅是 LLM 返回的结果，而不需要 taker 和 renderer 的介入，那可以直接调用更底层的 =gt-chatgpt-send= 获取与 LLM 交互的结果，并将其运用在你自己的程序逻辑中。
+
+比如:
+#+begin_src emacs-lisp
+  ;; 单次对话
+  (let* ((rs (gt-chatgpt-send "世界上最大的湖泊是哪个?" :sync t))
+         (content (let-alist rs (let-alist (aref .choices 0) .message.content))))
+    (message ">>> %s" content))
+
+  ;; 多次对话
+  (let* ((rs (gt-chatgpt-send '(((role . user)      (content . "世界上最大的湖泊是哪个?"))
+                                ((role . assistant) (content . "世界上最大的湖泊是里海."))
+                                ((role . user)      (content . "我觉得不是。")))
+               :sync t))
+         (content (let-alist rs (let-alist (aref .choices 0) .message.content))))
+    (message ">>> %s" content))
+
+  ;; 异步请求 (默认，非阻塞模式)
+  (pdd-then (gt-chatgpt-send "世界上最大的湖泊是哪个?")
+    (lambda (rs)
+      (message "> %s" (let-alist rs (let-alist (aref .choices 0) .message.content)))))
+
+  ;; 谁是世界上最大的湖泊？谁说的对?
+  (pdd-async
+    ;; answer by ChatGPT and DeepSeek
+    (let* ((q1 "世界上最大的湖泊是哪个?")
+           (rs (await (gt-chatgpt-send q1 :model "gpt-4o-mini")
+                      (gt-chatgpt-send q1 :model "deepseek-v3")))
+           (c1 (let-alist (car rs)  (let-alist (aref .choices 0) .message.content)))
+           (c2 (let-alist (cadr rs) (let-alist (aref .choices 0) .message.content))))
+      (message ">>> ChatGPT:  %s" c1)
+      (message ">>> DeekSeek: %s" c2)
+      (message ">>> Judging by Gemini...")
+      ;; judge by Gemini
+      (let* ((q2 (concat "对于'" q1 "'这个问题，我问了 ChatGPT 和 DeepSeek。"
+                         "ChatGPT 的回答是: \n\n" c1 "\n\n"
+                         "DeepSeek 的回答是: \n\n" c2 "\n\n"
+                         "你怎么评价这两个回答的质量?"))
+             (rn (await (gt-chatgpt-send q2 :model "gemini-2.5-flash")))
+             (c3 (let-alist rn (let-alist (aref .choices 0) .message.content))))
+        (message ">>> 我是 Gemini, 这是我的回答:\n\n%s" c3))))
+#+end_src
+
+通过这种方式，可以将 LLM 交互功能集成到任意程序逻辑中。这不仅适用于 ChatGPT，也适用于 DeepSeek 等。
 
 *** gt-buffer-render
 
