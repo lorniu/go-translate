@@ -46,6 +46,7 @@
    (temperature :initarg :temperature :initform nil)
    (extra-args  :initarg :extra-args :initform nil)
    (key         :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
+   (timeout     :initarg :timeout :initform 60)
    (parse       :initform (gt-chatgpt-parser))))
 
 
@@ -111,7 +112,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
          :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
         gt-chatgpt-key (getenv "OPENAI_API_KEY"))))
 
-(cl-defun gt-chatgpt-send (prompt &key root url model temperature extra-args key stream sync)
+(cl-defun gt-chatgpt-send (prompt &key root url model temperature extra-args key stream timeout sync)
   (declare (indent 1))
   (gt-request (or url (concat gt-chatgpt-host gt-chatgpt-path))
     :sync sync
@@ -128,6 +129,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
             ,@(or extra-args gt-chatgpt-extra-args))
     :peek (when (and stream (functionp pdd-peek)) pdd-peek)
     :done (unless stream #'identity)
+    :timeout timeout
     :max-retry (if stream 0 gt-http-max-retry)))
 
 (cl-defmacro gt-chatgpt-with-stream-buffer ((content finish) &rest args)
@@ -165,7 +167,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path model prompt root temperature extra-args stream rate-limit parse) engine
+    (with-slots (host path model prompt root temperature extra-args timeout stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
@@ -182,7 +184,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                              (let ((s (string-replace "{{lang}}" (alist-get tgt gt-lang-codes) prompt)))
                                (string-replace "{{text}}" item s)))
             :url url :model model :temperature temperature :extra-args extra-args
-            :key (gt-resolve-key engine) :root root :stream stream))))))
+            :key (gt-resolve-key engine) :root root :timeout timeout :stream stream))))))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) (task gt-task))
   (cl-loop for item in (oref task res)

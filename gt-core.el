@@ -403,6 +403,11 @@ If this is literally symbol, see `gt-valid-literally' for details."))
     :initform nil
     :type (or function null)
     :documentation "If this is not nil, then will override the default output logic.")
+   (init
+    :initarg :init
+    :initform nil
+    :type (or function null)
+    :documentation "Extra initialize configs for render.")
    (then
     :initarg :then
     :initform nil
@@ -1278,8 +1283,9 @@ See `gt-taker' for more description."
                  (setf target (gt-target taker translator)))
                ;; 3) prompt
                (when prompt
-                 (gt-prompt taker translator
-                            (gt-ensure-plain prompt text target)))
+                 (if (functionp prompt)
+                     (funcall prompt translator)
+                   (gt-prompt taker translator prompt)))
                (unless text (user-error "No source text found at all"))
                ;; 4) pick
                (unless nopick (gt-pick taker translator)))))

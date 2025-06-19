@@ -482,7 +482,7 @@ For example, the following command is used to send all the codes of the buffer t
                          :cache nil
                          :prompt (lambda (text)
                                    (concat "Analyze and fix errors in the code:\n\n" text)))
-               :render (gt-buffer-render :buffer-name "*fixup*"))))
+               :render (gt-buffer-render :name "*fixup*"))))
 #+end_src
 
 The following is a more general command that performs a certain task on the selected text and places the result in the kill-ring for later use:
@@ -576,10 +576,10 @@ Alternatively, play speech via =y= (command =gt-speak=). If the active region ex
 speak current selection content. TTS requires that the engine have implemented =gt-speech= method.
 Command =gt-speak= can use anywhere else, then it will try to speak text via TTS service of system.
 
-You can set the buffer window through =buffer-name/window-config/split-threshold=:
+You can set the buffer window through =name/window-config/split-threshold=:
 #+begin_src emacs-lisp
   (gt-translator :render (gt-buffer-render
-                          :buffer-name "abc"
+                          :name "abc"
                           :window-config '((display-buffer-at-bottom))
                           :then (lambda () (pop-to-buffer "abc"))))
 #+end_src

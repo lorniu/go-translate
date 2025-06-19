@@ -30,9 +30,12 @@
 (require 'gt-faces)
 
 (defclass gt-buffer-render (gt-render)
-  ((buffer-name     :initarg :buffer-name     :initform nil)
+  ((name            :initarg :name            :initform nil)
+   (mode            :initarg :mode            :initform nil)
    (window-config   :initarg :window-config   :initform nil)
-   (split-threshold :initarg :split-threshold :initform nil))
+   (split-threshold :initarg :split-threshold :initform nil)
+   (dislike-header  :initarg :dislike-header  :initform nil)
+   (dislike-source  :initarg :dislike-source  :initform nil))
   "Popup a new buffer to display the translation result.")
 
 (defcustom gt-buffer-render-follow-p nil
@@ -159,8 +162,6 @@ Notice, this can be overrided by `window-config' slot of render instance."
   (interactive)
   (mapc (lambda (ov) (delete-overlay ov)) (overlays-at (point))))
 
-(defvar gt-buffer-render-dislike-source-text nil)
-
 (defvar gt-buffer-render-source-text-limit 140
   "Fold some of the source text if it's too long.
 This can be a number as visible length or a function with source text
@@ -209,55 +210,59 @@ If FOLD non nil, only make part of the text visible."
 (defun gt-buffer-render-init (buffer render translator)
   "Init BUFFER for RENDER of TRANSLATOR."
   (with-slots (text tasks engines) translator
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t)
-            (entries (gt-extract-data render translator)))
-        ;; setup
-        (deactivate-mark)
-        (font-lock-mode 1)
-        (setq-local cursor-type 'hbar)
-        (setq-local cursor-in-non-selected-windows nil)
-        (setq-local gt-buffer-render-translator translator)
-        (mapc (lambda (m) (set-marker m nil nil)) gt-buffer-render-markers)
-        (setq-local gt-buffer-render-markers nil)
-        (erase-buffer)
-        ;; headline
-        (let ((engines (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))))
-          (gt-header render translator (unless (cdr engines) (gt-tag (car engines)))))
-        ;; content
-        (newline)
-        (save-excursion
-          (unless (or gt-buffer-render-dislike-source-text (cdr text)) ;; single part, single task
-            (pcase-let ((`(,beg . ,end) (gt-buffer-insert-source-text (car text))))
-              (put-text-property beg end 'gt-task (car tasks))))
-          (cl-loop for c in text for i from 0
-                   if (cdr text) do (gt-buffer-insert-source-text c) ; multi parts
-                   do (cl-loop for entry in entries for j from 0
-                               for stream = (plist-get entry :stream)
-                               for res = (propertize "Loading..."
-                                                     'face 'gt-buffer-render-loading-face
-                                                     'gt-result (if stream 'stream t))
-                               for (prefix task) = (list (plist-get entry :prefix) (plist-get entry :task))
-                               for output = (propertize (concat prefix res "\n\n") 'gt-task task 'gt-part i)
-                               do (let ((engine (oref task engine)))
-                                    (if (and (oref engine stream) (= i 0)) ; record result bound for stream
-                                        (let ((beg (point)) end)
-                                          (insert output)
-                                          (setq beg (set-marker (make-marker) (+ beg (length prefix))))
-                                          (setq end (set-marker (make-marker) (save-excursion (skip-chars-backward " \t\n") (point))))
-                                          (push beg gt-buffer-render-markers)
-                                          (push end gt-buffer-render-markers)
-                                          (oset task markers (cons beg end)))
-                                      (insert output)))))))
-      ;; keybinds
-      (setq gt-buffer-render-local-map (make-sparse-keymap))
-      (use-local-map gt-buffer-render-local-map)
-      (gt-keybinds render translator)
-      ;; state
-      (read-only-mode 1)
-      (if-let* ((w (get-buffer-window nil t))) (set-window-point w  (point)))
-      ;; execute the hook if exists
-      (run-hooks 'gt-buffer-render-init-hook))))
+    (with-slots (init mode dislike-header dislike-source) render
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t)
+              (entries (gt-extract-data render translator)))
+          ;; setup
+          (deactivate-mark)
+          (font-lock-mode 1)
+          (setq-local cursor-type 'hbar)
+          (setq-local cursor-in-non-selected-windows nil)
+          (setq-local gt-buffer-render-translator translator)
+          (mapc (lambda (m) (set-marker m nil nil)) gt-buffer-render-markers)
+          (setq-local gt-buffer-render-markers nil)
+          (erase-buffer)
+          ;; headline
+          (unless dislike-header
+            (let ((engines (cl-delete-duplicates (mapcar (lambda (task) (oref task engine)) tasks))))
+              (gt-header render translator (unless (cdr engines) (gt-tag (car engines))))))
+          ;; content
+          (newline)
+          (save-excursion
+            (unless (or dislike-source (cdr text)) ;; single part, single task
+              (pcase-let ((`(,beg . ,end) (gt-buffer-insert-source-text (car text))))
+                (put-text-property beg end 'gt-task (car tasks))))
+            (cl-loop for c in text for i from 0
+                     if (cdr text) do (gt-buffer-insert-source-text c) ; multi parts
+                     do (cl-loop for entry in entries for j from 0
+                                 for stream = (plist-get entry :stream)
+                                 for res = (propertize "Loading..."
+                                                       'face 'gt-buffer-render-loading-face
+                                                       'gt-result (if stream 'stream t))
+                                 for (prefix task) = (list (plist-get entry :prefix) (plist-get entry :task))
+                                 for output = (propertize (concat prefix res "\n\n") 'gt-task task 'gt-part i)
+                                 do (let ((engine (oref task engine)))
+                                      (if (and (oref engine stream) (= i 0)) ; record result bound for stream
+                                          (let ((beg (point)) end)
+                                            (insert output)
+                                            (setq beg (set-marker (make-marker) (+ beg (length prefix))))
+                                            (setq end (set-marker (make-marker) (save-excursion (skip-chars-backward " \t\n") (point))))
+                                            (push beg gt-buffer-render-markers)
+                                            (push end gt-buffer-render-markers)
+                                            (oset task markers (cons beg end)))
+                                        (insert output)))))))
+        ;; major-mode & keybinds
+        (if mode (funcall mode))
+        (setq gt-buffer-render-local-map (make-sparse-keymap))
+        (use-local-map gt-buffer-render-local-map)
+        (gt-keybinds render translator)
+        ;; init & state
+        (if (functionp init) (pdd-funcall init (list translator)))
+        (read-only-mode 1)
+        (if-let* ((w (get-buffer-window nil t))) (set-window-point w (point)))
+        ;; execute the hook if exists
+        (run-hooks 'gt-buffer-render-init-hook)))))
 
 (defun gt-buffer-render-output (buffer render translator)
   "Output TRANSLATOR's result to BUFFER for RENDER."
@@ -332,7 +337,7 @@ TAG is extra message show in the middle if not nil."
   (gt-buffer-render-key ("j")                     #'next-line)
   (gt-buffer-render-key ("k")                     #'previous-line)
   (gt-buffer-render-key ("l")                     #'forward-char)
-  (gt-buffer-render-key ("q" "Quit")              #'kill-buffer-and-window)
+  (gt-buffer-render-key ("q" "Quit")              #'delete-window)
   (gt-buffer-render-key ("C-g")                   #'gt-buffer-render--keyboard-quit)
   (gt-buffer-render-key ("C-x C-q")               #'gt-buffer-render--toggle-readonly)
   (gt-buffer-render-key ("?")                     #'gt-buffer-render--show-tips))
@@ -352,15 +357,15 @@ TAG is extra message show in the middle if not nil."
            collect entry))
 
 (cl-defmethod gt-init ((render gt-buffer-render) translator)
-  (with-slots (buffer-name split-threshold window-config) render
-    (let ((buf (get-buffer-create (or buffer-name gt-buffer-render-buffer-name)))
+  (with-slots (name split-threshold window-config init) render
+    (let ((buf (get-buffer-create (or name gt-buffer-render-buffer-name)))
           (split-width-threshold (or split-threshold gt-buffer-render-split-width-threshold split-width-threshold)))
       (gt-buffer-render-init buf render translator)
       (display-buffer buf (or window-config gt-buffer-render-window-config))
       (redisplay t))))
 
 (cl-defmethod gt-output ((render gt-buffer-render) (translator gt-translator))
-  (when-let* ((buf (get-buffer (or (oref render buffer-name) gt-buffer-render-buffer-name))))
+  (when-let* ((buf (get-buffer (or (oref render name) gt-buffer-render-buffer-name))))
     (gt-buffer-render-output buf render translator)
     (when (= (oref translator state) 3)
       (if gt-buffer-render-follow-p

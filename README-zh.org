@@ -501,7 +501,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                :engines (gt-chatgpt-engine
                          :cache nil
                          :prompt (lambda (text) (concat "分析并修复代码中的错误:\n\n" text)))
-               :render (gt-buffer-render :buffer-name "*fixup*"))))
+               :render (gt-buffer-render :name "*fixup*"))))
 #+end_src
 
 下面是更通用的一个命令，用于对选中文本执行一定任务，并将结果放到 kill-ring 中备用:
@@ -594,10 +594,10 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 这需要这些引擎已经实现了语音播放的功能。另外，在其他任何地方调用 =gt-speak= 命令，将会尝试
 使用操作系统本身的 TTS 功能对当前的文本进行语音播报。
 
-可以通过 =buffer-name/window-config/split-threshold= 等对弹出的窗口进行设定:
+可以通过 =name/window-config/split-threshold= 等对弹出的窗口进行设定:
 #+begin_src emacs-lisp
   (gt-translator :render (gt-buffer-render
-                          :buffer-name "abc"
+                          :name "abc"
                           :window-config '((display-buffer-at-bottom))
                           :then (lambda () (pop-to-buffer "abc"))))
 #+end_src
