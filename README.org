@@ -415,12 +415,12 @@ Then change host/model/others if necessary:
 Custom the translation prompt as you wish:
 #+begin_src emacs-lisp
   (setq gt-chatgpt-user-prompt-template
-        (lambda (lang text)
-          (format "Translate text to %s and return the first word. Text is: \n%s"
+        (lambda (text lang)
+          (format "Translate the text to %s and return the first word:\n\n%s"
                   (alist-get lang gt-lang-codes) text)))
 
   ;; or
-  (gt-chatgpt-engine :prompt "Translate text to %s and return the first word. Text is: \n%s")
+  (gt-chatgpt-engine :prompt "Translate the text to {{lang}} and return the first word:\n\n{{text}}")
 #+end_src
 
 It support streaming output with some renders. Examples:
@@ -449,7 +449,7 @@ Different LLMs can be used at the same time together:
                        (list (gt-chatgpt-engine :model "gpt-4o-mini")
                              (gt-chatgpt-engine :model "deepseek-v3")
                              (gt-chatgpt-engine :model "deepseek-r1" :stream t
-                                                :prompt "Translate text to %s and return the first word. Text is: \n%s"))
+                                                :prompt "Translate the text to {{lang}} and return the first word:\n\n{{text}}"))
                        :render (gt-buffer-render)))
 #+end_src
 
@@ -466,11 +466,9 @@ For example, the following code defines an Emacs command that uses ChatGPT to po
     (gt-start (gt-translator
                :engines (gt-chatgpt-engine
                          :cache nil
-                         :sys-prompt "You are a writer"
-                         :prompt (lambda (_ text)
-                                   (read-string
-                                    "Prompt: "
-                                    (format "Polish the text:\n\n%s" text))))
+                         :root "You are a writer"
+                         :prompt (lambda (text)
+                                   (read-string "Prompt: " (format "Polish text:\n\n%s" text))))
                :render (gt-insert-render :type 'replace))))
 #+end_src
 
@@ -482,8 +480,8 @@ For example, the following command is used to send all the codes of the buffer t
                :taker (gt-taker :text 'buffer :pick nil)
                :engines (gt-chatgpt-engine
                          :cache nil
-                         :prompt (lambda (_ text)
-                                   (concat "Please analyze and fix all the errors in the code:\n\n" text)))
+                         :prompt (lambda (text)
+                                   (concat "Analyze and fix errors in the code:\n\n" text)))
                :render (gt-buffer-render :buffer-name "*fixup*"))))
 #+end_src
 
@@ -503,7 +501,7 @@ The following is a more general command that performs a certain task on the sele
                  :engines (gt-chatgpt-engine
                            :cache nil
                            :model model
-                           :prompt (lambda (_ text)
+                           :prompt (lambda (text)
                                      (completing-read
                                       (concat "Prompt" (if model (format " (%s)" model)) ": ")
                                       (mapcar (lambda (p)
@@ -583,7 +581,7 @@ You can set the buffer window through =buffer-name/window-config/split-threshold
   (gt-translator :render (gt-buffer-render
                           :buffer-name "abc"
                           :window-config '((display-buffer-at-bottom))
-                          :then (lambda (_) (pop-to-buffer "abc"))))
+                          :then (lambda () (pop-to-buffer "abc"))))
 #+end_src
 
 Here are some usage examples:
@@ -799,7 +797,7 @@ One simple config example:
                         (gt-deepl-engine :if 'no-word))
          :render  (list (gt-posframe-pop-render :if 'selection)
                         (gt-overlay-render :if 'read-only)
-                        (gt-insert-render :if (lambda (translator) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-insert-render :if (lambda () (member (buffer-name) '("COMMIT_EDITMSG"))))
                         (gt-alert-render :if '(and xxx-mode (or not-selection (and read-only parts))))
                         (gt-buffer-render))))
 #+end_src

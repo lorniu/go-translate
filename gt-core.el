@@ -1015,7 +1015,7 @@ symbol, then try to use `thing-at-point' to take the text at point. If this
 is a function then invoke it and use its result as the initial text. Specially
 if this is t, take the text interactively.
 
-Specially, `buffer' as buffer string and `point' as empty string.
+Specially, `buffer' as buffer string and `point' as empty string at point.
 
 The default value is to take current active region or current word at point.
 
@@ -1289,7 +1289,7 @@ See `gt-taker' for more description."
                (user-error "Source Text should not be null"))
              (with-slots (then) taker ; if `then' slot exists
                (when (and (slot-boundp taker 'then) then (gt-functionp then))
-                 (funcall then translator))))))
+                 (pdd-funcall then (list translator)))))))
 
 (cl-defgeneric gt-text (_taker translator)
   "Used to take initial text for TRANSLATOR.
@@ -1300,7 +1300,7 @@ Return text, text list or bounds in buffer. This is non-destructive."
                            (oref taker text)
                          gt-taker-text)))
              (cond ((symbolp text) (gt-thing-at-point text major-mode))
-                   ((gt-functionp text) (funcall text))
+                   ((gt-functionp text) (pdd-funcall text (list translator)))
                    (t text)))))
 
 (cl-defgeneric gt-target (_taker translator &optional dir)
@@ -1394,7 +1394,7 @@ If BACKWARDP is not nil then switch to previous one."
                        (pick (if (slot-boundp taker 'pick) (oref taker pick) gt-taker-pick))
                        (res (ensure-list
                              (cond
-                              ((gt-functionp pick) (funcall pick car))
+                              ((gt-functionp pick) (pdd-funcall pick (list car translator)))
                               ((memq pick gt-taker-pick-things)
                                (gt-pick-items-by-thing car pick (oref taker pick-pred)))
                               ((symbolp pick) (gt-pick pick translator))))))
@@ -1444,7 +1444,7 @@ If SKIP-PARSE is t, return the raw results directly."
                            (slot-boundp engine 'cache)
                            (setq cache-pred (oref engine cache))
                            (if (functionp cache-pred)
-                               (funcall cache-pred task)
+                               (pdd-funcall cache-pred (list task))
                              (gt-valid-literally cache-pred
                                                  (cl-reduce
                                                   (lambda (longest-so-far current-string)
@@ -1471,7 +1471,7 @@ If SKIP-PARSE is t, return the raw results directly."
                           (unless skip-parse
                             (when-let* ((parser (and (slot-boundp engine 'parse) parse)))
                               (if (gt-functionp parser)
-                                  (funcall parser task)
+                                  (pdd-funcall parser (list task))
                                 (gt-parse parser task))))
                           ;; split with delimiter if possible
                           (when delimiter
@@ -1485,7 +1485,7 @@ If SKIP-PARSE is t, return the raw results directly."
                           (user-error "No translate result found"))
                         ;; invoke then when it is exists
                         (if (and (slot-boundp engine 'then) then (gt-functionp then))
-                            (funcall then task)
+                            (pdd-funcall then (list task))
                           task)))))))))))
 
 (cl-defmethod gt-finalize ((engine gt-engine) task)
@@ -1547,12 +1547,12 @@ When output a task, hint that this is for a stream request.")
         ;; error handler & functionp case
         (condition-case err
             (if (gt-functionp output)
-                (funcall output render translator)
+                (pdd-funcall output (list (oref translator tasks) translator))
               (cl-call-next-method render translator)
               ;; chain next render if possible
               (when (and (= state 3) then)
                 (cond ((gt-functionp then)
-                       (funcall then translator))
+                       (pdd-funcall then (list translator)))
                       ((and (eieio-object-p then) (object-of-class-p then 'gt-render))
                        (gt-init then translator)
                        (gt-output then translator))
@@ -1599,7 +1599,7 @@ When output a task, hint that this is for a stream request.")
                                 (when prefix
                                   ;; custom prefix with :prefix slot
                                   (if (gt-functionp prefix)
-                                      (funcall prefix task)
+                                      (pdd-funcall prefix (list task))
                                     (format "%s" prefix)))
                               (when (or (cdr tgts) (cdr engines))
                                 ;; style as: en.Google.Detail

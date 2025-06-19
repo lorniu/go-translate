@@ -41,8 +41,8 @@
   ((host        :initarg :host :initform nil)
    (path        :initarg :path :initform nil)
    (model       :initarg :model :initform nil)
+   (root        :initarg :root :initform nil) ; gt-chatgpt-system-prompt
    (prompt      :initarg :prompt :initform nil) ; gt-chatgpt-user-prompt-template
-   (sys-prompt  :initarg :sys-prompt :initform nil) ; gt-chatgpt-system-prompt
    (temperature :initarg :temperature :initform nil)
    (extra-args  :initarg :extra-args :initform nil)
    (key         :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
@@ -88,9 +88,9 @@ Example: \\='((n . 1) (max_completion_tokens . 10))"
   :type 'string
   :group 'go-translate-chatgpt)
 
-(defcustom gt-chatgpt-user-prompt-template "Translate the text to %s, and only return the translate result without any markers. The text is: \n%s"
+(defcustom gt-chatgpt-user-prompt-template "Translate the text to {{lang}}, and only return the translate result without any markers. The text is: \n{{text}}"
   "Template for user prompt when translation.
-When it is string, %s is placeholders of lang and text.
+When it is string, {{lang}} and {{text}} is placeholders of lang and text.
 When it is function, arguments passed to it should be text and lang."
   :type '(choice string function)
   :group 'go-translate-chatgpt)
@@ -111,7 +111,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
          :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
         gt-chatgpt-key (getenv "OPENAI_API_KEY"))))
 
-(cl-defun gt-chatgpt-send (prompt &key sys-prompt url model temperature extra-args key stream sync)
+(cl-defun gt-chatgpt-send (prompt &key root url model temperature extra-args key stream sync)
   (declare (indent 1))
   (gt-request (or url (concat gt-chatgpt-host gt-chatgpt-path))
     :sync sync
@@ -121,9 +121,9 @@ With two arguments BEG and END, which are the marker bounds of the result.")
             (temperature . ,(or temperature gt-chatgpt-temperature))
             (stream . ,stream)
             (messages . ,(if (consp prompt)
-                             `[((role . system) (content . ,(or sys-prompt gt-chatgpt-system-prompt)))
+                             `[((role . system) (content . ,(or root gt-chatgpt-system-prompt)))
                                ,@prompt]
-                           `[((role . system) (content . ,(or sys-prompt gt-chatgpt-system-prompt)))
+                           `[((role . system) (content . ,(or root gt-chatgpt-system-prompt)))
                              ((role . user) (content . ,prompt))]))
             ,@(or extra-args gt-chatgpt-extra-args))
     :peek (when (and stream (functionp pdd-peek)) pdd-peek)
@@ -165,7 +165,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path model prompt sys-prompt temperature extra-args stream rate-limit parse) engine
+    (with-slots (host path model prompt root temperature extra-args stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
@@ -177,10 +177,12 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                             (unless (string-blank-p (concat res))
                               (gt-output (oref task render) task)))))))
         (gt-dolist-concurrency (item text rate-limit)
-          (gt-chatgpt-send (if (functionp prompt) (funcall prompt tgt item)
-                             (format prompt (alist-get tgt gt-lang-codes) item))
+          (gt-chatgpt-send (if (functionp prompt)
+                               (pdd-funcall prompt (list item tgt))
+                             (let ((s (string-replace "{{lang}}" (alist-get tgt gt-lang-codes) prompt)))
+                               (string-replace "{{text}}" item s)))
             :url url :model model :temperature temperature :extra-args extra-args
-            :key (gt-resolve-key engine) :sys-prompt sys-prompt :stream stream))))))
+            :key (gt-resolve-key engine) :root root :stream stream))))))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) (task gt-task))
   (cl-loop for item in (oref task res)

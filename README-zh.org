@@ -435,12 +435,12 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 可以自定义翻译的 prompt。比如:
 #+begin_src emacs-lisp
   (setq gt-chatgpt-user-prompt-template
-        (lambda (lang text)
-          (format "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s"
+        (lambda (text lang)
+          (format "将下面文本翻译成 %s，措辞要夸张些:\n\n%s"
                   (alist-get lang gt-lang-codes) text)))
 
   ;; or
-  (gt-chatgpt-engine :prompt "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s")
+  (gt-chatgpt-engine :prompt "将下面文本翻译成 {{lang}}，措辞要夸张些:\n\n{{text}}")
 #+end_src
 
 可以通过设置 =:stream t= 让引擎返回流式 (stream) 结果，即内容一点点返回并输出。下面是例子:
@@ -469,7 +469,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                        (list (gt-chatgpt-engine :model "gpt-4o-mini")
                              (gt-chatgpt-engine :model "deepseek-v3")
                              (gt-chatgpt-engine :model "deepseek-r1" :stream t
-                                                :prompt "将文本翻译成 %s 然后将结果复制3份返回。文本如下: \n%s"))
+                                                :prompt "将下面文本翻译成 {{lang}}，措辞要夸张些:\n\n{{text}}"))
                        :render (gt-buffer-render)))
 #+end_src
 
@@ -486,11 +486,9 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
     (gt-start (gt-translator
                :engines (gt-chatgpt-engine
                          :cache nil
-                         :sys-prompt "你是一个优秀的网文写手"
-                         :prompt (lambda (_ text)
-                                   (read-string
-                                    "Prompt: "
-                                    (format "润色句子，要求只返回生成的句子: %s" text))))
+                         :root "你是一个优秀的作家"
+                         :prompt (lambda (text)
+                                   (read-string "Prompt: " (format "润色句子:\n\n%s" text))))
                :render (gt-insert-render :type 'replace))))
 #+end_src
 
@@ -502,8 +500,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                :taker (gt-taker :text 'buffer :pick nil)
                :engines (gt-chatgpt-engine
                          :cache nil
-                         :prompt (lambda (_ text)
-                                   (concat "请分析并修复代码中的所有错误:\n\n" text)))
+                         :prompt (lambda (text) (concat "分析并修复代码中的错误:\n\n" text)))
                :render (gt-buffer-render :buffer-name "*fixup*"))))
 #+end_src
 
@@ -524,7 +521,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                  :engines (gt-chatgpt-engine
                            :cache nil
                            :model model
-                           :prompt (lambda (_ text)
+                           :prompt (lambda (text)
                                      (completing-read
                                       (concat "Prompt" (if model (format " (%s)" model)) ": ")
                                       (mapcar (lambda (p)
@@ -589,7 +586,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 在弹出的 buffer 中，存在若干快捷键 (可以通过 =?= 获取到相关提示)，比如:
 - 通过 =t= 切换语言
 - 通过 =T= 切换多语言模式
-- 通过 =C= 清除缓存
+- 通过 =c= 清除缓存
 - 通过 =g= 刷新
 - 通过 =q= 退出
 
@@ -602,7 +599,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
   (gt-translator :render (gt-buffer-render
                           :buffer-name "abc"
                           :window-config '((display-buffer-at-bottom))
-                          :then (lambda (_) (pop-to-buffer "abc"))))
+                          :then (lambda () (pop-to-buffer "abc"))))
 #+end_src
 
 下面是若干使用示例:
@@ -826,7 +823,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                         (gt-deepl-engine :if 'no-word))
          :render  (list (gt-posframe-pop-render :if 'selection)
                         (gt-overlay-render :if 'read-only)
-                        (gt-insert-render :if (lambda (translator) (member (buffer-name) '("COMMIT_EDITMSG"))))
+                        (gt-insert-render :if (lambda () (member (buffer-name) '("COMMIT_EDITMSG"))))
                         (gt-alert-render :if '(and xxx-mode (or not-selection (and read-only parts))))
                         (gt-buffer-render))))
 #+end_src
