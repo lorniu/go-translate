@@ -504,31 +504,67 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                :render (gt-buffer-render :name "*fixup*"))))
 #+end_src
 
-下面是更通用的一个命令，用于对选中文本执行一定任务，并将结果放到 kill-ring 中备用:
+下面是一个更实用更通用的命令，对于选中的文本跟指定的模型进行交互。日常使用方便，强烈推荐:
 #+begin_src emacs-lisp
-  (defvar my-command-deal-with-text-prompts
-    (list "润色句子，要求只返回生成的句子:"
-          "修改代码中存在的错误:"))
+  (defvar my-ai-oneshot-prompts
+    (list "优化、润色文本" "请认真分析代码，修复代码存在的错误，并给出建议"))
 
-  (defvar my-command-deal-with-text-models
-    (list "gpt-4o-mini" "deepseek-v3" "deepseek-r1"))
+  (defvar my-ai-oneshot-models
+    (list "deepseek-v3" "gpt-4o-mini" "gemini-2.5-pro"))
 
-  (defun my-command-deal-with-text-using-ai (&optional arg)
-    (interactive "P")
-    (let ((model (or (if arg (completing-read "Model: " my-command-deal-with-text-models)) gt-chatgpt-model)))
-      (gt-start (gt-translator
-                 :taker (gt-taker :text 'point :pick nil)
-                 :engines (gt-chatgpt-engine
-                           :cache nil
-                           :model model
-                           :prompt (lambda (text)
-                                     (completing-read
-                                      (concat "Prompt" (if model (format " (%s)" model)) ": ")
-                                      (mapcar (lambda (p)
-                                                (concat p "\n\n" text))
-                                              my-command-deal-with-text-prompts)
-                                      nil nil nil 'my-command-deal-with-text-history)))
-                 :render (gt-kill-ring-render :then (gt-render))))))
+  (defvar my-ai-oneshot-last-model nil)
+
+  (defvar my-ai-oneshot-history nil)
+
+  (defun my-ai-oneshot ()
+    "Use C-. C-, to switch model."
+    (interactive)
+    (require 'go-translate)
+    (let ((prompt nil)
+          (model (or my-ai-oneshot-last-model
+                     (setq my-ai-oneshot-last-model (or (car my-ai-oneshot-models) gt-chatgpt-model)))))
+      (cl-flet ((get-prompts ()
+                  (cl-delete-duplicates
+                   (append my-ai-oneshot-history my-ai-oneshot-prompts) :from-end t :test #'equal))
+                (change-model (&optional prev)
+                  (let* ((pos (or (cl-position my-ai-oneshot-last-model my-ai-oneshot-models :test #'equal) -1))
+                         (next (if prev (max 0 (1- pos)) (min (1- (length my-ai-oneshot-models)) (1+ pos)))))
+                    (setq my-ai-oneshot-last-model (nth next my-ai-oneshot-models))
+                    (setq model my-ai-oneshot-last-model)
+                    (overlay-put (car (overlays-at 1)) 'after-string my-ai-oneshot-last-model))))
+        (setq prompt
+              (minibuffer-with-setup-hook
+                  (lambda ()
+                    (local-set-key (kbd "C-,") (lambda () (interactive) (change-model)))
+                    (local-set-key (kbd "C-.") (lambda () (interactive) (change-model t)))
+                    (overlay-put (make-overlay 1 9) 'after-string model)
+                    (use-local-map (make-composed-keymap nil (current-local-map))))
+                (completing-read "Prompt (): " (get-prompts) nil nil nil 'my-ai-oneshot-history)))
+        (gt-start (gt-translator
+                   :taker (gt-taker
+                           :text 'point :pick nil
+                           :prompt (lambda (translator)
+                                     (let ((text (car (oref translator text))))
+                                       (oset translator text
+                                             (list (if (string-blank-p text)
+                                                       prompt
+                                                     (let ((str (if (string-blank-p prompt) text
+                                                                  (format "%s\n\n内容如下:\n\n%s\n" prompt text))))
+                                                       (if current-prefix-arg (read-string "Ensure: " str) str))))))
+                                     (message "Processing...")))
+                   :engines (gt-chatgpt-engine
+                             :cache nil
+                             :stream t
+                             :model model
+                             :timeout 300
+                             :prompt #'identity)
+                   :render (gt-buffer-render
+                            :name (format "*ai-oneshot-%s*" model)
+                            :mode 'markdown-mode
+                            :init (lambda () (markdown-toggle-markup-hiding 1))
+                            :dislike-header t
+                            :dislike-source t
+                            :window-config '((display-buffer-below-selected))))))))
 #+end_src
 
 上面例子充分利用了框架内置的 taker 和 renderer，并将 LLM 的功能结合其中，流畅丝滑，简洁易用。

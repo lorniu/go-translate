@@ -1300,7 +1300,7 @@ See `gt-taker' for more description."
 (cl-defgeneric gt-text (_taker translator)
   "Used to take initial text for TRANSLATOR.
 Return text, text list or bounds in buffer. This is non-destructive."
-  (:method ((taker gt-taker) _translator)
+  (:method ((taker gt-taker) translator)
            "Return the text selected by the TAKER."
            (let ((text (if (slot-boundp taker 'text)
                            (oref taker text)

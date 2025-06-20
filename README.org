@@ -485,30 +485,67 @@ For example, the following command is used to send all the codes of the buffer t
                :render (gt-buffer-render :name "*fixup*"))))
 #+end_src
 
-The following is a more general command that performs a certain task on the selected text and places the result in the kill-ring for later use:
+The following is a more general and practical command that performs a certain task on the selected text and output in a buffer. It's useful for daily usage.
 #+begin_src emacs-lisp
-  (defvar my-command-deal-with-text-prompts
-    (list "Polish the text:" "Fix the errors in code:"))
+  (defvar my-ai-oneshot-prompts
+    (list "Polish the text" "Fix the errors in code"))
 
-  (defvar my-command-deal-with-text-models
-    (list "gpt-4o-mini" "deepseek-v3" "deepseek-r1"))
+  (defvar my-ai-oneshot-models
+    (list "deepseek-v3" "gpt-4o-mini" "gemini-2.5-pro"))
 
-  (defun my-command-deal-with-text-using-ai (&optional arg)
-    (interactive "P")
-    (let ((model (or (if arg (completing-read "Model: " my-command-deal-with-text-models)) gt-chatgpt-model)))
-      (gt-start (gt-translator
-                 :taker (gt-taker :text 'point :pick nil)
-                 :engines (gt-chatgpt-engine
-                           :cache nil
-                           :model model
-                           :prompt (lambda (text)
-                                     (completing-read
-                                      (concat "Prompt" (if model (format " (%s)" model)) ": ")
-                                      (mapcar (lambda (p)
-                                                (concat p "\n\n" text))
-                                              my-command-deal-with-text-prompts)
-                                      nil nil nil 'my-command-deal-with-text-history)))
-                 :render (gt-kill-ring-render :then (gt-render))))))
+  (defvar my-ai-oneshot-last-model nil)
+
+  (defvar my-ai-oneshot-history nil)
+
+  (defun my-ai-oneshot ()
+    "Use C-. C-, to switch model."
+    (interactive)
+    (require 'go-translate)
+    (let ((prompt nil)
+          (model (or my-ai-oneshot-last-model
+                     (setq my-ai-oneshot-last-model (or (car my-ai-oneshot-models) gt-chatgpt-model)))))
+      (cl-flet ((get-prompts ()
+                  (cl-delete-duplicates
+                   (append my-ai-oneshot-history my-ai-oneshot-prompts) :from-end t :test #'equal))
+                (change-model (&optional prev)
+                  (let* ((pos (or (cl-position my-ai-oneshot-last-model my-ai-oneshot-models :test #'equal) -1))
+                         (next (if prev (max 0 (1- pos)) (min (1- (length my-ai-oneshot-models)) (1+ pos)))))
+                    (setq my-ai-oneshot-last-model (nth next my-ai-oneshot-models))
+                    (setq model my-ai-oneshot-last-model)
+                    (overlay-put (car (overlays-at 1)) 'after-string my-ai-oneshot-last-model))))
+        (setq prompt
+              (minibuffer-with-setup-hook
+                  (lambda ()
+                    (local-set-key (kbd "C-,") (lambda () (interactive) (change-model)))
+                    (local-set-key (kbd "C-.") (lambda () (interactive) (change-model t)))
+                    (overlay-put (make-overlay 1 9) 'after-string model)
+                    (use-local-map (make-composed-keymap nil (current-local-map))))
+                (completing-read "Prompt (): " (get-prompts) nil nil nil 'my-ai-oneshot-history)))
+        (gt-start (gt-translator
+                   :taker (gt-taker
+                           :text 'point :pick nil
+                           :prompt (lambda (translator)
+                                     (let ((text (car (oref translator text))))
+                                       (oset translator text
+                                             (list (if (string-blank-p text)
+                                                       prompt
+                                                     (let ((str (if (string-blank-p prompt) text
+                                                                  (format "%s\n\nText:\n\n%s\n" prompt text))))
+                                                       (if current-prefix-arg (read-string "Ensure: " str) str))))))
+                                     (message "Processing...")))
+                   :engines (gt-chatgpt-engine
+                             :cache nil
+                             :stream t
+                             :model model
+                             :timeout 300
+                             :prompt #'identity)
+                   :render (gt-buffer-render
+                            :name (format "*ai-oneshot-%s*" model)
+                            :mode 'markdown-mode
+                            :init (lambda () (markdown-toggle-markup-hiding 1))
+                            :dislike-header t
+                            :dislike-source t
+                            :window-config '((display-buffer-below-selected))))))))
 #+end_src
 
 The examples above make full use of the built-in taker and renderer of the framework, combining the capabilities of the LLM in a smooth, sleek, and user-friendly manner.
