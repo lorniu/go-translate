@@ -133,12 +133,17 @@ With two arguments BEG and END, which are the marker bounds of the result.")
     :max-retry (if stream 0 gt-http-max-retry)))
 
 (cl-defmacro gt-chatgpt-with-stream-buffer ((content finish) &rest args)
-  "Help to parse the stream buffer and output every hunk."
+  "Help to parse the stream buffer and output every hunk.
+
+(gt-chatgpt-with-stream-buffer (c f) (xxx) :finish (yyy) t)"
   (declare (indent 1))
-  (let* ((pos (cl-position :fine args))
+  (let* ((pos (cl-position :finish args))
          (args (if pos
                    (cons (cl-subseq args 0 pos) (cl-subseq args (1+ pos)))
-                 (cons args nil))))
+                 (cons args nil)))
+         (final '(when gt-chatgpt-streaming-finished-hook
+                   (with-current-buffer (marker-buffer (car markers))
+                     (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers))))))
     `(condition-case err
          (let (json)
            (if (and (> (point) 1) gt-tracking-marker)
@@ -156,11 +161,11 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                (set-marker gt-tracking-marker (line-end-position))
                (if (equal ,finish "stop")
                    ,(if (cdr args)
-                        (cons 'progn (cdr args))
-                      `(progn (message "")
-                              (when gt-chatgpt-streaming-finished-hook
-                                (with-current-buffer (marker-buffer (car markers))
-                                  (funcall gt-chatgpt-streaming-finished-hook (car markers) (cdr markers))))))
+                        `(progn
+                           ,@(cl-loop for arg in (cdr args)
+                                      if (eq arg t) collect final
+                                      else collect arg))
+                      `(progn (message "") ,final))
                  ,@(car args)))))
        (error (unless (string-prefix-p "json" (format "%s" (car err)))
                 (signal (car err) (cdr err)))))))
