@@ -2,13 +2,15 @@
 
 这是一个翻译框架，其主要特点是高度可配置性和高度可扩展性。
 
-- [[#基本使用][基本使用]] | [[#gt-http-backend][配置 http 客户端 (url vs curl, proxy)]]
-- [[#更多配置][进一步了解各种组件以及内部机制，从而能够灵活搭配、随心所欲]]
+- [[#基本使用][基本使用]] | [[#gt-http-backend][配置网络 (代理和后端)]]
+- [[#更多配置][了解组件 → 使用组件 → 扩展组件]]
   + ([[#用于捕获输入的-gt-taker-组件][Taker]]) [[#gt-taker][gt-taker]]
   + ([[#用于翻译转换的-gt-engine-组件][Engine]]) [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
   + ([[#用于渲染输出的-gt-render-组件][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
-  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (:if 的语法)]] | [[#gt-chatgpt-engine-1][gt-chatgpt-engine 的更多用法]]
-- [[#定制与扩展][可以对框架和组件进行扩展，从而定制自己需要的功能]]
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (:if 的语法)]]
+- [[#gt-chatgpt-engine-1][与大模型的交互: 进击的 gt-chatgpt-engine]]
+- [[#为-emacs-集成-tts-功能][为 Emacs 集成 TTS (语音播报) 功能]]
+- [[#定制与扩展][扩展组件/框架的基本逻辑和方法]]
 
 作为一个翻译框架，它有很多优点:
 - 支持多种翻译引擎，比如 Bing, Google, DeepL, 有道词典/近义词, StarDict, LibreTranslate，也支持 LLM 引擎比如 ChatGPT, DeepSeek 等
@@ -872,6 +874,43 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
                         (gt-alert-render :if '(and xxx-mode (or not-selection (and read-only parts))))
                         (gt-buffer-render))))
 #+end_src
+
+** 为 Emacs 集成 TTS 功能
+
+有些引擎通过 =gt-speech= 方法实现了 TTS (Text to Speech) 功能。使用起来很简单:
+#+begin_src emacs-lisp
+  (gt-speech (gt-bing-engine) "hello" 'en)
+  (gt-speech (gt-google-engine) "hello" 'en)
+  (gt-speech (gt-chatgpt-engine) "hello" 'en)
+#+end_src
+
+另外，还集成了一些其他 TTS 实现，方便脱机或其他场景的使用:
+#+begin_src emacs-lisp
+  ;; 使用 macOS 的 say 进行播报
+  (gt-speech 'mac-say "hello" nil)
+  (setq gt-tts-mac-say-voice "Shelley") ; 可以对 speed 和 voice 进行设置
+
+  ;; 使用 Windows 自带的功能进行播报
+  (gt-speech 'win-ps1 "hello" nil)
+  (setq gt-tts-win-ps1-speed 1.2)
+
+  ;; 使用第三方的 edge-tts 进行播报 (pip install edge-tts)
+  (gt-speech 'edge-tts "hello" nil)
+  (gt-tts-edge-tts-change-voice) ; 动态切换 voice
+#+end_src
+
+此外，还为上述的其他实现提供了一个快捷方式名为 =native=:
+#+begin_src emacs-lisp
+  ;; 默认情况下 macOS: mac-say, 而 Windows: win-ps1
+  (gt-speech 'native "hello" 'en)
+
+  ;; 你可以决定 native 使用哪个实现
+  (setq gt-tts-native-engine 'edge-tts)
+#+end_src
+
+用户命令 =gt-speak= 是可以交互性使用上述所有 TTS 实现的一个 *核心命令*:
+- 在 Emacs 的任意地方，选中文本，执行 =M-x gt-speak=, 语音播报就开始了
+- 播报开始前，在弹出的 minibuffer 中，可以通过 =C-n= 切换 TTS 引擎或修改播报的文本
 
 ** 定制与扩展
 

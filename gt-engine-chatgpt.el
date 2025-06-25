@@ -47,6 +47,9 @@
    (extra-options :initarg :extra-options :initform nil)
    (key           :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
    (timeout       :initarg :timeout :initform 60)
+   (tts-host      :initarg :tts-host :initform nil)
+   (tts-path      :initarg :tts-path :initform "/v1/audio/speech")
+   (tts-model     :initarg :tts-model :initform "gpt-4o-mini-tts")
    (parse         :initform (gt-chatgpt-parser))))
 
 
@@ -212,8 +215,9 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 ;;; Text to Speech
 
-(defcustom gt-chatgpt-tts-model "tts-1"
-  "Model used by TTS of ChatGPT."
+(defcustom gt-chatgpt-tts-voice "onyx"
+  "Which voice to use by ChatGPT Speech.
+alloy, echo, fable, onyx, nova, or shimmer."
   :type 'string
   :group 'go-translate-chatgpt)
 
@@ -222,28 +226,24 @@ With two arguments BEG and END, which are the marker bounds of the result.")
   :type 'number
   :group 'go-translate-chatgpt)
 
-(defcustom gt-chatgpt-tts-voice "alloy"
-  "Which voice to use by ChatGPT Speech.
-alloy, echo, fable, onyx, nova, or shimmer."
-  :type 'string
-  :group 'go-translate-chatgpt)
-
 (defcustom gt-chatgpt-tts-extra-options nil
   "Extra options provided to tts engine."
   :type 'alist
   :group 'go-translate-chatgpt)
 
-(cl-defmethod gt-speech ((engine gt-chatgpt-engine) text _lang &optional wait)
-  (pdd-then
-      (gt-request (concat (or (oref engine host) gt-chatgpt-host) "/v1/audio/speech")
-        :headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))
-        :data `((input . ,text)
-                (model . ,gt-chatgpt-tts-model)
-                (speed . ,gt-chatgpt-tts-speed)
-                (voice . ,gt-chatgpt-tts-voice)
-                ,@gt-chatgpt-tts-extra-options)
-        :cache (max 10 (length text)))
-    (lambda (audio-data) (gt-play-audio audio-data wait))))
+(cl-defmethod gt-speech ((engine gt-chatgpt-engine) text _lang &optional play-fn)
+  (with-slots (host tts-host tts-path tts-model) engine
+    (let ((data `((input . ,text)
+                  (model . ,tts-model)
+                  (voice . ,gt-chatgpt-tts-voice)
+                  (speed . ,gt-chatgpt-tts-speed)
+                  ,@gt-chatgpt-tts-extra-options)))
+      (pdd-then
+          (gt-request (concat (or tts-host host gt-chatgpt-host) tts-path)
+            :headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))
+            :data data :done #'identity
+            :cache `(,gt-tts-cache-ttl chatgpt-tts ,(prin1-to-string data) (store . gt-tts-cache-store)))
+        (or play-fn #'gt-play-audio)))))
 
 (provide 'gt-engine-chatgpt)
 

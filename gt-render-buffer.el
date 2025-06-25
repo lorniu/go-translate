@@ -134,10 +134,21 @@ Notice, this can be overrided by `window-config' slot of render instance."
   (pdd-cacher-clear gt-cache-store t)
   (message "Clear all caches done."))
 
+(defun gt-buffer-render--speak ()
+  (interactive)
+  (let (gt-tts-last-engine)
+    (pdd-then (gt-speak)
+      #'identity
+      (lambda (r)
+        (if (string-match-p "cancel" (format "%s" r))
+            (message "Canceled")
+          (message "%s" r))))))
+
 (defun gt-buffer-render--keyboard-quit ()
   (interactive)
   (unwind-protect
-      (gt-tts-interrupt-current-task)
+      (when (pdd-task-p gt-speak-task)
+        (pdd-signal gt-speak-task 'cancel))
     (keyboard-quit)))
 
 (defun gt-buffer-render--show-tips ()
@@ -327,7 +338,7 @@ TAG is extra message show in the middle if not nil."
   "Define keybinds for `gt-buffer-render-local-map'."
   (gt-buffer-render-key ("t" "Cycle Next")        #'gt-buffer-render--cycle-next)
   (gt-buffer-render-key ("T" "Toggle Polyglot")   #'gt-buffer-render--toggle-polyglot)
-  (gt-buffer-render-key ("y" "Speak")             (lambda () (interactive) (let (gt-tts-last-engine) (gt-speak))))
+  (gt-buffer-render-key ("y" "Speak")             #'gt-buffer-render--speak)
   (gt-buffer-render-key ("O" "Browse")            #'gt-buffer-render--browser)
   (gt-buffer-render-key ("c" "Clear caches")      #'gt-buffer-render--clear-cache)
   (gt-buffer-render-key ("g" "Refresh")           #'gt-buffer-render--refresh)

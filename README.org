@@ -21,13 +21,15 @@ It's more than just a translation framework.It's flexible, and can easily be ext
 
 ** Table of Content
 
-- [[#basic-usage-as-a-translator][Basic Usage]] | [[#gt-http-backend][Http Client Config (url vs curl, proxy)]]
-- [[#deep-into-core-components][Learn more about core components for advanced config]]
+- [[#basic-usage-as-a-translator][Basic Usage]] | [[#gt-http-backend][HTTP Client Config (url vs curl, proxy)]]
+- [[#deep-into-core-components][The Components (Learn them → Use them → Extend them)]]
   + ([[#component-gt-taker-for-capturing][Taker]]) [[#gt-taker-with-prompt][gt-taker with prompt]]
   + ([[#component-gt-engine-for-translatingtransforming][Engine]]) [[#gt-stardict-engine][gt-stardict-engine]] | [[#gt-deepl-engine][gt-deepl-engine]] | [[#gt-chatgpt-engine][gt-chatgpt-engine]]
   + ([[#component-gt-render-for-rendering][Render]]) [[#gt-buffer-render][gt-buffer-render]] | [[#gt-posframe-pop-rendergt-posframe-pin-render][gt-posframe-render]] | [[#gt-insert-render][gt-insert-render]] | [[#gt-overlay-render][gt-overlay-render]]
-  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (the syntax of :if)]] | [[#gt-chatgpt-engine-1][gt-chatgpt-engine for more scenes]]
-- [[#customization-and-extension-the-framework][Extend the framework for your own requirements as you wish]]
+  + [[#gt-text-utility][gt-text-utility]] | [[#gt-valid-trait-if][gt-valid-trait (the syntax of :if)]]
+- [[#gt-chatgpt-engine-1][Interact with Various Models: The Evolution of gt-chatgpt-engine]]
+- [[#integrate-tts-to-emacs][Integrate TTS (Text-to-Speech) to Emacs]]
+- [[#customization-and-extension-the-framework][How to Extend the Framework or Components]]
 
 ** Installation
 
@@ -461,8 +463,6 @@ Different LLMs can be used at the same time together:
                        :render (gt-buffer-render)))
 #+end_src
 
-After all, try text to speech with command =gt-speak=.
-
 *** gt-chatgpt-engine++
 
 The engine =gt-chatgpt-engine= can be used independently of the translation. Based on it, any LLM-related tasks can be achieved.
@@ -847,6 +847,43 @@ One simple config example:
                         (gt-alert-render :if '(and xxx-mode (or not-selection (and read-only parts))))
                         (gt-buffer-render))))
 #+end_src
+
+** Integrate TTS to Emacs
+
+Some engines implement TTS (Text to Speech) functionality via the =gt-speech= method. It's easy to use:
+#+begin_src emacs-lisp
+  (gt-speech (gt-bing-engine) "hello" 'en)
+  (gt-speech (gt-google-engine) "hello" 'en)
+  (gt-speech (gt-chatgpt-engine) "hello" 'en)
+#+end_src
+
+Alternately, several other implementations have been integrated to support offline use or other scenarios:
+#+begin_src emacs-lisp
+  ;; Speech via builtin TTS of macOS
+  (gt-speech 'mac-say "hello" nil)
+  (setq gt-tts-mac-say-voice "Shelley") ; config speed or voice
+
+  ;; Speech via builtin TTS of Windows
+  (gt-speech 'win-ps1 "hello" nil)
+  (setq gt-tts-win-ps1-speed 1.2)
+
+  ;; Speech via 3rd party `edge-tts', you should install it before use
+  (gt-speech 'edge-tts "hello" nil)
+  (gt-tts-edge-tts-change-voice) ; change voice dynamically
+#+end_src
+
+Additionally, a sugar named =native= is provided for the other implementations mentioned above:
+#+begin_src emacs-lisp
+  ;; default: for macOS mac-say, for Windows: win-ps1
+  (gt-speech 'native "hello" 'en)
+
+  ;; change it if you want
+  (setq gt-tts-native-engine 'edge-tts)
+#+end_src
+
+User command =gt-speak= is provided to interactivelly use all TTS engines:
+- Select any text in Emacs, execute =M-x gt-speak=, the speech will be started
+- In the popup minibuffer, switch engine with key =C-n= and modify the text as you wish
 
 ** Customization and Extension the Framework
 

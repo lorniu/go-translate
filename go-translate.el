@@ -71,6 +71,7 @@
                gt-buffer-render--cycle-next
                gt-buffer-render--refresh
                gt-buffer-render--browser
+               gt-buffer-render--speak
                gt-buffer-render--keyboard-quit
                gt-buffer-render--toggle-readonly
                gt-buffer-render--toggle-polyglot

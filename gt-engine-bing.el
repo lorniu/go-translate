@@ -182,18 +182,19 @@
             (cadr lm) (caddr lm) (cadr lm) (cadddr lm)
             gt-bing-tts-speed (encode-coding-string text 'utf-8))))
 
-(cl-defmethod gt-speech ((engine gt-bing-engine) text lang &optional wait)
+(cl-defmethod gt-speech ((engine gt-bing-engine) text lang &optional play-fn)
   (with-slots (host host-tld ig key token) engine
+    (message "Speaking from %s..." (oref engine host))
     (pdd-chain (gt-bing-token engine)
       (lambda ()
         (gt-request (format "%s/tfettts" host-tld)
           :headers '(www-url)
           :params `((isVertical . 1) (IG . ,ig) (IID . "translator.5022.2"))
           :data `(("token" . ,token) ("key" . ,key) ("ssml" . ,(gt-bing-tts-payload lang text)))
-          :cache (max 10 (length text))))
-      (lambda (audio-data) (gt-play-audio audio-data wait))
-      :fail
-      (lambda (err) (user-error "[BING-TTS] error: %s" err)))))
+          :done #'identity
+          :cache `(,gt-tts-cache-ttl bing-tts ,text ,lang (store . gt-tts-cache-store))))
+      (or play-fn #'gt-play-audio)
+      :fail (lambda (err) (user-error "[BING-TTS] error: %s" err)))))
 
 (provide 'gt-engine-bing)
 

@@ -791,6 +791,20 @@ This is a generic method, improve it for specific LANG as you wish."
       (insert text)
       (equal (thing-at-point 'word) text))))
 
+(defun gt-system-language ()
+  "Detect the system's UI language and return it as a symbol."
+  (let ((lang-code-str
+         (cond
+          ((memq system-type '(gnu/linux darwin))
+           (or (getenv "LC_ALL") (getenv "LANG")))
+          ((eq system-type 'windows-nt)
+           (ignore-errors
+             (shell-command-to-string "powershell -NoProfile -NonInteractive -Command \"Get-UICulture.Name\"")))
+          (t nil))))
+    (if (and lang-code-str (string-match "\\`[a-zA-Z]\\{2\\}" lang-code-str))
+        (intern (downcase (match-string 0 lang-code-str)))
+      'en)))
+
 
 ;;; Validate Trait
 
@@ -1514,7 +1528,7 @@ If SKIP-PARSE is t, return the raw results directly."
            (condition-case err
                (cl-call-next-method parser target)
              (error (gt-log 'parse
-                      (format "Error occurs when parsing %s !" (gt-str (gt-chatgpt-parser))))
+                      (format "Error occurs when parsing %s !" (gt-str parser)))
                     (signal (car err) (cdr err)))))
   nil)
 
@@ -1679,105 +1693,196 @@ The value should not contain any space in the command path."
   :type 'string
   :group 'go-translate)
 
+(defvar gt-tts-cache-ttl 30)
+
+(defvar gt-tts-cache-store (make-hash-table :test #'equal))
+
 (defvar gt-tts-langs nil)
 
 (defvar gt-tts-last-engine nil)
 
-(defvar gt-tts-current-task 'gt-tts-default-speak-task
-  "A symbol point to a `pdd-task' instance.")
+;; generic
 
-(defvar gt-tts-default-speak-task nil
-  "The `pdd-task' instance for the current speaking process.")
-
-(defun gt-tts-interrupt-current-task (&optional task)
-  "Interrupts the current speaking task by sending it a cancel signal."
-  (let ((task (if (pdd-task-p task)
-                  task
-                (symbol-value (or task gt-tts-current-task)))))
-    (when (and task (pdd-task-p task))
-      ;; pdd-signal is safe to call even if the task is already finished.
-      (pdd-signal task 'cancel))))
-
-(defun gt-play-audio (data &optional wait)
-  "Play audio using an external player, managed by the pdd task system.
-
-DATA can be raw audio data, a URL, or a buffer containing the data.
-WAIT should be nil, t, a number or function. If it is nil, interrupt current
-audio and play the new one immediately. Otherwise, wait for current audio
-finishes and queue to start the new one. If wait is t or number, put a delay
-for the new audio. If wait is function, run it before new audio played with t
-as arg and after with nil as arg."
-  (unless (and gt-tts-speaker (executable-find (car (split-string gt-tts-speaker))))
-    (user-error "Speaker '%s' not found. Please install it or configure `gt-tts-speaker'" gt-tts-speaker))
-  (let ((task-sym gt-tts-current-task))
-    (pdd-then (cond ((bufferp data)
-                     (with-current-buffer data (buffer-string)))
-                    ((and (stringp data) (string-prefix-p "http" data))
-                     (gt-request data :cache 10 :as 'identity))
-                    (t data))
-      (lambda (audio-data)
-        (let ((playback (if (functionp audio-data)
-                            audio-data
-                          (lambda ()
-                            (message "Speaking...")
-                            (pdd-exec (split-string-shell-command gt-tts-speaker) "-"
-                              :pipe t
-                              :init (concat audio-data "\n")
-                              :done (lambda () (message "Speaking finished."))))))
-              (pre-action (lambda (_)
-                            (cond ((natnump wait) (pdd-delay wait))
-                                  ((functionp wait) (funcall wait t))
-                                  (t (pdd-delay 0.2)))))
-              (post-action (lambda (_)
-                             (when (functionp wait) (funcall wait nil)))))
-          (when (and (symbol-value task-sym)
-                     (not (eq (aref (symbol-value task-sym) 1) 'pending)))
-            (set task-sym nil))
-          (set task-sym
-               (if wait
-                   (pdd-chain (symbol-value task-sym)
-                     pre-action
-                     (lambda (_) (funcall playback))
-                     post-action)
-                 (ignore-errors (gt-tts-interrupt-current-task task-sym))
-                 (funcall playback))))))))
-
-(cl-defgeneric gt-speech (engine _text _lang &optional _wait)
+(cl-defgeneric gt-speech (engine _text _lang &optional _play-fn)
   "Speak TEXT with LANG by ENGINE."
-  (:method :around ((engine gt-engine) text lang &optional wait)
-           (cl-call-next-method engine text (intern-soft lang) wait))
+  (:method :around ((engine gt-engine) text lang &optional play-fn)
+           (cl-call-next-method engine text (intern-soft lang) play-fn))
   (user-error "No TTS service found on engine `%s'" (gt-tag engine)))
 
-(cl-defmethod gt-speech ((_ (eql 'local)) text lang &optional wait)
-  (cond ((and (eq system-type 'darwin) (executable-find "say"))
-         (gt-play-audio
-          (lambda () (pdd-exec 'say :init (concat text "\n"))) wait))
-        ((and (memq system-type '(cygwin windows-nt)) (executable-find "powershell"))
-         (let* ((ps1 (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text))
-                (ps1-encoded (encode-coding-string
-                              (replace-regexp-in-string "\n" " " ps1)
-                              (keyboard-coding-system))))
-           (gt-play-audio
-            (lambda () (pdd-exec `(powershell -Command ,(format "& {%s}" ps1-encoded)))) wait)))
-        (t (gt-speech system-type text lang wait))))
+(defun gt-play-audio (data)
+  "Play audio DATA and return a promise that resolves when finished."
+  (unless (and gt-tts-speaker (executable-find (car (split-string gt-tts-speaker))))
+    (user-error "Speaker '%s' not found. Please install it or configure `gt-tts-speaker'" gt-tts-speaker))
+  (pdd-then (cond ((bufferp data)
+                   (with-current-buffer data (buffer-string)))
+                  ((and (stringp data) (string-prefix-p "http" data))
+                   (gt-request data :cache 10 :as 'identity))
+                  (t data))
+    (lambda (audio-data)
+      (if (functionp audio-data)
+          (funcall audio-data)
+        (pdd-exec (split-string-shell-command gt-tts-speaker) "-"
+          :pipe t :init (concat audio-data "\n"))))))
 
-(cl-defmethod gt-speech ((_ (eql 'interact)) text auto &optional wait)
-  "Speak TEXT with local program or using selected engine.
-AUTO means not prompted user for initial text.
-WAIT is just like the one in `gt-play-audio'."
+;; native
+
+(defcustom gt-tts-native-engine
+  (cond ((and (eq system-type 'darwin) (executable-find "say"))
+         'mac-say)
+        ((and (memq system-type '(cygwin windows-nt)) (executable-find "powershell"))
+         'win-ps1)
+        ((executable-find "edge-tts")
+         'edge-tts)
+        (t system-type))
+  "Engine used as the native one."
+  :type 'sexp
+  :group 'go-translate)
+
+(cl-defmethod gt-speech ((_ (eql 'native)) text lang &optional play-fn)
+  (gt-speech gt-tts-native-engine text lang play-fn))
+
+;; mac-say
+
+(defcustom gt-tts-mac-say-voice nil
+  "Speak voice, query with command `gt-tts-mac-say-voices'."
+  :type '(choice string (const nil))
+  :group 'go-translate)
+
+(defcustom gt-tts-mac-say-speed nil
+  "A natnum number representing words per minute."
+  :type '(choice natnum (const nil))
+  :group 'go-translate)
+
+(defun gt-tts-mac-say-voices ()
+  "Return the avaiable speech voices on macOS."
+  (interactive)
+  (pdd-exec `(say -v \?) :done 'princ))
+
+(cl-defmethod gt-speech ((_ (eql 'mac-say)) text _lang &optional play-fn)
+  (let (args)
+    (when gt-tts-mac-say-voice
+      (setq args (append `(-v ,gt-tts-mac-say-voice) args)))
+    (when gt-tts-mac-say-speed
+      (setq args (append `(-r ,gt-tts-mac-say-speed) args)))
+    (funcall (or play-fn #'gt-play-audio)
+             (lambda () (pdd-exec `(say ,@args) :init (concat text "\n"))))))
+
+;; win-ps1
+
+(defcustom gt-tts-win-ps1-voice nil
+  "Speak voice, query with command `gt-tts-win-ps1-voices'."
+  :type '(choice string (const nil))
+  :group 'go-translate)
+
+(defcustom gt-tts-win-ps1-speed nil
+  "A number from -10 to 10."
+  :type '(choice number (const nil))
+  :group 'go-translate)
+
+(defun gt-tts-win-ps1-voices ()
+  "Return the avaiable speech voices on Windows."
+  (interactive)
+  (let ((ps1 (concat "Add-Type -AssemblyName System.Speech; "
+                     "$synthesizer = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                     "$synthesizer.GetInstalledVoices().VoiceInfo | Select-Object Name, Gender, Age, Culture; ")))
+    (pdd-exec `(powershell -Command ,ps1) :done 'princ)))
+
+(cl-defmethod gt-speech ((_ (eql 'win-ps1)) text _lang &optional play-fn)
+  (let* ((ps1 (concat "Add-Type -AssemblyName System.Speech;\n"
+                      "$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer;\n"
+                      (if gt-tts-win-ps1-voice (format "$synth.SelectVoice('%s');\n" gt-tts-win-ps1-voice))
+                      (if gt-tts-win-ps1-speed (format "$synth.Rate = %d;\n" gt-tts-win-ps1-speed))
+                      "$text = $input | Out-String;\n"
+                      "if ($text.Length -gt 0) { $synth.Speak($text.Trim()) };\n"
+                      "$synth.Dispose();"))
+         (command `(powershell -NoProfile -ExecutionPolicy Bypass -Command ,ps1)))
+    (funcall (or play-fn #'gt-play-audio)
+             (lambda () (pdd-exec command :pipe t :init text)))))
+
+;; edge-tts (a more robust alternative to the `gt-bing-engine')
+
+(defcustom gt-tts-edge-tts-voice nil
+  "Speak voice, query with: edge-tts --list-voices."
+  :type '(choice string (const nil))
+  :group 'go-translate)
+
+(defcustom gt-tts-edge-tts-speed nil
+  "A number from -10 to 10."
+  :type '(choice number (const nil))
+  :group 'go-translate)
+
+(defcustom gt-tts-edge-tts-volume nil
+  "A number from -10 to 10, representing dec/inc volume."
+  :type '(choice number (const nil))
+  :group 'go-translate)
+
+(defcustom gt-tts-edge-tts-pitch nil
+  "A number representing dec/inc pitch, like -50 as -50Hz."
+  :type '(choice number (const nil))
+  :group 'go-translate)
+
+(defun gt-tts-edge-tts-change-voice ()
+  "Change voice for `tts-edge' engine."
+  (interactive)
+  (let* ((voices (mapcar #'pdd-split-string-by
+                         (cl-remove-if-not
+                          (lambda (item) (string-match-p "Neural" item))
+                          (pdd-exec `(edge-tts --list-voices) :as 'line :sync t))))
+         (annfn (lambda (v)
+                  (concat (make-string (- 35 (length v)) ? )
+                          (cdr (assoc v voices)))))
+         (voice (completing-read
+                 "Voice: "
+                 (lambda (input pred action)
+                   (if (eq action 'metadata)
+                       `(metadata (annotation-function . ,annfn))
+                     (complete-with-action action (cons "default" voices) input pred)))
+                 nil t nil 'gt-tts-tts-edge-voice-history gt-tts-edge-tts-voice)))
+    (pdd-cacher-clear gt-tts-cache-store t)
+    (setq gt-tts-edge-tts-voice (unless (equal voice "default") voice))
+    (message "Change voice to `%s'." voice)))
+
+(cl-defmethod gt-speech ((_ (eql 'edge-tts)) text _lang &optional play-fn)
+  (unless (executable-find "edge-tts")
+    (user-error "You should install `edge-tts' first (pip install edge-tts)"))
+  (let (args)
+    (when gt-tts-edge-tts-voice
+      (setq args (append `(-v ,gt-tts-edge-tts-voice) args)))
+    (when (numberp gt-tts-edge-tts-speed)
+      (setq args (cons (format "--rate=%s%d%%"
+                               (if (>= gt-tts-edge-tts-speed 0) "+" "")
+                               (* 10 gt-tts-edge-tts-speed))
+                       args)))
+    (when (numberp gt-tts-edge-tts-volume)
+      (setq args (cons (format "--volume=%s%d%%"
+                               (if (>= gt-tts-edge-tts-volume 0) "+" "")
+                               (* 10 gt-tts-edge-tts-volume))
+                       args)))
+    (when (numberp gt-tts-edge-tts-pitch)
+      (setq args (cons (format "--pitch=%s%dHz"
+                               (if (>= gt-tts-edge-tts-pitch 0) "+" "")
+                               gt-tts-edge-tts-pitch)
+                       args)))
+    (pdd-then (pdd-exec `(edge-tts -t ,text ,@args)
+                :pipe t :cache `(,gt-tts-cache-ttl (edge-tts ,text) gt-tts-cache-store))
+      (or play-fn #'gt-play-audio))))
+
+;; interact
+
+(cl-defmethod gt-speech ((_ (eql 'interact)) text auto &optional play-fn)
   (let* ((prompt "Text to Speech: ")
          (regexp (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")))
-         (engines `(locally ,@(cl-loop
-                               for m in (cl--generic-method-table (cl--generic #'gt-speech))
-                               for n = (car (cl--generic-method-specializers m))
-                               unless (or (consp n) (memq n '(t gt-engine))) collect n)))
+         (engines `(native ,@(cl-loop
+                              for m in (cl--generic-method-table (cl--generic #'gt-speech))
+                              for n = (car (cl--generic-method-specializers m))
+                              unless (or (consp n) (memq n '(t gt-engine))) collect n)))
          (overlay nil)
          (text (if auto text
                  (minibuffer-with-setup-hook
                      (lambda ()
                        (use-local-map (make-composed-keymap nil (current-local-map)))
                        (setq overlay (make-overlay (1- (length prompt)) (length prompt)))
-                       (unless gt-tts-last-engine (setq gt-tts-last-engine 'local))
+                       (unless gt-tts-last-engine (setq gt-tts-last-engine 'native))
                        (overlay-put overlay 'display (format " (%s):" gt-tts-last-engine))
                        (local-set-key (kbd "C-n")
                                       (lambda ()
@@ -1793,11 +1898,15 @@ WAIT is just like the one in `gt-play-audio'."
                  (car (gt-langs-maybe text (or gt-tts-langs (mapcar #'car gt-lang-codes)))))))
     (when (= (length (string-trim text)) 0)
       (user-error "Input should not be null"))
-    (unless gt-tts-last-engine (setq gt-tts-last-engine 'local))
+    (unless gt-tts-last-engine (setq gt-tts-last-engine 'native))
     (gt-log 'tts (format "Speak with %s to %s" gt-tts-last-engine lang))
-    (if (equal gt-tts-last-engine 'local)
-        (gt-speech 'local text lang wait)
-      (gt-speech (make-instance gt-tts-last-engine) text lang wait))))
+    (if (equal gt-tts-last-engine 'native)
+        (gt-speech 'native text lang play-fn)
+      (gt-speech (make-instance gt-tts-last-engine) text lang play-fn))))
+
+;; user command
+
+(defvar gt-speak-task nil)
 
 ;;;###autoload
 (defun gt-speak ()
@@ -1806,13 +1915,15 @@ WAIT is just like the one in `gt-play-audio'."
 If the text under point or with selection has `gt-task' or `gt-tts-url'
 property, try to speak it with current translation engine.
 
-Otherwise try to TTS with local program or using selected engine.
+Otherwise try to TTS with native program or using selected engine.
+
+Switch engine with key `C-n'.
 
 When TTS with specific engine, you can specify the language with `lang.' prefix."
   (interactive)
   (if-let* ((url (get-char-property (point) 'gt-tts-url)))
       ;; 1. play the url
-      (gt-play-audio url)
+      (setq gt-speak-task (gt-play-audio url))
     (let (items engine)
       (if-let* ((task (get-char-property (point) 'gt-task)))
           (with-slots (src tgt res err translator) task
@@ -1841,9 +1952,9 @@ When TTS with specific engine, you can specify the language with `lang.' prefix.
                                  (car (gt-langs-maybe cand (list src tgt))))))
                     (unless lang (user-error "Guess language of text failed"))
                     (gt-log 'tts (format "Speak with %s to %s" engine lang))
-                    (gt-speech engine cand lang))))))
-        ;; 3. play with local program or using selected engine
-        (gt-speech 'interact (gt-text (gt-taker :text 'word) nil))))))
+                    (setq gt-speak-task (gt-speech engine cand lang)))))))
+        ;; 3. play with native program or using selected engine
+        (setq gt-speak-task (gt-speech 'interact (gt-text (gt-taker :text 'word) nil) nil))))))
 
 
 ;;; Translator
