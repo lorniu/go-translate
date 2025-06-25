@@ -1677,78 +1677,88 @@ The value should not contain any space in the command path."
 
 (defvar gt-tts-last-engine nil)
 
-(defvar gt-tts-speak-process nil)
+(defvar gt-tts-current-task 'gt-tts-default-speak-task
+  "A symbol point to a `pdd-task' instance.")
 
-(cl-defgeneric gt-speech (engine _text &optional _lang)
-  "Speak TEXT with LANG by ENGINE."
-  (user-error "No TTS service found on engine `%s'" (gt-tag engine)))
+(defvar gt-tts-default-speak-task nil
+  "The `pdd-task' instance for the current speaking process.")
 
-(defun gt-interrupt-speak-process ()
-  (when (and gt-tts-speak-process (process-live-p gt-tts-speak-process))
-    (ignore-errors (kill-process gt-tts-speak-process))
-    (setq gt-tts-speak-process nil)))
+(defun gt-tts-interrupt-current-task (&optional task)
+  "Interrupts the current speaking task by sending it a cancel signal."
+  (let ((task (if (pdd-task-p task)
+                  task
+                (symbol-value (or task gt-tts-current-task)))))
+    (when (and task (pdd-task-p task))
+      ;; pdd-signal is safe to call even if the task is already finished.
+      (pdd-signal task 'cancel))))
 
 (defun gt-play-audio (data &optional wait)
-  "Play DATA with `gt-tts-playing-process'.
-DATA is raw audio data or audio url, or a buffer contains the raw data.
-If WAIT is not nil, play after current process finished."
+  "Play audio using an external player, managed by the pdd task system.
+
+DATA can be raw audio data, a URL, or a buffer containing the data.
+WAIT should be nil, t, a number or function. If it is nil, interrupt current
+audio and play the new one immediately. Otherwise, wait for current audio
+finishes and queue to start the new one. If wait is t or number, put a delay
+for the new audio. If wait is function, run it before new audio played with t
+as arg and after with nil as arg."
   (unless (and gt-tts-speaker (executable-find (car (split-string gt-tts-speaker))))
-    (user-error "You should install `mpv' first or config `gt-tts-speaker' correctly"))
-  (when wait
-    (condition-case _
-        (while (and gt-tts-speak-process (process-live-p gt-tts-speak-process))
-          (sleep-for 0.5))
-      (quit (gt-interrupt-speak-process) (user-error ""))))
-  (gt-interrupt-speak-process)
-  (cl-flet ((speak ()
-              (let ((proc (make-process
-                           :name (format "gt-tts-process-%s" (+ 1000 (random 1000)))
-                           :command (append (split-string-shell-command gt-tts-speaker) (list "-"))
-                           :buffer nil
-                           :noquery t
-                           :sentinel (lambda (_ s) (if (string-match-p "finished" s) (message "")))
-                           :connection-type 'pipe)))
-                (message "Speaking...")
-                (setq gt-tts-speak-process proc)
-                (process-send-region proc (point-min) (point-max))
-                (if (process-live-p proc) (process-send-eof proc)))))
-    (if (bufferp data)
-        (with-current-buffer data (speak))
-      (with-temp-buffer
-        (let ((buf (current-buffer)) state)
-          (if (string-prefix-p "http" data)
-              (progn (gt-request data
-                       :cache 10
-                       :done (lambda (raw)
-                               (setq state 'done)
-                               (with-current-buffer buf (insert raw)))
-                       :fail (lambda (err) (setq state err)))
-                     (while (null state)
-                       (accept-process-output nil 0.5)))
-            (insert data))
-          (if (and state (not (eq state 'done))) (signal 'user-error state))
-          (speak))))))
+    (user-error "Speaker '%s' not found. Please install it or configure `gt-tts-speaker'" gt-tts-speaker))
+  (let ((task-sym gt-tts-current-task))
+    (pdd-then (cond ((bufferp data)
+                     (with-current-buffer data (buffer-string)))
+                    ((and (stringp data) (string-prefix-p "http" data))
+                     (gt-request data :cache 10 :as 'identity))
+                    (t data))
+      (lambda (audio-data)
+        (let ((playback (if (functionp audio-data)
+                            audio-data
+                          (lambda ()
+                            (message "Speaking...")
+                            (pdd-exec (split-string-shell-command gt-tts-speaker) "-"
+                              :pipe t
+                              :init (concat audio-data "\n")
+                              :done (lambda () (message "Speaking finished."))))))
+              (pre-action (lambda (_)
+                            (cond ((natnump wait) (pdd-delay wait))
+                                  ((functionp wait) (funcall wait t))
+                                  (t (pdd-delay 0.2)))))
+              (post-action (lambda (_)
+                             (when (functionp wait) (funcall wait nil)))))
+          (when (and (symbol-value task-sym)
+                     (not (eq (aref (symbol-value task-sym) 1) 'pending)))
+            (set task-sym nil))
+          (set task-sym
+               (if wait
+                   (pdd-chain (symbol-value task-sym)
+                     pre-action
+                     (lambda (_) (funcall playback))
+                     post-action)
+                 (ignore-errors (gt-tts-interrupt-current-task task-sym))
+                 (funcall playback))))))))
 
-(cl-defmethod gt-speech :around ((engine gt-engine) text &optional lang)
-  (cl-call-next-method engine text (intern-soft lang)))
+(cl-defgeneric gt-speech (engine _text _lang &optional _wait)
+  "Speak TEXT with LANG by ENGINE."
+  (:method :around ((engine gt-engine) text lang &optional wait)
+           (cl-call-next-method engine text (intern-soft lang) wait))
+  (user-error "No TTS service found on engine `%s'" (gt-tag engine)))
 
-(cl-defmethod gt-speech ((_ (eql 'local)) text &optional _lang)
-  "TEXT to speech with local program."
+(cl-defmethod gt-speech ((_ (eql 'local)) text lang &optional wait)
   (cond ((and (eq system-type 'darwin) (executable-find "say"))
-         (with-temp-buffer
-           (insert text)
-           (shell-command-on-region (point-min) (point-max) "say" t)))
+         (gt-play-audio
+          (lambda () (pdd-exec 'say :init (concat text "\n"))) wait))
         ((and (memq system-type '(cygwin windows-nt)) (executable-find "powershell"))
-         (let ((cmd (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text)))
-           (shell-command (format "powershell -Command \"& {%s}\""
-                                  (encode-coding-string
-                                   (replace-regexp-in-string "\n" " " cmd)
-                                   (keyboard-coding-system))))))
-        (t (user-error "No suitable local TTS service found"))))
+         (let* ((ps1 (format "$w = New-Object -ComObject SAPI.SpVoice; $w.speak(\\\"%s\\\")" text))
+                (ps1-encoded (encode-coding-string
+                              (replace-regexp-in-string "\n" " " ps1)
+                              (keyboard-coding-system))))
+           (gt-play-audio
+            (lambda () (pdd-exec `(powershell -Command ,(format "& {%s}" ps1-encoded)))) wait)))
+        (t (gt-speech system-type text lang wait))))
 
-(cl-defmethod gt-speech ((_ (eql 'interact)) text &optional noprompt)
+(cl-defmethod gt-speech ((_ (eql 'interact)) text auto &optional wait)
   "Speak TEXT with local program or using selected engine.
-NOPROMPT means not prompted user for initial text."
+AUTO means not prompted user for initial text.
+WAIT is just like the one in `gt-play-audio'."
   (let* ((prompt "Text to Speech: ")
          (regexp (format "^ *\\(%s\\)\\." (mapconcat #'symbol-name (mapcar #'car gt-lang-codes) "\\|")))
          (engines `(locally ,@(cl-loop
@@ -1756,12 +1766,12 @@ NOPROMPT means not prompted user for initial text."
                                for n = (car (cl--generic-method-specializers m))
                                unless (or (consp n) (memq n '(t gt-engine))) collect n)))
          (overlay nil)
-         (text (if noprompt text
+         (text (if auto text
                  (minibuffer-with-setup-hook
                      (lambda ()
                        (use-local-map (make-composed-keymap nil (current-local-map)))
                        (setq overlay (make-overlay (1- (length prompt)) (length prompt)))
-                       (unless gt-tts-last-engine (setq gt-tts-last-engine 'locally))
+                       (unless gt-tts-last-engine (setq gt-tts-last-engine 'local))
                        (overlay-put overlay 'display (format " (%s):" gt-tts-last-engine))
                        (local-set-key (kbd "C-n")
                                       (lambda ()
@@ -1777,11 +1787,11 @@ NOPROMPT means not prompted user for initial text."
                  (car (gt-langs-maybe text (or gt-tts-langs (mapcar #'car gt-lang-codes)))))))
     (when (= (length (string-trim text)) 0)
       (user-error "Input should not be null"))
-    (unless gt-tts-last-engine (setq gt-tts-last-engine 'locally))
+    (unless gt-tts-last-engine (setq gt-tts-last-engine 'local))
     (gt-log 'tts (format "Speak with %s to %s" gt-tts-last-engine lang))
-    (if (equal gt-tts-last-engine 'locally)
-        (gt-speech 'local text lang)
-      (gt-speech (make-instance gt-tts-last-engine) text lang))))
+    (if (equal gt-tts-last-engine 'local)
+        (gt-speech 'local text lang wait)
+      (gt-speech (make-instance gt-tts-last-engine) text lang wait))))
 
 ;;;###autoload
 (defun gt-speak ()

@@ -106,10 +106,9 @@ you can customize it according to your country region."
                            (json-encode `[[[,rpc-ts ,(json-encode `[[,text ,src ,tgt 1][]]) nil "generic"]]])))
             :as 'identity))))))
 
-(cl-defmethod gt-speech ((engine gt-google-rpc-engine) text lang)
+(cl-defmethod gt-speech ((engine gt-google-rpc-engine) text lang &optional wait)
   (with-slots (host rpc-tts) engine
-    (message "Requesting %s for %s..." (or host gt-google-rpc-host) lang)
-    (pdd-then (gt-google-rpc-token engine)
+    (pdd-chain (gt-google-rpc-token engine)
       (lambda (url-tpl)
         (gt-request (funcall url-tpl rpc-tts "en-US")
           :headers gt-google-rpc-headers
@@ -132,9 +131,12 @@ you can customize it according to your country region."
                                  (erase-buffer)
                                  (insert code)
                                  (base64-decode-region (point-min) (point-max))
-                                 (gt-play-audio (current-buffer)))
-                        (message "[GoogleRPC-TTS] No tts data responsed")))))))
-      (lambda (err) (message "[GoogleRPC-TTS] Error, %s" err)))))
+                                 (buffer-string))
+                        (user-error "[GoogleRPC-TTS] No tts data responsed")))))
+          :cache (max 10 (length text))))
+      (lambda (audio-data) (gt-play-audio audio-data wait))
+      :fail
+      (lambda (err) (user-error "[GoogleRPC-TTS] Error, %s" err)))))
 
 
 ;;; Parser

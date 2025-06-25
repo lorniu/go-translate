@@ -137,7 +137,7 @@ Notice, this can be overrided by `window-config' slot of render instance."
 (defun gt-buffer-render--keyboard-quit ()
   (interactive)
   (unwind-protect
-      (gt-interrupt-speak-process)
+      (gt-interrupt-speak-task)
     (keyboard-quit)))
 
 (defun gt-buffer-render--show-tips ()

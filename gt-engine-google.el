@@ -170,7 +170,7 @@ Code from `google-translate', maybe improve it someday."
 		        (setq pos limit)))))))
     (reverse result)))
 
-(cl-defmethod gt-speech ((engine gt-google-engine) text lang)
+(cl-defmethod gt-speech ((engine gt-google-engine) text lang &optional wait)
   (message "Requesting from %s for %s..." (or (oref engine host) gt-google-host) lang)
   (cl-loop with texts = (gt-google-tts-split-text text)
            with total = (length texts)
@@ -190,7 +190,7 @@ Code from `google-translate', maybe improve it someday."
                              (mapconcat (lambda (p)
                                           (format "%s=%s" (url-hexify-string (car p)) (url-hexify-string (format "%s" (cdr p)))))
                                         ps "&"))
-           do (gt-play-audio url 'wait)))
+           do (gt-play-audio url wait)))
 
 
 ;;; Parser

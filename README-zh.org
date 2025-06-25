@@ -426,10 +426,10 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
   (setq gt-chatgpt-host "YOUR-HOST")
   (setq gt-chatgpt-model "gpt-4o-mini")
   (setq gt-chatgpt-temperature 1)
-  (setq gt-chatgpt-extra-args '((n . 1)))
+  (setq gt-chatgpt-extra-options '((n . 1)))
 
   ;; or
-  (gt-chatgpt-engine :host :model :extra-args ..)
+  (gt-chatgpt-engine :host :model :extra-options ..)
 #+end_src
 
 可以自定义翻译的 prompt。比如:

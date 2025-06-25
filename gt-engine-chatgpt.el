@@ -38,16 +38,16 @@
 (defclass gt-chatgpt-parser (gt-parser) ())
 
 (defclass gt-chatgpt-engine (gt-api-engine)
-  ((host        :initarg :host :initform nil)
-   (path        :initarg :path :initform nil)
-   (model       :initarg :model :initform nil)
-   (root        :initarg :root :initform nil) ; gt-chatgpt-system-prompt
-   (prompt      :initarg :prompt :initform nil) ; gt-chatgpt-user-prompt-template
-   (temperature :initarg :temperature :initform nil)
-   (extra-args  :initarg :extra-args :initform nil)
-   (key         :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
-   (timeout     :initarg :timeout :initform 60)
-   (parse       :initform (gt-chatgpt-parser))))
+  ((host          :initarg :host :initform nil)
+   (path          :initarg :path :initform nil)
+   (model         :initarg :model :initform nil)
+   (root          :initarg :root :initform nil) ; gt-chatgpt-system-prompt
+   (prompt        :initarg :prompt :initform nil) ; gt-chatgpt-user-prompt-template
+   (temperature   :initarg :temperature :initform nil)
+   (extra-options :initarg :extra-options :initform nil)
+   (key           :initarg :key :initform 'apikey) ; machine api.openai.com login apikey password ***
+   (timeout       :initarg :timeout :initform 60)
+   (parse         :initform (gt-chatgpt-parser))))
 
 
 ;;; Translate
@@ -77,8 +77,8 @@
   :type 'natnum
   :group 'go-translate-chatgpt)
 
-(defcustom gt-chatgpt-extra-args nil
-  "Extra arguments send with completion API.
+(defcustom gt-chatgpt-extra-options nil
+  "Extra options send with completion API.
 
 Example: \\='((n . 1) (max_completion_tokens . 10))"
   :type 'alist
@@ -112,7 +112,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
          :host (url-host (url-generic-parse-url (or host gt-chatgpt-host))))
         gt-chatgpt-key (getenv "OPENAI_API_KEY"))))
 
-(cl-defun gt-chatgpt-send (prompt &key root url model temperature extra-args key stream timeout sync)
+(cl-defun gt-chatgpt-send (prompt &key root url model temperature extra-options key stream timeout sync)
   (declare (indent 1))
   (gt-request (or url (concat gt-chatgpt-host gt-chatgpt-path))
     :sync sync
@@ -126,7 +126,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                ,@prompt]
                            `[((role . system) (content . ,(or root gt-chatgpt-system-prompt)))
                              ((role . user) (content . ,prompt))]))
-            ,@(or extra-args gt-chatgpt-extra-args))
+            ,@(or extra-options gt-chatgpt-extra-options))
     :peek (when (and stream (functionp pdd-peek)) pdd-peek)
     :done (unless stream #'identity)
     :timeout timeout
@@ -172,7 +172,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
-    (with-slots (host path model prompt root temperature extra-args timeout stream rate-limit parse) engine
+    (with-slots (host path model prompt root temperature extra-options timeout stream rate-limit parse) engine
       (when (and stream (cdr (oref translator text)))
         (user-error "Multiple parts not support streaming"))
       (let ((url (concat (or host gt-chatgpt-host) (or path gt-chatgpt-path)))
@@ -188,7 +188,7 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                (pdd-funcall prompt (list item tgt))
                              (let ((s (string-replace "{{lang}}" (alist-get tgt gt-lang-codes) prompt)))
                                (string-replace "{{text}}" item s)))
-            :url url :model model :temperature temperature :extra-args extra-args
+            :url url :model model :temperature temperature :extra-options extra-options
             :key (gt-resolve-key engine) :root root :timeout timeout :stream stream))))))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) (task gt-task))
@@ -226,15 +226,22 @@ alloy, echo, fable, onyx, nova, or shimmer."
   :type 'string
   :group 'go-translate-chatgpt)
 
-(cl-defmethod gt-speech ((engine gt-chatgpt-engine) text _lang)
-  (gt-request (concat (or (oref engine host) gt-chatgpt-host) "/v1/audio/speech")
-    :headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))
-    :data `((input . ,text)
-            (model . ,gt-chatgpt-tts-model)
-            (speed . ,gt-chatgpt-tts-speed)
-            (voice . ,gt-chatgpt-tts-voice))
-    :done #'gt-play-audio
-    :cache (length text)))
+(defcustom gt-chatgpt-tts-extra-options nil
+  "Extra options provided to tts engine."
+  :type 'alist
+  :group 'go-translate-chatgpt)
+
+(cl-defmethod gt-speech ((engine gt-chatgpt-engine) text _lang &optional wait)
+  (pdd-then
+      (gt-request (concat (or (oref engine host) gt-chatgpt-host) "/v1/audio/speech")
+        :headers `(json (bear ,(encode-coding-string (gt-resolve-key engine) 'utf-8)))
+        :data `((input . ,text)
+                (model . ,gt-chatgpt-tts-model)
+                (speed . ,gt-chatgpt-tts-speed)
+                (voice . ,gt-chatgpt-tts-voice)
+                ,@gt-chatgpt-tts-extra-options)
+        :cache (max 10 (length text)))
+    (lambda (audio-data) (gt-play-audio audio-data wait))))
 
 (provide 'gt-engine-chatgpt)
 

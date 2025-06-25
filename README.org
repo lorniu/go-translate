@@ -406,10 +406,10 @@ Then change host/model/others if necessary:
   (setq gt-chatgpt-host "YOUR-HOST")
   (setq gt-chatgpt-model "gpt-4o-mini")
   (setq gt-chatgpt-temperature 0.7)
-  (setq gt-chatgpt-extra-args '((n . 1)))
+  (setq gt-chatgpt-extra-options '((n . 1)))
 
   ;; or
-  (gt-chatgpt-engine :host :model :extra-args ..)
+  (gt-chatgpt-engine :host :model :extra-options ..)
 #+end_src
 
 Custom the translation prompt as you wish:
