@@ -1510,6 +1510,12 @@ If SKIP-PARSE is t, return the raw results directly."
 
 (cl-defgeneric gt-parse (_parser _task-or-data)
   "Parse TASK-OR-DATA using PARSER."
+  (:method :around (parser target)
+           (condition-case err
+               (cl-call-next-method parser target)
+             (error (gt-log 'parse
+                      (format "Error occurs when parsing %s !" (gt-str (gt-chatgpt-parser))))
+                    (signal (car err) (cdr err)))))
   nil)
 
 (cl-defgeneric gt-resolve-key (api-engine)

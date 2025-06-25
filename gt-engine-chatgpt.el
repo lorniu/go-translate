@@ -196,16 +196,18 @@ With two arguments BEG and END, which are the marker bounds of the result.")
            for msg = (alist-get 'message (let-alist item (aref .choices 0)))
            for rc = (alist-get 'reasoning_content msg) ; compact with DeepSeek r1
            for content = (alist-get 'content msg)
-           collect (concat (if rc (propertize rc 'face 'gt-chatgpt-reasoning-face)) content) into lst
+           collect (concat (if (stringp rc) (propertize rc 'face 'gt-chatgpt-reasoning-face)) content) into lst
            finally (oset task res lst)))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) json-hunk) ; parse for streaming output
   (let* ((choice (ignore-errors (aref (alist-get 'choices json-hunk) 0)))
-         (content (or (when-let* ((c (alist-get 'reasoning_content (alist-get 'delta choice))))
-                        (propertize c 'face 'gt-chatgpt-reasoning-face)) ; compact with DeepSeek r1
-                      (alist-get 'content (alist-get 'delta choice))))
+         (rc (alist-get 'reasoning_content (alist-get 'delta choice))) ; maybe :null
+         (content (alist-get 'content (alist-get 'delta choice)))
          (finish (alist-get 'finish_reason choice)))
-    (list content finish)))
+    (list (if (stringp rc)
+              (propertize rc 'face 'gt-chatgpt-reasoning-face) ; compact with DeepSeek r1
+            (if (stringp content) content ""))
+          finish)))
 
 
 ;;; Text to Speech
