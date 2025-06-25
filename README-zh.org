@@ -465,11 +465,19 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 #+begin_src emacs-lisp
   (setq gt-default-translator
         (gt-translator :taker (gt-taker :pick nil :prompt t)
-                       :engines
-                       (list (gt-chatgpt-engine :model "gpt-4o-mini")
-                             (gt-chatgpt-engine :model "deepseek-v3")
-                             (gt-chatgpt-engine :model "deepseek-r1" :stream t
-                                                :prompt "将下面文本翻译成 {{lang}}，措辞要夸张些:\n\n{{text}}"))
+                       :engines (list
+                                 (gt-chatgpt-engine
+                                  :model "gpt-4o-mini")
+                                 (gt-chatgpt-engine
+                                  :host "https://api.deepseek.com"
+                                  :path "/chat/completions"
+                                  :model "deepseek-chat")
+                                 (gt-chatgpt-engine
+                                  :host "https://api.deepseek.com"
+                                  :path "/chat/completions"
+                                  :model "deepseek-reasoner"
+                                  :prompt "将下面文本翻译成 {{lang}}，措辞要夸张些:\n\n{{text}}"
+                                  :stream t))
                        :render (gt-buffer-render)))
 #+end_src
 
@@ -510,7 +518,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
     (list "优化、润色文本" "请认真分析代码，修复代码存在的错误，并给出建议"))
 
   (defvar my-ai-oneshot-models
-    (list "deepseek-v3" "gpt-4o-mini" "gemini-2.5-pro"))
+    (list "deepseek-chat" "gpt-4o-mini" "gemini-2.5-pro"))
 
   (defvar my-ai-oneshot-last-model nil)
 
@@ -583,6 +591,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
   (let* ((rs (gt-chatgpt-send '(((role . user)      (content . "世界上最大的湖泊是哪个?"))
                                 ((role . assistant) (content . "世界上最大的湖泊是里海."))
                                 ((role . user)      (content . "我觉得不是。")))
+               :url "https://api.deepseek.com/chat/completions" :model "deepseek-chat"
                :sync t))
          (content (let-alist rs (let-alist (aref .choices 0) .message.content))))
     (message ">>> %s" content))
@@ -597,7 +606,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
     ;; answer by ChatGPT and DeepSeek
     (let* ((q1 "世界上最大的湖泊是哪个?")
            (rs (await (gt-chatgpt-send q1 :model "gpt-4o-mini")
-                      (gt-chatgpt-send q1 :model "deepseek-v3")))
+                      (gt-chatgpt-send q1 :model "deepseek-chat")))
            (c1 (let-alist (car rs)  (let-alist (aref .choices 0) .message.content)))
            (c2 (let-alist (cadr rs) (let-alist (aref .choices 0) .message.content))))
       (message ">>> ChatGPT:  %s" c1)

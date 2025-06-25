@@ -445,11 +445,19 @@ Different LLMs can be used at the same time together:
 #+begin_src emacs-lisp
   (setq gt-default-translator
         (gt-translator :taker (gt-taker :pick nil :prompt t)
-                       :engines
-                       (list (gt-chatgpt-engine :model "gpt-4o-mini")
-                             (gt-chatgpt-engine :model "deepseek-v3")
-                             (gt-chatgpt-engine :model "deepseek-r1" :stream t
-                                                :prompt "Translate the text to {{lang}} and return the first word:\n\n{{text}}"))
+                       :engines (list
+                                 (gt-chatgpt-engine
+                                  :model "gpt-4o-mini")
+                                 (gt-chatgpt-engine
+                                  :host "https://api.deepseek.com"
+                                  :path "/chat/completions"
+                                  :model "deepseek-chat")
+                                 (gt-chatgpt-engine
+                                  :host "https://api.deepseek.com"
+                                  :path "/chat/completions"
+                                  :model "deepseek-reasoner"
+                                  :prompt "Translate the text to {{lang}} and return the first word:\n\n{{text}}"
+                                  :stream t))
                        :render (gt-buffer-render)))
 #+end_src
 
@@ -491,7 +499,7 @@ The following is a more general and practical command that performs a certain ta
     (list "Polish the text" "Fix the errors in code"))
 
   (defvar my-ai-oneshot-models
-    (list "deepseek-v3" "gpt-4o-mini" "gemini-2.5-pro"))
+    (list "deepseek-chat" "gpt-4o-mini" "gemini-2.5-pro"))
 
   (defvar my-ai-oneshot-last-model nil)
 
@@ -565,6 +573,7 @@ For example:
   (let* ((rs (gt-chatgpt-send '(((role . user)      (content . "Which is the biggest lake in the world?"))
                                 ((role . assistant) (content . "Caspian Sea."))
                                 ((role . user)      (content . "I don't think so.")))
+               :url "https://api.deepseek.com/chat/completions" :model "deepseek-chat"
                :sync t))
          (content (let-alist rs (let-alist (aref .choices 0) .message.content))))
     (message ">>> %s" content))
@@ -579,7 +588,7 @@ For example:
     ;; answer by ChatGPT and DeepSeek
     (let* ((q1 "Which is the biggest lake in the world?")
            (rs (await (gt-chatgpt-send q1 :model "gpt-4o-mini")
-                      (gt-chatgpt-send q1 :model "deepseek-v3")))
+                      (gt-chatgpt-send q1 :model "deepseek-chat")))
            (c1 (let-alist (car rs)  (let-alist (aref .choices 0) .message.content)))
            (c2 (let-alist (cadr rs) (let-alist (aref .choices 0) .message.content))))
       (message ">>> ChatGPT:  %s" c1)
