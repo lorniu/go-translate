@@ -147,7 +147,7 @@
   (unless (executable-find gt-stardict-program)
     (user-error "You should install `sdcv' first before use `gt-stardict-engine'"))
   (gt-dolist-concurrency (item (oref task text) nil)
-    (pdd-process-task gt-stardict-program
+    (pdd-exec gt-stardict-program
       (append (gt-stardict-build-args engine) (list item))
       :fail (lambda () (signal 'error (list "No result found"))))))
 

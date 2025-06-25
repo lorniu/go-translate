@@ -57,7 +57,7 @@
 " program program)))
     (when (cdr text)
       (user-error "[gt-osxdict-engine] Multiple parts translation is not supported"))
-    (pdd-process-task program text
+    (pdd-exec program text
       :done (lambda (str) (unless (string-empty-p str) str)))))
 
 (cl-defmethod gt-parse ((_ gt-osxdict-parser) task)
