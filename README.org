@@ -885,6 +885,14 @@ User command =gt-speak= is provided to interactivelly use all TTS engines:
 - Select any text in Emacs, execute =M-x gt-speak=, the speech will be started
 - In the popup minibuffer, switch engine with key =C-n= and modify the text as you wish
 
+-----------
+
+At last, I provide a complete example to show how to use these TTS features:
+
+- https://github.com/lorniu/speak-buffer.el
+
+This is a package used to read current buffer content paragraph by paragraph like a reading app.
+
 ** Customization and Extension the Framework
 
 The code is based on eieio (CLOS), so almost every component can be extended or replaced.
