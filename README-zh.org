@@ -848,6 +848,7 @@ DeepL 需要 auth-key 才能正常使用，首先需要通过官网进行获取�
 - =src:en= 翻译的源语言是英语
 - =tgt:en= 翻译的目的语言是英语
 - =parts= 翻译的是分段的文本
+- =at-word= 光标目前正位于 word/symbol 上面
 - =read-only= 当前 buffer 是只读的
 - =selection= 当前翻译的是选中的文本
 - =emacs-lisp-mode= 以 mode 结尾，表示须匹配当前模式

@@ -821,6 +821,7 @@ Some symbols built-in:
 - =src:en= source language is English
 - =tgt:en= target language is English
 - =parts= multiple parts text to be translated
+- =at-word= there is word/symbol under point
 - =read-only= current buffer is read only
 - =selection= current use region is active
 - =emacs-lisp-mode= suffix with *-mode*, that match with current mode

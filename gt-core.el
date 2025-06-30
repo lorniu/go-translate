@@ -839,8 +839,8 @@ translator or a list to provide more validation data."
 It can be used by cache and engine.
 
 V should be a symbol like `word', `parts', `src:en', `tgt:en', `selection',
-`xxx-mode', `read-only', or symbol with `not-' or `no-' prefix such as
-`not-word', `not-src:en', `no-parts' etc.
+`xxx-mode', `read-only', `at-word', or symbol with `not-' or `no-' prefix such
+as `not-word', `not-src:en', `no-parts' etc.
 
 V also can be a list form grouping above symbols with `and/or', for example:
 
@@ -857,6 +857,7 @@ This is a generic method, you can extend the V as you wish."
           ((eq v 'parts) (cdr text)) ; text is multiple parts
           ((eq v 'selection) (use-region-p)) ; use region is active
           ((eq v 'read-only) buffer-read-only) ; buffer is read-only
+          ((eq v 'at-word) (symbol-at-point)) ; there is something at point
           ((string-suffix-p "-mode" vn) ; major-mode or minor-mode
            (if (boundp v) (symbol-value v) (eq major-mode v)))
           ((string-match "^\\(src\\|tgt\\):\\(.+\\)" vn)
