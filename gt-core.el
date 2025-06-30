@@ -201,7 +201,7 @@
   :documentation "Only create one instance for same slots.")
 
 (cl-defmethod make-instance ((class (subclass gt-single)) &rest slots)
-  (if-let* ((key (sha1 (format "%s" slots)))
+  (if-let* ((key (sha1 (prin1-to-string slots)))
             (insts (oref-default class insts))
             (old (cdr-safe (assoc key insts))))
       old
@@ -1539,10 +1539,13 @@ If SKIP-PARSE is t, return the raw results directly."
 (defmacro gt-with-slots-for-key (slots engine &rest body)
   (declare (indent 2))
   `(with-slots ,slots ,engine
-     (let ((key-found (progn ,@body)))
-       (unless (stringp key-found)
-         (user-error "You should provide a valid api key for `%s'" (gt-str ,engine)))
-       key-found)))
+     (if (and (slot-exists-p engine 'key)
+              (stringp (oref engine key)))
+         (oref engine key)
+       (let ((key-found (progn ,@body)))
+         (unless (stringp key-found)
+           (user-error "You should provide a valid api key for `%s'" (gt-str ,engine)))
+         key-found))))
 
 
 ;;; Renderer
