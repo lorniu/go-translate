@@ -307,9 +307,9 @@ If FOLD non nil, only make part of the text visible."
                                do (goto-char beg)
                                do (when (and (cl-plusp state) (null (get-char-property beg 'gt-done))
                                              (or (not (eq (get-char-property (point) 'gt-result) 'stream)) (= state 1)))
-                                    (delete-region beg end)
-                                    (insert (propertize (if (consp res) (nth i res) res)
-                                                        'gt-result t 'gt-done t 'gt-task task 'gt-part i))))))))
+                                    (let ((res-string (or (if (consp res) (nth i res) res) "")))
+                                      (delete-region beg end)
+                                      (insert (propertize res-string 'gt-result t 'gt-done t 'gt-task task 'gt-part i)))))))))
     ;; update states
     (set-buffer-modified-p nil)
     ;; execute the hook if exists

@@ -660,6 +660,8 @@ PARAMS contains search keys like :user, :host same as `auth-source-search'."
   "Insert STR to position of MARKER.
 If END-MARKER exists, delete the content between the markers first.
 If KEEP-CURSOR is not nil, keep the cursor at front."
+  (cond ((null str) (setq str ""))
+        ((not (stringp str)) (user-error "What insert into marker should be a string: (%S)" str)))
   (with-current-buffer (marker-buffer marker)
     (let ((inhibit-read-only t)
           (fn (lambda ()

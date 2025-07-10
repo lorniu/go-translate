@@ -170,8 +170,8 @@ With two arguments BEG and END, which are the marker bounds of the result.")
                                       else collect arg))
                       `(progn (message "") ,final))
                  ,@(car args)))))
-       (error (unless (string-prefix-p "json" (format "%s" (car err)))
-                (signal (car err) (cdr err)))))))
+       ((debug error) (unless (string-prefix-p "json" (format "%s" (car err)))
+                        (signal (car err) (cdr err)))))))
 
 (cl-defmethod gt-execute ((engine gt-chatgpt-engine) task)
   (with-slots (text src tgt res translator markers) task
@@ -195,22 +195,26 @@ With two arguments BEG and END, which are the marker bounds of the result.")
             :key (gt-resolve-key engine) :root root :timeout timeout :stream stream))))))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) (task gt-task))
-  (cl-loop for item in (oref task res)
-           for msg = (alist-get 'message (let-alist item (aref .choices 0)))
-           for rc = (alist-get 'reasoning_content msg) ; compact with DeepSeek r1
-           for content = (alist-get 'content msg)
-           collect (concat (if (stringp rc) (propertize rc 'face 'gt-chatgpt-reasoning-face)) content) into lst
-           finally (oset task res lst)))
+  (condition-case err
+      (cl-loop for item in (oref task res)
+               for msg = (alist-get 'message (let-alist item (aref .choices 0)))
+               for rc = (alist-get 'reasoning_content msg) ; compact with DeepSeek r1
+               for content = (alist-get 'content msg)
+               collect (concat (if (stringp rc) (propertize rc 'face 'gt-chatgpt-reasoning-face)) content) into lst
+               finally (oset task res lst))
+    ((debug error) (signal (car err) (cdr err)))))
 
 (cl-defmethod gt-parse ((_ gt-chatgpt-parser) json-hunk) ; parse for streaming output
-  (let* ((choice (ignore-errors (aref (alist-get 'choices json-hunk) 0)))
-         (rc (alist-get 'reasoning_content (alist-get 'delta choice))) ; maybe :null
-         (content (alist-get 'content (alist-get 'delta choice)))
-         (finish (alist-get 'finish_reason choice)))
-    (list (if (stringp rc)
-              (propertize rc 'face 'gt-chatgpt-reasoning-face) ; compact with DeepSeek r1
-            (if (stringp content) content ""))
-          finish)))
+  (condition-case err
+      (let* ((choice (ignore-errors (aref (alist-get 'choices json-hunk) 0)))
+             (rc (alist-get 'reasoning_content (alist-get 'delta choice))) ; maybe :null
+             (content (alist-get 'content (alist-get 'delta choice)))
+             (finish (alist-get 'finish_reason choice)))
+        (list (if (stringp rc)
+                  (propertize rc 'face 'gt-chatgpt-reasoning-face) ; compact with DeepSeek r1
+                (if (stringp content) content ""))
+              finish))
+    ((debug error) (signal (car err) (cdr err)))))
 
 
 ;;; Text to Speech
