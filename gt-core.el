@@ -193,6 +193,10 @@
 
 (defvar gt-current-translator nil)
 
+(defvar gt-source-text-transformer nil
+  "A function used to preprocessing the text to translate or speak.
+With function signature (text &optional engine speak-p).")
+
 (defvar-local gt-tracking-marker nil)
 
 (defclass gt-single ()
@@ -553,7 +557,9 @@ That is: 1) define the translator 2) executable `gt-start'.")
 
 (cl-defgeneric gt-str (object)
   "Return the string representation of the OBJECT."
-  (format "%s" (eieio-object-class object)))
+  (format "%s" (if (eieio-object-p object)
+                   (eieio-object-class object)
+                 object)))
 
 (cl-defgeneric gt-tag (object)
   "Return the display tag for OBJECT."
@@ -1458,6 +1464,11 @@ If SKIP-PARSE is t, return the raw results directly."
     (with-slots (delimit parse stream then) engine
       (unless (or res err)
         (gt-log 'next (format "%s: %s prepare to translate" id (gt-str engine)))
+        ;; preprocessing text, clean it or transform it
+        (when (functionp gt-source-text-transformer)
+          (setf text (mapcar (lambda (c)
+                               (or (pdd-funcall gt-source-text-transformer (list c engine)) c))
+                             text)))
         ;; enable caching if necessary
         (let* ((cache-pred nil)
                (pdd-active-cacher
@@ -1474,7 +1485,7 @@ If SKIP-PARSE is t, return the raw results directly."
                                                     (if (> (length current-string) (length longest-so-far))
                                                         current-string
                                                       longest-so-far))
-                                                  (ensure-list text))
+                                                  text)
                                                  src tgt)))
                   (pdd-cacher :ttl gt-cache-ttl :key '(url data) :store 'gt-cache-store)))
                (delimiter (if (eq delimit t) gt-text-delimiter delimit)))
@@ -1712,6 +1723,9 @@ The value should not contain any space in the command path."
 (cl-defgeneric gt-speech (engine _text _lang &optional _play-fn)
   "Speak TEXT with LANG by ENGINE."
   (:method :around ((engine gt-engine) text lang &optional play-fn)
+           ;; preprocessing text, clean it or transform it
+           (when (functionp gt-source-text-transformer)
+             (setq text (or (pdd-funcall gt-source-text-transformer (list text engine t)) text)))
            (cl-call-next-method engine text (intern-soft lang) play-fn))
   (user-error "No TTS service found on engine `%s'" (gt-tag engine)))
 
